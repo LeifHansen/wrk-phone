@@ -136,6 +136,17 @@ export default function AgentDetail() {
           <ModeRow value={merged.voice_mode} onChange={setVoiceMode} />
         </View>
 
+        <View>
+          <Text style={styles.section}>Voice</Text>
+          <VoicePicker
+            current={(merged as any).voice_name || null}
+            onPick={async (v) => {
+              await api.patchAgent(aid, { voice_id: v.id ?? null, voice_name: v.name, tts_voice: v.tts_voice } as any);
+              setAgent((a) => a ? ({ ...a, voice_name: v.name, tts_voice: v.tts_voice } as any) : a);
+            }}
+          />
+        </View>
+
         {/* Optimize + Train CTAs */}
         <View style={{ flexDirection: 'row', gap: 8 }}>
           <Pressable onPress={() => router.push(`/agent/${aid}/optimize`)} style={[styles.primaryCta, { backgroundColor: theme.lime }]}>
@@ -267,6 +278,71 @@ function ModeRow({ value, onChange }: { value: 'off' | 'suggest' | 'auto'; onCha
     </>
   );
 }
+
+function VoicePicker({ current, onPick }: {
+  current: string | null;
+  onPick: (v: { id?: number; name: string; tts_voice: string }) => void;
+}) {
+  const [data, setData] = useState<any>(null);
+  const [name, setName] = useState('');
+  const [style, setStyle] = useState('');
+  const [creating, setCreating] = useState(false);
+
+  const load = () => api.listVoices().then(setData).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    try {
+      const v = await api.createVoice(name.trim(), style.trim());
+      onPick({ id: v.id, name: v.name, tts_voice: v.tts_voice });
+      setName(''); setStyle(''); load();
+    } catch (e: any) { Alert.alert('Failed', e.message); }
+    finally { setCreating(false); }
+  };
+
+  if (!data) return <Text style={{ color: theme.textMuted, fontSize: 13 }}>Loading voices…</Text>;
+  return (
+    <View>
+      <Text style={{ color: theme.textMuted, fontSize: 12, marginBottom: 8 }}>
+        {current ? `Using ${current}. ` : 'Pick or create a voice. '}{data.note}
+      </Text>
+      <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        {data.presets.map((p: any) => (
+          <Pressable key={p.name} onPress={() => onPick({ name: p.name, tts_voice: p.tts_voice })}
+            style={[vp.chip, current === p.name && vp.chipOn]}>
+            <Text style={[vp.chipT, current === p.name && { color: theme.black }]}>{p.name}</Text>
+          </Pressable>
+        ))}
+        {data.custom.map((c: any) => (
+          <Pressable key={c.id} onPress={() => onPick({ id: c.id, name: c.name, tts_voice: c.tts_voice })}
+            style={[vp.chip, current === c.name && vp.chipOn]}>
+            <Text style={[vp.chipT, current === c.name && { color: theme.black }]}>★ {c.name}</Text>
+          </Pressable>
+        ))}
+      </View>
+      <View style={{ flexDirection: 'row', gap: 6, marginTop: 8 }}>
+        <TextInput value={name} onChangeText={setName} placeholder="Voice name" placeholderTextColor={theme.textMuted}
+          style={[vp.input, { flex: 1 }]} />
+        <TextInput value={style} onChangeText={setStyle} placeholder="deep, confident" placeholderTextColor={theme.textMuted}
+          style={[vp.input, { flex: 1.4 }]} />
+        <Pressable onPress={create} disabled={creating || !name.trim()} style={[vp.mk, (creating || !name.trim()) && { opacity: 0.4 }]}>
+          <Text style={vp.mkT}>{creating ? '…' : 'Make'}</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+const vp = StyleSheet.create({
+  chip: { borderWidth: 2, borderColor: theme.black, backgroundColor: theme.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm },
+  chipOn: { backgroundColor: theme.lime },
+  chipT: { fontSize: 11, fontWeight: '800', color: theme.textMuted },
+  input: { backgroundColor: theme.bgSubtle, borderWidth: 2, borderColor: theme.black, borderRadius: radius.sm, paddingHorizontal: 10, paddingVertical: 8, fontSize: 13, color: theme.text },
+  mk: { backgroundColor: theme.pink, borderWidth: 2, borderColor: theme.black, paddingHorizontal: 14, justifyContent: 'center', borderRadius: radius.sm },
+  mkT: { color: '#fff', fontWeight: '800' },
+});
 
 function RuleAdder({ onAdd }: { onAdd: (s: string) => void }) {
   const [text, setText] = useState('');

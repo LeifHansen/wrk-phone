@@ -16,9 +16,26 @@ export default function Campaigns() {
   const [template, setTemplate] = useState('Hi {{name}}, ');
   const [recipientsRaw, setRecipientsRaw] = useState('');
   const [busy, setBusy] = useState(false);
+  const [target, setTarget] = useState<'all' | 'segment' | 'paste'>('all');
+  const [segments, setSegments] = useState<{ id: number; name: string; count: number }[]>([]);
+  const [segId, setSegId] = useState<number | null>(null);
+  const [mediaUrl, setMediaUrl] = useState<string | null>(null);
+  const [imgPrompt, setImgPrompt] = useState('');
+  const [genBusy, setGenBusy] = useState(false);
 
-  const load = () => api.listCampaigns().then((r) => setList(r as Campaign[])).catch(() => {});
+  const load = () => {
+    api.listCampaigns().then((r) => setList(r as Campaign[])).catch(() => {});
+    api.listSegments().then(setSegments).catch(() => {});
+  };
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
+
+  const genImage = async () => {
+    if (!imgPrompt.trim()) return;
+    setGenBusy(true);
+    try { const m = await api.generateImage(imgPrompt.trim()); setMediaUrl(m.url); }
+    catch (e: any) { Alert.alert('Image gen failed', e.message); }
+    finally { setGenBusy(false); }
+  };
 
   const parseRecipients = () => {
     return recipientsRaw
@@ -33,15 +50,24 @@ export default function Campaigns() {
   };
 
   const create = async () => {
-    const recipients = parseRecipients();
-    if (!name.trim() || !template.trim() || recipients.length === 0) {
-      Alert.alert('Missing', 'Name, template, and at least one recipient required.');
-      return;
+    const payload: any = { name: name.trim(), template: template.trim(), channel: mediaUrl ? 'mms' : 'sms' };
+    if (mediaUrl) payload.mediaUrl = mediaUrl;
+    if (target === 'all') payload.allContacts = true;
+    else if (target === 'segment') {
+      if (!segId) return Alert.alert('Pick a segment');
+      payload.segmentId = segId;
+    } else {
+      payload.recipients = parseRecipients();
+      if (payload.recipients.length === 0) return Alert.alert('Add recipients');
+    }
+    if (!payload.name || (!payload.template && !payload.mediaUrl)) {
+      return Alert.alert('Missing', 'Name + message (or image) required.');
     }
     setBusy(true);
     try {
-      const { id } = await api.createCampaign({ name: name.trim(), template: template.trim(), recipients });
+      const { id } = await api.createCampaign(payload);
       setShowNew(false); setName(''); setTemplate('Hi {{name}}, '); setRecipientsRaw('');
+      setMediaUrl(null); setImgPrompt(''); setTarget('all'); setSegId(null);
       Alert.alert('Created', `Campaign ${id} created. Tap Send to start.`);
       load();
     } catch (e: any) {
@@ -77,16 +103,50 @@ export default function Campaigns() {
           <Text style={styles.label}>Message Template</Text>
           <Text style={styles.hint}>Use {'{{name}}'} for personalization.</Text>
           <TextInput value={template} onChangeText={setTemplate} multiline style={[styles.input, { minHeight: 90 }]} placeholderTextColor={theme.textMuted} />
-          <Text style={styles.label}>Recipients</Text>
-          <Text style={styles.hint}>One per line. Format: +15551234567, Sam (name optional)</Text>
-          <TextInput
-            value={recipientsRaw}
-            onChangeText={setRecipientsRaw}
-            multiline
-            placeholder={'+15551234567, Sam\n+15559876543, Alex'}
-            placeholderTextColor={theme.textMuted}
-            style={[styles.input, { minHeight: 120, fontFamily: 'Menlo' as any }]}
-          />
+          <Text style={styles.label}>Send to</Text>
+          <View style={styles.segRow}>
+            {(['all', 'segment', 'paste'] as const).map((t) => (
+              <Pressable key={t} onPress={() => setTarget(t)} style={[styles.segChip, target === t && styles.segChipOn]}>
+                <Text style={[styles.segChipT, target === t && { color: theme.black }]}>
+                  {t === 'all' ? 'WHOLE LIST' : t === 'segment' ? 'SEGMENT' : 'PASTE'}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+          {target === 'segment' && (
+            <View style={styles.segRow}>
+              {segments.length === 0 && <Text style={styles.hint}>No segments — make one in Contacts.</Text>}
+              {segments.map((s) => (
+                <Pressable key={s.id} onPress={() => setSegId(s.id)} style={[styles.segChip, segId === s.id && styles.segChipOn]}>
+                  <Text style={[styles.segChipT, segId === s.id && { color: theme.black }]}>{s.name} · {s.count}</Text>
+                </Pressable>
+              ))}
+            </View>
+          )}
+          {target === 'paste' && (
+            <TextInput
+              value={recipientsRaw}
+              onChangeText={setRecipientsRaw}
+              multiline
+              placeholder={'+15551234567, Sam\n+15559876543, Alex'}
+              placeholderTextColor={theme.textMuted}
+              style={[styles.input, { minHeight: 100, fontFamily: 'Menlo' as any }]}
+            />
+          )}
+
+          <Text style={styles.label}>MMS image (optional)</Text>
+          {mediaUrl ? (
+            <Pressable onPress={() => setMediaUrl(null)}><Text style={[styles.hint, { color: theme.red }]}>✕ Remove generated image</Text></Pressable>
+          ) : (
+            <View style={{ flexDirection: 'row', gap: 8 }}>
+              <TextInput value={imgPrompt} onChangeText={setImgPrompt} placeholder="Describe an image — AI makes it"
+                placeholderTextColor={theme.textMuted} style={[styles.input, { flex: 1 }]} />
+              <Pressable onPress={genImage} disabled={genBusy || !imgPrompt.trim()} style={[styles.genBtn, (genBusy || !imgPrompt.trim()) && { opacity: 0.4 }]}>
+                <Text style={styles.genBtnT}>{genBusy ? '…' : 'Gen'}</Text>
+              </Pressable>
+            </View>
+          )}
+
           <Pressable onPress={create} disabled={busy} style={[styles.createBtn, busy && { opacity: 0.4 }]}>
             <Text style={styles.createBtnText}>{busy ? 'Creating…' : 'Create draft'}</Text>
           </Pressable>
@@ -141,4 +201,10 @@ const styles = StyleSheet.create({
   spinning: { color: theme.textMuted, fontSize: 22 },
   sep: { height: StyleSheet.hairlineWidth, backgroundColor: theme.divider },
   empty: { padding: spacing.xl, color: theme.textMuted, textAlign: 'center' },
+  segRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 6 },
+  segChip: { borderWidth: 2, borderColor: theme.black, backgroundColor: theme.surface, paddingHorizontal: 10, paddingVertical: 6, borderRadius: radius.sm },
+  segChipOn: { backgroundColor: theme.lime },
+  segChipT: { fontSize: 11, fontWeight: '800', color: theme.textMuted },
+  genBtn: { backgroundColor: theme.pink, borderWidth: 2, borderColor: theme.black, paddingHorizontal: 16, justifyContent: 'center', borderRadius: radius.sm },
+  genBtnT: { color: '#fff', fontWeight: '800' },
 });
