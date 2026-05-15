@@ -17,7 +17,7 @@ import { diagRouter } from './routes/diag.js';
 import { numbersRouter } from './routes/numbers.js';
 import { contactsRouter } from './routes/contacts.js';
 import { mediaRouter, MEDIA_DIR } from './routes/media.js';
-import { creditsRouter } from './routes/credits.js';
+import { creditsRouter, stripeWebhookHandler } from './routes/credits.js';
 import { voicesRouter } from './routes/voices.js';
 import './lib/db.js'; // ensure migrations run
 
@@ -26,6 +26,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.use(cors());
 app.use(morgan('dev'));
+// Stripe webhook needs the RAW body for signature verification — must be
+// registered before the json parser.
+app.post('/api/credits/webhook', express.raw({ type: 'application/json' }), stripeWebhookHandler);
+
 app.use(express.urlencoded({ extended: false })); // Twilio webhooks
 app.use(express.json({ limit: '2mb' }));
 

@@ -168,6 +168,11 @@ export const api = {
     req<{ ok: boolean; added: number; balance: number; stub: boolean }>(
       '/api/credits/purchase', { method: 'POST', body: JSON.stringify({ packageId }) }
     ),
+  checkout: (packageId: string) =>
+    req<{ url: string | null; stub?: boolean; balance?: number; note?: string }>(
+      '/api/credits/checkout',
+      { method: 'POST', body: JSON.stringify({ packageId, returnUrl: window.location.origin }) }
+    ),
   webhookStatus: () =>
     req<{ number: string; publicBaseUrl: string; reachable: boolean; ok: boolean; hint: string; numberCfg: any; serviceCfg: any }>(
       '/api/numbers/webhook-status'

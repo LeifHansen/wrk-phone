@@ -10,15 +10,32 @@ export function Credits() {
   const load = () => api.credits().then((c) => { setBalance(c.balance); setPackages(c.packages); setRates(c.rates); }).catch(() => {});
   useEffect(() => { load(); }, []);
 
-  const buy = async (id: string) => {
+  const buy = async (id: string, price: number) => {
     setBusy(id);
     try {
-      const r = await api.buyCredits(id);
-      setBalance(r.balance);
-      alert(`Added ${r.added} credits. New balance: ${r.balance}.\n\n(Beta: no charge — billing isn't wired yet.)`);
+      if (price === 0) {
+        const r = await api.buyCredits(id);
+        setBalance(r.balance);
+        alert(`Added ${r.added} credits. Balance: ${r.balance}.`);
+      } else {
+        const r = await api.checkout(id);
+        if (r.url) { window.location.href = r.url; return; }       // → Stripe Checkout
+        // dev fallback (no Stripe keys): credited instantly
+        if (typeof r.balance === 'number') setBalance(r.balance);
+        alert(r.note || `Credited (dev mode). Balance: ${r.balance}.`);
+      }
     } catch (e: any) { alert(e.message); }
     finally { setBusy(null); }
   };
+
+  // Returning from Stripe — webhook credits async; refresh shortly after.
+  useEffect(() => {
+    const p = new URLSearchParams(window.location.search);
+    if (p.get('paid')) {
+      setTimeout(load, 1500);
+      window.history.replaceState({}, '', '/credits');
+    }
+  }, []);
 
   return (
     <>
@@ -44,7 +61,7 @@ export function Credits() {
               <div className="pkg-credits">{p.credits.toLocaleString()}</div>
               <div className="pkg-lbl">{p.label}</div>
               {p.note && <div className="pkg-note">{p.note}</div>}
-              <button className="btn" disabled={busy === p.id} onClick={() => buy(p.id)}>
+              <button className="btn" disabled={busy === p.id} onClick={() => buy(p.id, p.price)}>
                 {busy === p.id ? '…' : p.price === 0 ? 'Claim free' : `$${p.price}`}
               </button>
             </div>
