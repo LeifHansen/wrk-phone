@@ -62,7 +62,7 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
   return (
     <div className="convo">
       <div className="convo-header">
-        <Link to="/" className="btn ghost" style={{ padding: 0 }}>‹ Inbox</Link>
+        <Link to="/messages" className="btn ghost" style={{ padding: 0 }}>‹ Inbox</Link>
         <span className="peer">{conv?.peer_phone || ''}</span>
         <button className="btn ghost" onClick={callPeer}>📞</button>
       </div>

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { api } from './lib/api';
 import { Setup } from './pages/Setup';
+import { Home } from './pages/Home';
 import { Inbox } from './pages/Inbox';
 import { Conversation } from './pages/Conversation';
 import { Keypad } from './pages/Keypad';
@@ -46,30 +47,37 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h1>Wrk Phone</h1>
-        <NavLink to="/" end className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-          <span className="glyph">💬</span> Messages
+        <h1>Wrk<br /><span className="alt">Phone</span><span className="squig" /></h1>
+        <NavLink to="/" end className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Home">
+          <span className="glyph">🏠</span><span className="nav-label">HOME</span>
         </NavLink>
-        <NavLink to="/keypad" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-          <span className="glyph">🔢</span> Keypad
+        <NavLink to="/messages" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Messages">
+          <span className="glyph">💬</span><span className="nav-label">MSGS</span>
         </NavLink>
-        <NavLink to="/agents" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-          <span className="glyph">🤖</span> Agents
+        <NavLink to="/campaigns" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Campaigns">
+          <span className="glyph">📣</span><span className="nav-label">BLAST</span>
         </NavLink>
-        <NavLink to="/campaigns" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-          <span className="glyph">📣</span> Campaigns
+        <NavLink to="/agents" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agents">
+          <span className="glyph">🤖</span><span className="nav-label">AGENTS</span>
         </NavLink>
-        <NavLink to="/setup" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-          <span className="glyph">📞</span> My Number
+        <NavLink to="/keypad" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Keypad">
+          <span className="glyph">🔢</span><span className="nav-label">DIAL</span>
         </NavLink>
-        <NavLink to="/settings" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
-          <span className="glyph">⚙️</span> Settings
+        <NavLink to="/settings" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Settings">
+          <span className="glyph">⚙️</span><span className="nav-label">CONFIG</span>
+        </NavLink>
+        <div className="spacer" />
+        <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }}>
+          <div className="dot">📞</div>
+          <div className="lbl">WRK LINE</div>
+          <div className="bars">▁▃▅▇</div>
         </NavLink>
       </aside>
       <main className="main">
         <Routes>
           <Route path="/setup" element={<Setup />} />
-          <Route path="/" element={<Inbox />} />
+          <Route path="/" element={<Home />} />
+          <Route path="/messages" element={<Inbox />} />
           <Route path="/conversation/:id" element={<Conversation onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/keypad" element={<Keypad onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/agents" element={<Agents />} />
