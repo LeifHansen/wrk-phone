@@ -139,4 +139,11 @@ export const api = {
     request<{ activeNumber: string | null; onboarded: boolean; isProvisioned: boolean; messagingServiceSid: string | null }>(
       '/api/numbers/active'
     ),
+  // contacts
+  syncContacts: (contacts: { name: string; phone: string }[]) =>
+    request<{ synced: number; skipped: number; total: number }>(
+      '/api/contacts/sync',
+      { method: 'POST', body: JSON.stringify({ contacts }) }
+    ),
+  contactsMeta: () => request<{ total: number }>('/api/contacts/meta'),
 };

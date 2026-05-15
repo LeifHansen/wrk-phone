@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useRouter } from 'expo-router';
 import { theme, spacing } from '@/constants/theme';
@@ -23,6 +23,13 @@ export default function Settings() {
     api.activeNumber().then(setNum).catch(() => {});
   }, []);
 
+  const [contactsTotal, setContactsTotal] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+
+  useEffect(() => {
+    api.contactsMeta().then((m) => setContactsTotal(m.total)).catch(() => {});
+  }, []);
+
   const reRegister = async () => {
     setVoiceOk('?');
     try {
@@ -30,6 +37,24 @@ export default function Settings() {
       setVoiceOk(v ? 'ok' : 'fail');
     } catch {
       setVoiceOk('fail');
+    }
+  };
+
+  const syncContacts = async () => {
+    setSyncing(true);
+    try {
+      const { syncDeviceContacts } = await import('@/lib/contacts');
+      const r = await syncDeviceContacts();
+      if (!r.granted) {
+        Alert.alert('Permission needed', 'Enable Contacts access for Wrk Phone in Settings to sync.');
+      } else {
+        setContactsTotal(r.total);
+        Alert.alert('Contacts synced', `Synced ${r.synced} number${r.synced === 1 ? '' : 's'} (${r.skipped} skipped). You now have ${r.total} contacts.`);
+      }
+    } catch (e: any) {
+      Alert.alert('Sync failed', e.message);
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -57,6 +82,18 @@ export default function Settings() {
           </Pressable>
           <Row label="Inbound webhook" value={`${api.base}/api/voice/inbound`} />
           <Row label="SMS webhook" value={`${api.base}/api/sms/inbound`} />
+        </Section>
+
+        <Section title="Contacts">
+          <Row
+            label="Synced contacts"
+            value={contactsTotal == null ? '…' : String(contactsTotal)}
+            status={contactsTotal && contactsTotal > 0 ? 'ok' : '?'}
+          />
+          <Pressable onPress={syncContacts} disabled={syncing} style={[styles.btn, syncing && { opacity: 0.5 }]}>
+            <Text style={styles.btnText}>{syncing ? 'Syncing…' : 'Sync phone contacts'}</Text>
+          </Pressable>
+          <Row label="Why" value="Names on calls/texts + known-contact routing" />
         </Section>
 
         <Section title="About">
