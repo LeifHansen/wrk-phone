@@ -116,6 +116,15 @@ db.exec(`
     token TEXT NOT NULL,
     PRIMARY KEY(user_id, platform)
   );
+
+  -- Per-user provisioned phone number (selected during onboarding).
+  CREATE TABLE IF NOT EXISTS app_settings (
+    user_id TEXT PRIMARY KEY,
+    active_number TEXT,
+    active_number_sid TEXT,
+    onboarded INTEGER NOT NULL DEFAULT 0,
+    updated_at INTEGER NOT NULL DEFAULT 0
+  );
 `);
 
 // Lightweight migrations for upgrades from the v0.1 single-agent schema.
@@ -225,4 +234,34 @@ export function hydrateAgent(a: AgentRow) {
 
 function safeJSON<T>(s: string, fallback: T): T {
   try { return JSON.parse(s) as T; } catch { return fallback; }
+}
+
+export interface AppSettings {
+  user_id: string;
+  active_number: string | null;
+  active_number_sid: string | null;
+  onboarded: number;
+  updated_at: number;
+}
+
+export function getAppSettings(userId: string): AppSettings {
+  let row = db.prepare(`SELECT * FROM app_settings WHERE user_id = ?`).get(userId) as AppSettings | undefined;
+  if (!row) {
+    db.prepare(`INSERT INTO app_settings (user_id, updated_at) VALUES (?, ?)`).run(userId, Date.now());
+    row = db.prepare(`SELECT * FROM app_settings WHERE user_id = ?`).get(userId) as AppSettings;
+  }
+  return row;
+}
+
+export function setActiveNumber(userId: string, number: string, sid: string) {
+  getAppSettings(userId); // ensure row exists
+  db.prepare(
+    `UPDATE app_settings SET active_number = ?, active_number_sid = ?, onboarded = 1, updated_at = ? WHERE user_id = ?`
+  ).run(number, sid, Date.now(), userId);
+}
+
+// The number to send/call FROM: the user's provisioned number, else env default.
+export function getActiveNumber(userId: string): string {
+  const s = getAppSettings(userId);
+  return s.active_number || process.env.TWILIO_DEFAULT_FROM_NUMBER || '';
 }

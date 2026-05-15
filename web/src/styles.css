@@ -455,6 +455,18 @@ code { font-family: 'JetBrains Mono', Menlo, monospace; font-size: 12px; }
 .routing-link .body p { margin: 4px 0 0; opacity: 0.7; font-size: 13px; }
 .routing-link .arr { font-size: 22px; font-weight: 800; }
 
+/* Setup / number */
+.setup-search { display: flex; gap: 8px; max-width: 420px; margin-bottom: 16px; }
+.setup-search .input { flex: 1; }
+.setup-list { display: flex; flex-direction: column; gap: 8px; max-width: 520px; }
+.setup-num {
+  display: flex; align-items: center; justify-content: space-between;
+  background: var(--surface); border: 1px solid var(--divider);
+  border-radius: 14px; padding: 14px 16px;
+}
+.setup-num-text { font-size: 20px; font-weight: 700; letter-spacing: 0.3px; }
+.setup-num-meta { font-size: 13px; color: var(--muted); margin-top: 2px; }
+
 /* Spinner */
 .spinner { display: inline-block; width: 24px; height: 24px; border: 3px solid var(--divider); border-top-color: var(--black); border-radius: 50%; animation: spin 0.7s linear infinite; }
 @keyframes spin { to { transform: rotate(360deg); } }

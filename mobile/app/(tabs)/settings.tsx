@@ -1,16 +1,26 @@
 import { useEffect, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
+import { useRouter } from 'expo-router';
 import { theme, spacing } from '@/constants/theme';
 import { api } from '@/lib/api';
 import { registerVoice } from '@/lib/voice';
 
+function prettyNum(e164: string | null) {
+  if (!e164) return '—';
+  const m = e164.match(/^\+1(\d{3})(\d{3})(\d{4})$/);
+  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+}
+
 export default function Settings() {
+  const router = useRouter();
   const [serverOk, setServerOk] = useState<'?' | 'ok' | 'fail'>('?');
   const [voiceOk, setVoiceOk] = useState<'?' | 'ok' | 'fail'>('?');
+  const [num, setNum] = useState<{ activeNumber: string | null; isProvisioned: boolean } | null>(null);
 
   useEffect(() => {
     fetch(`${api.base}/health`).then((r) => setServerOk(r.ok ? 'ok' : 'fail')).catch(() => setServerOk('fail'));
+    api.activeNumber().then(setNum).catch(() => {});
   }, []);
 
   const reRegister = async () => {
@@ -37,7 +47,14 @@ export default function Settings() {
         </Section>
 
         <Section title="Phone Line">
-          <Row label="Number" value="Set TWILIO_DEFAULT_FROM_NUMBER on server" />
+          <Row
+            label="Your number"
+            value={num ? prettyNum(num.activeNumber) : '…'}
+            status={num?.isProvisioned ? 'ok' : '?'}
+          />
+          <Pressable onPress={() => router.push('/onboarding/number')} style={styles.btn}>
+            <Text style={styles.btnText}>{num?.isProvisioned ? 'Get a different number' : 'Set up your number'}</Text>
+          </Pressable>
           <Row label="Inbound webhook" value={`${api.base}/api/voice/inbound`} />
           <Row label="SMS webhook" value={`${api.base}/api/sms/inbound`} />
         </Section>
