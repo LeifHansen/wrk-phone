@@ -146,4 +146,21 @@ export const api = {
       { method: 'POST', body: JSON.stringify({ contacts }) }
     ),
   contactsMeta: () => request<{ total: number }>('/api/contacts/meta'),
+  listContacts: (q?: string, segmentId?: number) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (segmentId) p.set('segmentId', String(segmentId));
+    return request<{ id: number; phone: string; name: string; segments: { id: number; name: string }[] }[]>(
+      `/api/contacts${p.toString() ? '?' + p : ''}`
+    );
+  },
+  addContact: (phone: string, name?: string) =>
+    request<{ id: number; phone: string; name: string }>('/api/contacts', { method: 'POST', body: JSON.stringify({ phone, name }) }),
+  deleteContact: (id: number) => request(`/api/contacts/${id}`, { method: 'DELETE' }),
+  listSegments: () => request<{ id: number; name: string; count: number }[]>('/api/segments'),
+  addSegment: (name: string) => request<{ id: number; name: string }>('/api/segments', { method: 'POST', body: JSON.stringify({ name }) }),
+  addToSegment: (segmentId: number, contactId: number) =>
+    request(`/api/segments/${segmentId}/members`, { method: 'POST', body: JSON.stringify({ contactId }) }),
+  removeFromSegment: (segmentId: number, contactId: number) =>
+    request(`/api/segments/${segmentId}/members/${contactId}`, { method: 'DELETE' }),
 };

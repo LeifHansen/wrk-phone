@@ -64,8 +64,8 @@ export const api = {
   assignAgent: (convId: number, agentId: number | null) =>
     req(`/api/conversations/${convId}/agent`, { method: 'PATCH', body: JSON.stringify({ agent_id: agentId }) }),
   // sms
-  sendSms: (to: string, body: string) =>
-    req('/api/sms/send', { method: 'POST', body: JSON.stringify({ to, body }) }),
+  sendSms: (to: string, body: string, mediaUrl?: string) =>
+    req('/api/sms/send', { method: 'POST', body: JSON.stringify({ to, body, mediaUrl }) }),
   approveSuggestion: (id: number) => req(`/api/sms/suggestion/${id}/approve`, { method: 'POST' }),
   dismissSuggestion: (id: number) => req(`/api/sms/suggestion/${id}/dismiss`, { method: 'POST' }),
   // agents
@@ -100,6 +100,31 @@ export const api = {
   listCampaigns: () => req<any[]>('/api/campaigns'),
   createCampaign: (payload: any) => req<{ id: number }>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) }),
   sendCampaign: (id: number) => req(`/api/campaigns/${id}/send`, { method: 'POST' }),
+  // contacts
+  listContacts: (q?: string, segmentId?: number) => {
+    const p = new URLSearchParams();
+    if (q) p.set('q', q);
+    if (segmentId) p.set('segmentId', String(segmentId));
+    return req<{ id: number; phone: string; name: string; segments: { id: number; name: string }[] }[]>(
+      `/api/contacts${p.toString() ? '?' + p : ''}`
+    );
+  },
+  addContact: (phone: string, name?: string) =>
+    req<{ id: number; phone: string; name: string }>('/api/contacts', { method: 'POST', body: JSON.stringify({ phone, name }) }),
+  deleteContact: (id: number) => req(`/api/contacts/${id}`, { method: 'DELETE' }),
+  // segments
+  listSegments: () => req<{ id: number; name: string; count: number }[]>('/api/segments'),
+  addSegment: (name: string) => req<{ id: number; name: string }>('/api/segments', { method: 'POST', body: JSON.stringify({ name }) }),
+  deleteSegment: (id: number) => req(`/api/segments/${id}`, { method: 'DELETE' }),
+  addToSegment: (segmentId: number, contactId: number) =>
+    req(`/api/segments/${segmentId}/members`, { method: 'POST', body: JSON.stringify({ contactId }) }),
+  removeFromSegment: (segmentId: number, contactId: number) =>
+    req(`/api/segments/${segmentId}/members/${contactId}`, { method: 'DELETE' }),
+  // media
+  listMedia: () => req<{ id: number; url: string; prompt: string | null; kind: string }[]>('/api/media'),
+  generateImage: (prompt: string) =>
+    req<{ id: number; url: string; prompt: string }>('/api/media/generate', { method: 'POST', body: JSON.stringify({ prompt }) }),
+  deleteMedia: (id: number) => req(`/api/media/${id}`, { method: 'DELETE' }),
   // number provisioning
   searchNumbers: (params: { country?: string; areaCode?: string; contains?: string }) => {
     const q = new URLSearchParams();

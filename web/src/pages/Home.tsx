@@ -1,98 +1,84 @@
-import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { api, COLOR_BG, COLOR_FG } from '../lib/api';
+import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { api } from '../lib/api';
+import { placeCall } from '../lib/voice';
 
-function greeting() {
-  const h = new Date().getHours();
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+const KEYS = [
+  ['1', ''], ['2', 'ABC'], ['3', 'DEF'],
+  ['4', 'GHI'], ['5', 'JKL'], ['6', 'MNO'],
+  ['7', 'PQRS'], ['8', 'TUV'], ['9', 'WXYZ'],
+  ['*', ''], ['0', '+'], ['#', ''],
+];
+
+function fmt(raw: string) {
+  const d = raw.replace(/[^\d+*#]/g, '');
+  if (d.startsWith('+')) return d;
+  if (d.length <= 3) return d;
+  if (d.length <= 6) return `(${d.slice(0, 3)}) ${d.slice(3)}`;
+  if (d.length <= 10) return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+  return d;
 }
-function pretty(e164: string | null) {
-  if (!e164) return 'No line yet';
-  const m = e164.match(/^\+1(\d{3})(\d{3})(\d{4})$/);
-  return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
+function e164(raw: string) {
+  if (raw.startsWith('+')) return raw.replace(/[^\d+]/g, '');
+  const d = raw.replace(/\D/g, '');
+  return d.length === 10 ? `+1${d}` : d.length ? `+${d}` : '';
 }
 
-export function Home() {
-  const [convos, setConvos] = useState<any[]>([]);
-  const [agents, setAgents] = useState<any[]>([]);
-  const [camps, setCamps] = useState<any[]>([]);
-  const [line, setLine] = useState<{ activeNumber: string | null } | null>(null);
+export function Home({ onCall }: { onCall: (peer: string) => void }) {
+  const nav = useNavigate();
+  const [num, setNum] = useState('');
+  const [mode, setMode] = useState<'call' | 'text'>('call');
 
-  useEffect(() => {
-    api.listConversations().then(setConvos).catch(() => {});
-    api.listAgents().then(setAgents).catch(() => {});
-    api.listCampaigns().then(setCamps).catch(() => {});
-    api.activeNumber().then(setLine).catch(() => {});
-  }, []);
+  const press = (k: string) => setNum((n) => n + k);
+  const back = () => setNum((n) => n.slice(0, -1));
 
-  const totalMsgs = convos.reduce((n) => n + 1, 0);
-  const liveAgents = agents.filter((a) => a.mode !== 'off').length;
-  const recent = convos.slice(0, 3);
+  const go = async () => {
+    const target = e164(num);
+    if (!target) return;
+    if (mode === 'call') {
+      onCall(target);
+      try { await placeCall(target); } catch (e: any) { alert(`Call failed: ${e.message}`); }
+    } else {
+      const { id } = await api.startConversation(target);
+      nav(`/conversation/${id}`);
+    }
+  };
 
   return (
-    <div className="home">
-      <h1 className="home-greet">{greeting()}, Alex.</h1>
-      <div className="greet-squig" />
-
-      {/* Wrk Line status */}
-      <div className="line-banner">
-        <div className="ic">📞</div>
-        <div className="meta">
-          <div className="k">WRK LINE</div>
-          <div className="v">{pretty(line?.activeNumber ?? null)}</div>
+    <div className="phone">
+      <div className="phone-screen">
+        <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
+        <div className="phone-toggle">
+          <button className={'pt-btn' + (mode === 'call' ? ' on' : '')} onClick={() => setMode('call')}>CALL</button>
+          <button className={'pt-btn' + (mode === 'text' ? ' on' : '')} onClick={() => setMode('text')}>TEXT</button>
         </div>
-        <div className="bars">▁▃▅▇</div>
       </div>
 
-      {/* Two big action cards */}
-      <div className="home-cards">
-        <Link to="/campaigns" className="big-card">
-          <div className="tile purple">📣</div>
-          <h3>BLAST A CAMPAIGN</h3>
-          <p>Mass-text your list with a personalized template. {camps.length} campaign{camps.length === 1 ? '' : 's'} so far.</p>
-          <div className="go">→</div>
-        </Link>
-        <Link to="/agents" className="big-card">
-          <div className="tile orange">🤖</div>
-          <h3>YOUR AGENTS</h3>
-          <p>{liveAgents} of {agents.length} agent{agents.length === 1 ? '' : 's'} on duty, texting on your behalf.</p>
-          <div className="go">→</div>
-        </Link>
+      <div className="phone-pad">
+        {KEYS.map(([d, l]) => (
+          <button key={d} className="phone-key" onClick={() => press(d)}>
+            <span className="kd">{d}</span>
+            {l && <span className="kl">{l}</span>}
+          </button>
+        ))}
       </div>
 
-      {/* Stat strip */}
-      <div className="stat-strip">
-        <div className="stat-cell"><div className="si">💬</div><div className="sv">{totalMsgs}</div><div className="sk">Threads</div></div>
-        <div className="stat-cell"><div className="si">👥</div><div className="sv">{convos.reduce((n, c) => n + (c.unread_count || 0), 0)}</div><div className="sk">Unread</div></div>
-        <div className="stat-cell"><div className="si">📣</div><div className="sv">{camps.length}</div><div className="sk">Campaigns</div></div>
-        <div className="stat-cell"><div className="si">🤖</div><div className="sv">{agents.length}</div><div className="sk">Agents</div></div>
-      </div>
-
-      {/* Recent activity */}
-      <div className="home-rows">
-        {recent.length === 0 && (
-          <div className="home-row" style={{ cursor: 'default' }}>
-            <div className="rtile" style={{ background: 'var(--surface-2)' }}>✨</div>
-            <div className="rbody"><div className="rt">No conversations yet</div><div className="rs">Send a text or set up an agent to get rolling.</div></div>
-          </div>
-        )}
-        {recent.map((c) => {
-          const col = c.agent_color || 'lime';
-          return (
-            <Link key={c.id} to={`/conversation/${c.id}`} className="home-row">
-              <div className="rtile" style={{ background: COLOR_BG[col], color: COLOR_FG[col] }}>
-                {c.agent_emoji || '💬'}
-              </div>
-              <div className="rbody">
-                <div className="rt">{c.name || c.peer_phone}</div>
-                <div className="rs">{c.last_direction === 'out' ? 'You: ' : ''}{c.last_body || '—'}</div>
-              </div>
-              <div className="chev">›</div>
-            </Link>
-          );
-        })}
+      <div className="phone-actions">
+        <button className="pa-side" onClick={() => nav('/contacts')} title="Contacts" aria-label="Contacts">
+          <span className="pa-glyph">≡</span>
+          <span className="pa-cap">CONTACTS</span>
+        </button>
+        <button
+          className={'pa-go ' + (mode === 'call' ? 'go-call' : 'go-text')}
+          onClick={go}
+          disabled={!num}
+        >
+          {mode === 'call' ? '✆' : '✉'}
+        </button>
+        <button className="pa-side" onClick={back} title="Delete" aria-label="Delete">
+          <span className="pa-glyph">⌫</span>
+          <span className="pa-cap">{num ? 'DEL' : ''}</span>
+        </button>
       </div>
     </div>
   );

@@ -69,17 +69,19 @@ smsRouter.post('/sms/inbound', async (req, res) => {
 smsRouter.post('/sms/send', async (req, res) => {
   const to = String(req.body.to || '').trim();
   const body = String(req.body.body || '').trim();
-  if (!to || !body) return res.status(400).json({ error: 'to and body required' });
+  const mediaUrl = req.body.mediaUrl ? String(req.body.mediaUrl) : null;
+  if (!to || (!body && !mediaUrl)) return res.status(400).json({ error: 'to and body (or mediaUrl) required' });
   const convId = getOrCreateConversation(USER, to);
   try {
     const params: any = { to, body };
+    if (mediaUrl) params.mediaUrl = [mediaUrl];        // MMS
     if (twilioConfig.messagingServiceSid) params.messagingServiceSid = twilioConfig.messagingServiceSid;
     else params.from = twilioConfig.defaultFrom;
     const msg = await twilioClient.messages.create(params);
     const result = db.prepare(
-      `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at)
-       VALUES (?, 'out', ?, ?, ?, ?)`
-    ).run(convId, body, msg.sid, msg.status, Date.now());
+      `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, media_url)
+       VALUES (?, 'out', ?, ?, ?, ?, ?)`
+    ).run(convId, body, msg.sid, msg.status, Date.now(), mediaUrl);
     db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(Date.now(), convId);
     res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status });
   } catch (err: any) {
