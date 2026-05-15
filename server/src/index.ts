@@ -13,6 +13,7 @@ import { agentRouter } from './routes/agent.js';
 import { campaignsRouter } from './routes/campaigns.js';
 import { pushRouter } from './routes/push.js';
 import { routingRouter } from './routes/routing.js';
+import { diagRouter } from './routes/diag.js';
 import './lib/db.js'; // ensure migrations run
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -33,6 +34,7 @@ app.use('/api', agentRouter);
 app.use('/api', campaignsRouter);
 app.use('/api', pushRouter);
 app.use('/api', routingRouter);
+app.use('/api', diagRouter);
 
 // In production, the same container serves the built web SPA.
 // Dockerfile copies the Vite build into ./public next to dist/.
