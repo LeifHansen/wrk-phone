@@ -130,6 +130,16 @@ db.exec(`
     PRIMARY KEY (contact_id, segment_id)
   );
 
+  CREATE TABLE IF NOT EXISTS voices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    provider TEXT NOT NULL DEFAULT 'grok',
+    tts_voice TEXT NOT NULL,         -- concrete engine voice used to synthesize today
+    style TEXT,
+    created_at INTEGER NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS media (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -145,6 +155,7 @@ db.exec(`
     active_number TEXT,
     active_number_sid TEXT,
     onboarded INTEGER NOT NULL DEFAULT 0,
+    credits INTEGER NOT NULL DEFAULT 100,
     updated_at INTEGER NOT NULL DEFAULT 0
   );
 `);
@@ -158,6 +169,10 @@ tryAddColumn('messages', 'agent_id INTEGER');
 tryAddColumn('messages', 'safety_blocked INTEGER NOT NULL DEFAULT 0');
 tryAddColumn('messages', 'media_url TEXT');
 tryAddColumn('campaigns', 'media_url TEXT');
+tryAddColumn('app_settings', 'credits INTEGER NOT NULL DEFAULT 100');
+tryAddColumn('agents', 'voice_id INTEGER');
+tryAddColumn('agents', 'voice_name TEXT');
+tryAddColumn('agents', 'tts_voice TEXT');
 
 // Migrate legacy agent_settings (single row per user) into agents.
 try {
@@ -265,6 +280,7 @@ export interface AppSettings {
   active_number: string | null;
   active_number_sid: string | null;
   onboarded: number;
+  credits: number;
   updated_at: number;
 }
 
@@ -289,3 +305,28 @@ export function getActiveNumber(userId: string): string {
   const s = getAppSettings(userId);
   return s.active_number || process.env.TWILIO_DEFAULT_FROM_NUMBER || '';
 }
+
+// ---- credits ----
+export function getCredits(userId: string): number {
+  return getAppSettings(userId).credits ?? 0;
+}
+export function addCredits(userId: string, amount: number): number {
+  getAppSettings(userId);
+  db.prepare(`UPDATE app_settings SET credits = credits + ?, updated_at = ? WHERE user_id = ?`)
+    .run(amount, Date.now(), userId);
+  return getCredits(userId);
+}
+/** Atomically spend credits. Returns true if spent, false if insufficient. */
+export function spendCredits(userId: string, amount: number): boolean {
+  getAppSettings(userId);
+  const r = db.prepare(
+    `UPDATE app_settings SET credits = credits - ?, updated_at = ? WHERE user_id = ? AND credits >= ?`
+  ).run(amount, Date.now(), userId, amount);
+  return r.changes > 0;
+}
+/** SMS = 1 credit / 160-char segment (min 1). MMS = flat 3 credits. */
+export function messageCost(body: string, hasMedia: boolean): number {
+  if (hasMedia) return 3;
+  return Math.max(1, Math.ceil((body || '').length / 160));
+}
+export const MMS_MAX_CHARS = 560;

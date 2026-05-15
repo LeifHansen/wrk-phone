@@ -115,6 +115,17 @@ export function AgentDetail() {
           </div>
         </div>
 
+        <div className="agent-section">
+          <h3>Voice</h3>
+          <VoicePicker
+            current={merged.voice_name || null}
+            onPick={async (v) => {
+              await api.patchAgent(aid, { voice_id: v.id ?? null, voice_name: v.name, tts_voice: v.tts_voice } as any);
+              setAgent((a) => a ? { ...a, voice_name: v.name, tts_voice: v.tts_voice } as any : a);
+            }}
+          />
+        </div>
+
         <div className="agent-section cta-row">
           <Link to={`/agents/${aid}/optimize`} className="btn lime lg" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>✨ Optimize</Link>
           <Link to={`/agents/${aid}/train`} className="btn neon lg" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>🎓 Quick Train</Link>
@@ -198,5 +209,61 @@ export function AgentDetail() {
         </div>
       )}
     </>
+  );
+}
+
+function VoicePicker({ current, onPick }: {
+  current: string | null;
+  onPick: (v: { id?: number; name: string; tts_voice: string }) => void;
+}) {
+  const [data, setData] = useState<any>(null);
+  const [creating, setCreating] = useState(false);
+  const [name, setName] = useState('');
+  const [style, setStyle] = useState('');
+
+  const load = () => api.listVoices().then(setData).catch(() => {});
+  useEffect(() => { load(); }, []);
+
+  const create = async () => {
+    if (!name.trim()) return;
+    setCreating(true);
+    try {
+      const v = await api.createVoice(name.trim(), style.trim());
+      onPick({ id: v.id, name: v.name, tts_voice: v.tts_voice });
+      setName(''); setStyle(''); load();
+    } catch (e: any) { alert(e.message); }
+    finally { setCreating(false); }
+  };
+
+  if (!data) return <p className="hint">Loading voices…</p>;
+  return (
+    <div>
+      <p className="hint" style={{ marginBottom: 10 }}>
+        {current ? <>Using <b>{current}</b>. </> : 'No voice set — pick or create one. '}{data.note}
+      </p>
+      <div className="seg-chips">
+        {data.presets.map((p: any) => (
+          <button key={p.name} className={'seg-chip' + (current === p.name ? ' on' : '')}
+            onClick={() => onPick({ name: p.name, tts_voice: p.tts_voice })}>
+            {p.name} · {p.style}
+          </button>
+        ))}
+        {data.custom.map((c: any) => (
+          <button key={c.id} className={'seg-chip' + (current === c.name ? ' on' : '')}
+            onClick={() => onPick({ id: c.id, name: c.name, tts_voice: c.tts_voice })}>
+            ★ {c.name}
+          </button>
+        ))}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' }}>
+        <input className="input" style={{ flex: 1, minWidth: 120 }} value={name}
+          onChange={(e) => setName(e.target.value)} placeholder="Voice name (e.g. Closer)" />
+        <input className="input" style={{ flex: 2, minWidth: 160 }} value={style}
+          onChange={(e) => setStyle(e.target.value)} placeholder="Style (e.g. deep, confident, persuasive)" />
+        <button className="btn pink" onClick={create} disabled={creating || !name.trim()}>
+          {creating ? '…' : 'Create voice'}
+        </button>
+      </div>
+    </div>
   );
 }

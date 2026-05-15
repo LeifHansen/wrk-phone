@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import twilio from 'twilio';
-import { db, getOrCreateConversation, getAgentForConversation } from '../lib/db.js';
+import { db, getOrCreateConversation, getAgentForConversation, getCredits, spendCredits, addCredits, messageCost, MMS_MAX_CHARS } from '../lib/db.js';
 import { generateReply, SAFETY_REGEX } from '../lib/agent.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { routeInbound } from '../lib/routing.js';
@@ -43,7 +43,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
     try {
       const { reply, safeToAutoSend } = await generateReply(USER, convId, body);
       const safetyBlocked = SAFETY_REGEX.test(body) ? 1 : 0;
-      if (agent.mode === 'auto' && reply && safeToAutoSend) {
+      if (agent.mode === 'auto' && reply && safeToAutoSend && spendCredits(USER, messageCost(reply, false))) {
         twiml.message(reply);
         db.prepare(
           `INSERT INTO messages (conversation_id, direction, body, status, created_at, is_ai, agent_id)
@@ -71,6 +71,13 @@ smsRouter.post('/sms/send', async (req, res) => {
   const body = String(req.body.body || '').trim();
   const mediaUrl = req.body.mediaUrl ? String(req.body.mediaUrl) : null;
   if (!to || (!body && !mediaUrl)) return res.status(400).json({ error: 'to and body (or mediaUrl) required' });
+  if (mediaUrl && body.length > MMS_MAX_CHARS) {
+    return res.status(400).json({ error: `MMS text is limited to ${MMS_MAX_CHARS} characters (got ${body.length}).` });
+  }
+  const cost = messageCost(body, !!mediaUrl);
+  if (!spendCredits(USER, cost)) {
+    return res.status(402).json({ error: `Not enough credits. This message costs ${cost} (balance ${getCredits(USER)}).`, cost });
+  }
   const convId = getOrCreateConversation(USER, to);
   try {
     const params: any = { to, body };
@@ -83,8 +90,9 @@ smsRouter.post('/sms/send', async (req, res) => {
        VALUES (?, 'out', ?, ?, ?, ?, ?)`
     ).run(convId, body, msg.sid, msg.status, Date.now(), mediaUrl);
     db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(Date.now(), convId);
-    res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status });
+    res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status, creditsSpent: cost });
   } catch (err: any) {
+    addCredits(USER, cost); // refund — the send failed
     res.status(500).json({ error: err.message });
   }
 });

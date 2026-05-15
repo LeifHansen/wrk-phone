@@ -51,7 +51,8 @@ voiceRouter.post('/voice/voicemail-greeting', async (req, res) => {
     }
     if (!agent) agent = getDefaultAgent(USER);
     const greeting = agent ? await generateVoiceGreeting(agent) : "Please leave a message after the tone.";
-    twiml.say({ voice: 'Polly.Joanna' }, greeting);
+    const voice = (agent && (agent as any).tts_voice) || 'Polly.Joanna-Neural';
+    twiml.say({ voice }, greeting);
   } catch {
     twiml.say("Please leave a message after the tone.");
   }
