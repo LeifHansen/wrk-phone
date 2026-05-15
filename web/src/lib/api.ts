@@ -23,6 +23,9 @@ export interface Agent {
   is_default: number;
   conversations?: number;
   ai_sent_7d?: number;
+  voice_id?: number | null;
+  voice_name?: string | null;
+  tts_voice?: string | null;
 }
 export type Condition =
   | { type: 'keyword'; terms: string[]; mode?: 'any' | 'all' }
@@ -142,6 +145,32 @@ export const api = {
   activeNumber: () =>
     req<{ activeNumber: string | null; onboarded: boolean; isProvisioned: boolean; messagingServiceSid: string | null }>(
       '/api/numbers/active'
+    ),
+  repairWebhooks: () =>
+    req<{ ok: boolean; number: string; webhooks: any; warnings: string[] }>(
+      '/api/numbers/repair-webhooks', { method: 'POST' }
+    ),
+  credits: () =>
+    req<{ balance: number; packages: { id: string; credits: number; price: number; label: string; note?: string }[]; rates: { sms: string; mms: string } }>(
+      '/api/credits'
+    ),
+  listVoices: () =>
+    req<{ grokAvailable: boolean; note: string;
+      presets: { name: string; style: string; tts_voice: string }[];
+      custom: { id: number; name: string; provider: string; tts_voice: string; style: string }[] }>(
+      '/api/voices'
+    ),
+  createVoice: (name: string, style: string) =>
+    req<{ id: number; name: string; provider: string; tts_voice: string }>(
+      '/api/voices', { method: 'POST', body: JSON.stringify({ name, style }) }
+    ),
+  buyCredits: (packageId: string) =>
+    req<{ ok: boolean; added: number; balance: number; stub: boolean }>(
+      '/api/credits/purchase', { method: 'POST', body: JSON.stringify({ packageId }) }
+    ),
+  webhookStatus: () =>
+    req<{ number: string; publicBaseUrl: string; reachable: boolean; ok: boolean; hint: string; numberCfg: any; serviceCfg: any }>(
+      '/api/numbers/webhook-status'
     ),
 };
 

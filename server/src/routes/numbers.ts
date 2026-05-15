@@ -6,70 +6,87 @@ export const numbersRouter = Router();
 const USER = process.env.DEMO_USER_ID || 'demo';
 
 function publicBase(): string {
-  const b = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
-  return b;
+  return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
 }
 function baseLooksReal(): boolean {
   const b = publicBase();
-  return !!b && !/your-tunnel|localhost|example\.com/i.test(b);
+  return !!b && /^https:\/\//.test(b) && !/your-tunnel|localhost|127\.0\.0\.1|example\.com/i.test(b);
 }
 
-// GET /api/numbers/search?country=US&areaCode=415&contains=
-// Returns available numbers (voice + SMS capable) to choose from.
+/**
+ * Configure ALL webhooks for a number so inbound calls + SMS reach this server.
+ * - Number's own Voice webhook  -> /api/voice/inbound
+ * - Number's own SMS webhook    -> /api/sms/inbound  (fallback if not in a service)
+ * - Messaging Service inbound   -> /api/sms/inbound  (authoritative when number
+ *   is in a Messaging Service — which is how every Wrk number is provisioned)
+ *
+ * Returns the URLs it set + warnings so the caller can see exactly what happened.
+ */
+async function configureWebhooks(numberSid: string): Promise<{ urls: any; warnings: string[] }> {
+  const base = publicBase();
+  const warnings: string[] = [];
+  if (!baseLooksReal()) {
+    warnings.push(
+      `PUBLIC_BASE_URL is "${base || '(empty)'}". Inbound calls/texts require a PUBLIC https URL Twilio can reach (ngrok in dev, or your deployed URL). Outbound still works; INBOUND WILL NOT until this is a real public URL. Set PUBLIC_BASE_URL, restart the server, and run Repair webhooks again.`
+    );
+  }
+  const voiceUrl = `${base}/api/voice/inbound`;
+  const smsUrl = `${base}/api/sms/inbound`;
+  const statusCb = `${base}/api/voice/status`;
+
+  // 1. The number itself (voice + sms fallback)
+  await twilioClient.incomingPhoneNumbers(numberSid).update({
+    voiceUrl, voiceMethod: 'POST',
+    smsUrl, smsMethod: 'POST',
+    statusCallback: statusCb, statusCallbackMethod: 'POST',
+  });
+
+  // 2. The Messaging Service (authoritative inbound route for pooled numbers)
+  if (twilioConfig.messagingServiceSid) {
+    try {
+      await twilioClient.messaging.v1.services(twilioConfig.messagingServiceSid).update({
+        inboundRequestUrl: smsUrl,
+        inboundMethod: 'POST',
+        useInboundWebhookOnNumber: false,
+      });
+    } catch (e: any) {
+      warnings.push(`Messaging Service inbound URL not set: ${e.message}`);
+    }
+  } else {
+    warnings.push('No TWILIO_MESSAGING_SERVICE_SID — inbound SMS uses the number webhook only.');
+  }
+
+  return { urls: { voiceUrl, smsUrl, statusCb }, warnings };
+}
+
+// GET /api/numbers/search
 numbersRouter.get('/numbers/search', async (req, res) => {
   const country = String(req.query.country || 'US').toUpperCase();
   const areaCode = req.query.areaCode ? Number(req.query.areaCode) : undefined;
   const contains = req.query.contains ? String(req.query.contains) : undefined;
   try {
-    const opts: any = { smsEnabled: true, voiceEnabled: true, limit: 20 };
+    const opts: any = { smsEnabled: true, voiceEnabled: true, mmsEnabled: true, limit: 20 };
     if (areaCode) opts.areaCode = areaCode;
     if (contains) opts.contains = contains;
-    const list = await twilioClient
-      .availablePhoneNumbers(country)
-      .local.list(opts);
-    res.json(
-      list.map((n) => ({
-        phoneNumber: n.phoneNumber,
-        friendlyName: n.friendlyName,
-        locality: n.locality,
-        region: n.region,
-        capabilities: n.capabilities,
-      }))
-    );
+    const list = await twilioClient.availablePhoneNumbers(country).local.list(opts);
+    res.json(list.map((n) => ({
+      phoneNumber: n.phoneNumber, friendlyName: n.friendlyName,
+      locality: n.locality, region: n.region, capabilities: n.capabilities,
+    })));
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
   }
 });
 
-// POST /api/numbers/buy  body: { phoneNumber }
-// 1. Purchase the number on the account, wiring its Voice webhook to our server.
-// 2. Attach it to the Messaging Service from the env (SMS routes via the service).
-// 3. Ensure the Messaging Service inbound URL points at our server.
-// 4. Persist as the user's active number.
+// POST /api/numbers/buy { phoneNumber }
 numbersRouter.post('/numbers/buy', async (req, res) => {
   const phoneNumber = String(req.body.phoneNumber || '').trim();
   if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
-
-  const base = publicBase();
-  const warnings: string[] = [];
-  if (!baseLooksReal()) {
-    warnings.push(
-      `PUBLIC_BASE_URL is "${base || '(empty)'}". Webhooks were set to it, but Twilio can't reach a non-public URL — update PUBLIC_BASE_URL and re-run setup, or fix the webhooks after deploy.`
-    );
-  }
-
   try {
-    // 1. Purchase + set the number's Voice webhook (SMS is handled by the service).
     const purchased = await twilioClient.incomingPhoneNumbers.create({
-      phoneNumber,
-      voiceUrl: `${base}/api/voice/inbound`,
-      voiceMethod: 'POST',
-      statusCallback: `${base}/api/voice/status`,
-      statusCallbackMethod: 'POST',
-      friendlyName: 'Wrk Phone',
+      phoneNumber, friendlyName: 'Wrk Phone',
     });
 
-    // 2. Attach to the Messaging Service (per requirement: all numbers tied to it).
     let attachedToService = false;
     if (twilioConfig.messagingServiceSid) {
       try {
@@ -78,43 +95,83 @@ numbersRouter.post('/numbers/buy', async (req, res) => {
           .phoneNumbers.create({ phoneNumberSid: purchased.sid });
         attachedToService = true;
       } catch (e: any) {
-        // Already-in-service or sender-pool errors shouldn't fail the whole flow.
-        warnings.push(`Could not attach to Messaging Service: ${e.message}`);
+        // non-fatal (already attached / sender pool rules)
       }
-
-      // 3. Make sure inbound SMS for the service routes to our server.
-      try {
-        await twilioClient.messaging.v1
-          .services(twilioConfig.messagingServiceSid)
-          .update({
-            inboundRequestUrl: `${base}/api/sms/inbound`,
-            inboundMethod: 'POST',
-            useInboundWebhookOnNumber: false,
-          });
-      } catch (e: any) {
-        warnings.push(`Could not set Messaging Service inbound URL: ${e.message}`);
-      }
-    } else {
-      warnings.push('No TWILIO_MESSAGING_SERVICE_SID set — number purchased but not attached to a Messaging Service.');
     }
 
-    // 4. Persist as the user's active number.
-    setActiveNumber(USER, purchased.phoneNumber, purchased.sid);
+    // Auto-configure every webhook so inbound works immediately.
+    const { urls, warnings } = await configureWebhooks(purchased.sid);
 
+    setActiveNumber(USER, purchased.phoneNumber, purchased.sid);
     res.json({
-      ok: true,
-      number: purchased.phoneNumber,
-      sid: purchased.sid,
-      attachedToService,
-      messagingServiceSid: twilioConfig.messagingServiceSid || null,
-      warnings,
+      ok: true, number: purchased.phoneNumber, sid: purchased.sid,
+      attachedToService, messagingServiceSid: twilioConfig.messagingServiceSid || null,
+      webhooks: urls, warnings,
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
   }
 });
 
-// GET /api/numbers/active — current provisioned number + onboarding state
+// POST /api/numbers/repair-webhooks — fix inbound for the CURRENT active number
+// (use this when a number was set up before auto-config, or PUBLIC_BASE_URL changed).
+numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
+  try {
+    const s = getAppSettings(USER);
+    let sid = s.active_number_sid;
+    const num = s.active_number || twilioConfig.defaultFrom;
+    if (!sid && num) {
+      const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
+      if (found.length) {
+        sid = found[0].sid;
+        setActiveNumber(USER, num, sid);
+      }
+    }
+    if (!sid) return res.status(400).json({ error: 'No active number found to repair. Buy/select a number first.' });
+    const { urls, warnings } = await configureWebhooks(sid);
+    res.json({ ok: true, number: num, webhooks: urls, warnings });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
+
+// GET /api/numbers/webhook-status — what Twilio currently has vs what we expect
+numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
+  try {
+    const s = getAppSettings(USER);
+    const num = s.active_number || twilioConfig.defaultFrom;
+    let sid = s.active_number_sid;
+    if (!sid && num) {
+      const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
+      sid = found[0]?.sid || null;
+    }
+    const base = publicBase();
+    const expected = { voiceUrl: `${base}/api/voice/inbound`, smsInbound: `${base}/api/sms/inbound` };
+    let numberCfg: any = null;
+    if (sid) {
+      const n = await twilioClient.incomingPhoneNumbers(sid).fetch();
+      numberCfg = { voiceUrl: n.voiceUrl, smsUrl: n.smsUrl };
+    }
+    let serviceCfg: any = null;
+    if (twilioConfig.messagingServiceSid) {
+      const svc = await twilioClient.messaging.v1.services(twilioConfig.messagingServiceSid).fetch();
+      serviceCfg = { inboundRequestUrl: svc.inboundRequestUrl, useInboundWebhookOnNumber: svc.useInboundWebhookOnNumber };
+    }
+    const reachable = baseLooksReal();
+    res.json({
+      number: num, publicBaseUrl: base, reachable,
+      expected, numberCfg, serviceCfg,
+      ok: reachable && serviceCfg?.inboundRequestUrl === expected.smsInbound,
+      hint: reachable
+        ? 'Looks routable. If inbound still misses, send a test text and check server logs for POST /api/sms/inbound.'
+        : 'PUBLIC_BASE_URL is not a reachable https URL — inbound cannot work until it is.',
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/numbers/active
 numbersRouter.get('/numbers/active', (_req, res) => {
   const s = getAppSettings(USER);
   res.json({

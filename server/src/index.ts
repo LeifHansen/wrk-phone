@@ -17,6 +17,8 @@ import { diagRouter } from './routes/diag.js';
 import { numbersRouter } from './routes/numbers.js';
 import { contactsRouter } from './routes/contacts.js';
 import { mediaRouter, MEDIA_DIR } from './routes/media.js';
+import { creditsRouter } from './routes/credits.js';
+import { voicesRouter } from './routes/voices.js';
 import './lib/db.js'; // ensure migrations run
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -41,6 +43,8 @@ app.use('/api', diagRouter);
 app.use('/api', numbersRouter);
 app.use('/api', contactsRouter);
 app.use('/api', mediaRouter);
+app.use('/api', creditsRouter);
+app.use('/api', voicesRouter);
 app.use('/media', express.static(MEDIA_DIR));
 
 // In production, the same container serves the built web SPA.

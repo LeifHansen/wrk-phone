@@ -4,6 +4,7 @@ import { api } from './lib/api';
 import { Setup } from './pages/Setup';
 import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
+import { Credits } from './pages/Credits';
 import { Inbox } from './pages/Inbox';
 import { Conversation } from './pages/Conversation';
 import { Keypad } from './pages/Keypad';
@@ -91,6 +92,7 @@ export function App() {
           <Route path="/routing/new" element={<RoutingEdit />} />
           <Route path="/routing/:id" element={<RoutingEdit />} />
           <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/credits" element={<Credits />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>

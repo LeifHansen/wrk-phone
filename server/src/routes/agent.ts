@@ -126,10 +126,13 @@ agentRouter.patch('/agents/:id', (req, res) => {
     rules_json: req.body.rules !== undefined ? JSON.stringify(req.body.rules) : a.rules_json,
     mode: ['off','suggest','auto'].includes(req.body.mode) ? req.body.mode : a.mode,
     voice_mode: ['off','suggest','auto'].includes(req.body.voice_mode) ? req.body.voice_mode : a.voice_mode,
+    voice_id: req.body.voice_id !== undefined ? (req.body.voice_id === null ? null : Number(req.body.voice_id)) : (a as any).voice_id,
+    voice_name: req.body.voice_name !== undefined ? String(req.body.voice_name).slice(0, 40) : (a as any).voice_name,
+    tts_voice: req.body.tts_voice !== undefined ? String(req.body.tts_voice).slice(0, 60) : (a as any).tts_voice,
   };
   db.prepare(
-    `UPDATE agents SET name=?, emoji=?, color=?, persona=?, instructions=?, examples_json=?, rules_json=?, mode=?, voice_mode=?, updated_at=? WHERE id=?`
-  ).run(next.name, next.emoji, next.color, next.persona, next.instructions, next.examples_json, next.rules_json, next.mode, next.voice_mode, Date.now(), id);
+    `UPDATE agents SET name=?, emoji=?, color=?, persona=?, instructions=?, examples_json=?, rules_json=?, mode=?, voice_mode=?, voice_id=?, voice_name=?, tts_voice=?, updated_at=? WHERE id=?`
+  ).run(next.name, next.emoji, next.color, next.persona, next.instructions, next.examples_json, next.rules_json, next.mode, next.voice_mode, next.voice_id, next.voice_name, next.tts_voice, Date.now(), id);
   res.json(hydrateAgent(fetchAgent(id)!));
 });
 
