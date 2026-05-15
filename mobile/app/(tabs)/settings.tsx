@@ -25,10 +25,25 @@ export default function Settings() {
 
   const [contactsTotal, setContactsTotal] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
+  const [credits, setCredits] = useState<number | null>(null);
+  const [hook, setHook] = useState<{ reachable: boolean; ok: boolean } | null>(null);
+  const [repairing, setRepairing] = useState(false);
 
   useEffect(() => {
     api.contactsMeta().then((m) => setContactsTotal(m.total)).catch(() => {});
+    api.credits().then((c) => setCredits(c.balance)).catch(() => {});
+    api.webhookStatus().then(setHook).catch(() => {});
   }, []);
+
+  const repair = async () => {
+    setRepairing(true);
+    try {
+      const r = await api.repairWebhooks();
+      Alert.alert('Webhooks repaired', `${r.number}\n\n${r.warnings?.length ? r.warnings.join('\n\n') : 'Inbound should now reach your inbox.'}`);
+      api.webhookStatus().then(setHook).catch(() => {});
+    } catch (e: any) { Alert.alert('Repair failed', e.message); }
+    finally { setRepairing(false); }
+  };
 
   const reRegister = async () => {
     setVoiceOk('?');
@@ -82,6 +97,26 @@ export default function Settings() {
           </Pressable>
           <Row label="Inbound webhook" value={`${api.base}/api/voice/inbound`} />
           <Row label="SMS webhook" value={`${api.base}/api/sms/inbound`} />
+        </Section>
+
+        <Section title="Inbound Routing">
+          <Row
+            label="Reachable by Twilio"
+            value={hook ? (hook.reachable ? 'Yes' : 'No — inbound blocked') : '…'}
+            status={hook?.reachable ? 'ok' : 'fail'}
+          />
+          <Row label="SMS inbound wired" value={hook ? (hook.ok ? 'OK' : 'Needs repair') : '…'} />
+          <Pressable onPress={repair} disabled={repairing} style={[styles.btn, repairing && { opacity: 0.5 }]}>
+            <Text style={styles.btnText}>{repairing ? 'Repairing…' : 'Repair inbound webhooks'}</Text>
+          </Pressable>
+        </Section>
+
+        <Section title="Credits">
+          <Row label="Balance" value={credits == null ? '…' : `${credits} credits`} status={credits ? 'ok' : '?'} />
+          <Row label="Rates" value="SMS 1/seg · MMS 3" />
+          <Pressable onPress={() => router.push('/credits')} style={styles.btn}>
+            <Text style={styles.btnText}>Buy credits</Text>
+          </Pressable>
         </Section>
 
         <Section title="Contacts">

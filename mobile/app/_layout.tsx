@@ -44,6 +44,7 @@ export default function RootLayout() {
         <Stack.Screen name="agent/new" options={{ presentation: 'modal', headerShown: true, headerTitle: 'New Agent' }} />
         <Stack.Screen name="agent/[id]/optimize" options={{ headerShown: true, headerTitle: 'Optimize' }} />
         <Stack.Screen name="agent/[id]/train" options={{ headerShown: true, headerTitle: 'Train' }} />
+        <Stack.Screen name="credits" options={{ headerShown: true, headerTitle: 'Credits' }} />
         <Stack.Screen name="routing/index" options={{ headerShown: true, headerTitle: 'Auto-routing' }} />
         <Stack.Screen name="routing/edit" options={{ presentation: 'modal', headerShown: true, headerTitle: 'Routing rule' }} />
       </Stack>

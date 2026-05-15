@@ -114,9 +114,29 @@ export const api = {
     }),
   // campaigns
   listCampaigns: () => request<any[]>('/api/campaigns'),
-  createCampaign: (payload: { name: string; template: string; channel?: string; recipients: { phone: string; name?: string }[] }) =>
+  createCampaign: (payload: any) =>
     request<{ id: number }>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) }),
   sendCampaign: (id: number) => request(`/api/campaigns/${id}/send`, { method: 'POST' }),
+  // credits
+  credits: () => request<{ balance: number; stripeEnabled: boolean;
+    packages: { id: string; credits: number; price: number; label: string; note?: string }[];
+    rates: { sms: string; mms: string } }>('/api/credits'),
+  buyCredits: (packageId: string) =>
+    request<{ ok: boolean; added: number; balance: number }>('/api/credits/purchase', { method: 'POST', body: JSON.stringify({ packageId }) }),
+  checkout: (packageId: string) =>
+    request<{ url: string | null; stub?: boolean; balance?: number; note?: string }>(
+      '/api/credits/checkout', { method: 'POST', body: JSON.stringify({ packageId }) }),
+  // webhooks repair
+  repairWebhooks: () => request<{ ok: boolean; number: string; webhooks: any; warnings: string[] }>('/api/numbers/repair-webhooks', { method: 'POST' }),
+  webhookStatus: () => request<{ reachable: boolean; ok: boolean; hint: string; publicBaseUrl: string }>('/api/numbers/webhook-status'),
+  // media + voices
+  generateImage: (prompt: string) =>
+    request<{ id: number; url: string; prompt: string }>('/api/media/generate', { method: 'POST', body: JSON.stringify({ prompt }) }),
+  listVoices: () => request<{ grokAvailable: boolean; note: string;
+    presets: { name: string; style: string; tts_voice: string }[];
+    custom: { id: number; name: string; provider: string; tts_voice: string; style: string }[] }>('/api/voices'),
+  createVoice: (name: string, style: string) =>
+    request<{ id: number; name: string; tts_voice: string }>('/api/voices', { method: 'POST', body: JSON.stringify({ name, style }) }),
   // push
   registerPush: (platform: 'ios' | 'android', token: string) =>
     request('/api/push/register', { method: 'POST', body: JSON.stringify({ platform, token }) }),
