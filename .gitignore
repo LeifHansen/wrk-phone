@@ -1,0 +1,52 @@
+# dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/
+
+# build output
+dist/
+build/
+*.tsbuildinfo
+
+# expo / native
+.expo/
+.expo-shared/
+ios/
+android/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+*.orig.*
+web-build/
+
+# data / db
+data/
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# env / secrets — NEVER commit
+.env
+.env.*
+!.env.example
+*.pem
+
+# logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# editor / OS
+.DS_Store
+.vscode/
+.idea/
+*.swp
+.cursor/
+
+# vite
+.vite/

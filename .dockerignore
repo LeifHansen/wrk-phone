@@ -1,0 +1,16 @@
+**/node_modules
+**/dist
+**/.expo
+**/ios
+**/android
+**/data
+**/*.db
+**/*.db-journal
+**/.env
+**/.env.local
+**/.DS_Store
+**/.git
+**/.vite
+**/coverage
+mobile/
+README.md

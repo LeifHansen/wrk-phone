@@ -1,0 +1,33 @@
+{
+  "expo": {
+    "name": "Wrk Phone",
+    "slug": "wrk-phone",
+    "scheme": "wrkphone",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": false,
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.yourco.wrkphone",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "Wrk Phone needs the mic for calls.",
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"]
+      }
+    },
+    "android": {
+      "package": "com.yourco.wrkphone",
+      "permissions": [
+        "RECORD_AUDIO",
+        "MODIFY_AUDIO_SETTINGS",
+        "POST_NOTIFICATIONS"
+      ]
+    },
+    "plugins": [
+      "expo-router"
+    ],
+    "extra": {
+      "apiBaseUrl": "http://localhost:4000"
+    }
+  }
+}
