@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Route, Routes } from 'react-router-dom';
+import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
+import { api } from './lib/api';
+import { Setup } from './pages/Setup';
 import { Inbox } from './pages/Inbox';
 import { Conversation } from './pages/Conversation';
 import { Keypad } from './pages/Keypad';
@@ -18,6 +20,18 @@ import { onIncoming } from './lib/voice';
 export function App() {
   const [inCall, setInCall] = useState(false);
   const [peer, setPeer] = useState('');
+  const nav = useNavigate();
+  const loc = useLocation();
+
+  // First-run gate: no provisioned number → force the setup screen.
+  useEffect(() => {
+    api.activeNumber()
+      .then((s) => {
+        if (!s.isProvisioned && loc.pathname !== '/setup') nav('/setup', { replace: true });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     onIncoming((call) => {
@@ -45,12 +59,16 @@ export function App() {
         <NavLink to="/campaigns" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
           <span className="glyph">📣</span> Campaigns
         </NavLink>
+        <NavLink to="/setup" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
+          <span className="glyph">📞</span> My Number
+        </NavLink>
         <NavLink to="/settings" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')}>
           <span className="glyph">⚙️</span> Settings
         </NavLink>
       </aside>
       <main className="main">
         <Routes>
+          <Route path="/setup" element={<Setup />} />
           <Route path="/" element={<Inbox />} />
           <Route path="/conversation/:id" element={<Conversation onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/keypad" element={<Keypad onCall={(p) => { setPeer(p); setInCall(true); }} />} />

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import twilio from 'twilio';
-import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation } from '../lib/db.js';
+import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation, getActiveNumber } from '../lib/db.js';
 import { generateVoiceGreeting } from '../lib/agent.js';
 import { twilioConfig } from '../lib/twilio.js';
 
@@ -12,7 +12,7 @@ const USER = process.env.DEMO_USER_ID || 'demo';
 // The mobile/web SDK passes the dialed number as `To` parameter.
 voiceRouter.post('/voice/outbound', (req, res) => {
   const to = String(req.body.To || '').trim();
-  const callerId = twilioConfig.defaultFrom;
+  const callerId = getActiveNumber(USER) || twilioConfig.defaultFrom;
   const twiml = new VoiceResponse();
   if (!to) {
     twiml.say('No destination number provided.');

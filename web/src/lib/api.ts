@@ -100,6 +100,24 @@ export const api = {
   listCampaigns: () => req<any[]>('/api/campaigns'),
   createCampaign: (payload: any) => req<{ id: number }>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) }),
   sendCampaign: (id: number) => req(`/api/campaigns/${id}/send`, { method: 'POST' }),
+  // number provisioning
+  searchNumbers: (params: { country?: string; areaCode?: string; contains?: string }) => {
+    const q = new URLSearchParams();
+    if (params.country) q.set('country', params.country);
+    if (params.areaCode) q.set('areaCode', params.areaCode);
+    if (params.contains) q.set('contains', params.contains);
+    return req<{ phoneNumber: string; friendlyName: string; locality: string; region: string }[]>(
+      `/api/numbers/search?${q.toString()}`
+    );
+  },
+  buyNumber: (phoneNumber: string) =>
+    req<{ ok: boolean; number: string; attachedToService: boolean; warnings: string[] }>(
+      '/api/numbers/buy', { method: 'POST', body: JSON.stringify({ phoneNumber }) }
+    ),
+  activeNumber: () =>
+    req<{ activeNumber: string | null; onboarded: boolean; isProvisioned: boolean; messagingServiceSid: string | null }>(
+      '/api/numbers/active'
+    ),
 };
 
 export const AGENT_COLORS = ['lime', 'pink', 'orange', 'neon', 'red', 'black'] as const;
