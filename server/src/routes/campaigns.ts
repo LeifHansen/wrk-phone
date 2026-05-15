@@ -13,21 +13,35 @@ campaignsRouter.get('/campaigns', (_req, res) => {
   res.json(rows);
 });
 
-// POST /api/campaigns  body: { name, template, channel?, recipients: [{phone, name?}] }
-// Renders {{name}} from recipients. Use \n in template for line breaks.
+// POST /api/campaigns
+// body: { name, template, channel?, mediaUrl?, recipients?, segmentId?, allContacts? }
+// Recipients can be supplied directly, OR resolved from a contact segment,
+// OR the entire contact list (allContacts=true).
 campaignsRouter.post('/campaigns', (req, res) => {
   const name = String(req.body.name || '').trim();
   const template = String(req.body.template || '').trim();
   const channel = (['sms', 'rcs', 'mms'] as const).includes(req.body.channel) ? req.body.channel : 'sms';
-  const recipients: { phone: string; name?: string }[] = Array.isArray(req.body.recipients) ? req.body.recipients : [];
-  if (!name || !template || recipients.length === 0) {
-    return res.status(400).json({ error: 'name, template, recipients required' });
+  const mediaUrl = req.body.mediaUrl ? String(req.body.mediaUrl) : null;
+
+  let recipients: { phone: string; name?: string }[] = Array.isArray(req.body.recipients) ? req.body.recipients : [];
+  if (req.body.segmentId) {
+    recipients = db.prepare(
+      `SELECT c.phone, c.name FROM contacts c
+       JOIN contact_segments cs ON cs.contact_id = c.id
+       WHERE c.user_id = ? AND cs.segment_id = ?`
+    ).all(USER, Number(req.body.segmentId)) as any[];
+  } else if (req.body.allContacts) {
+    recipients = db.prepare(`SELECT phone, name FROM contacts WHERE user_id = ?`).all(USER) as any[];
+  }
+
+  if (!name || (!template && !mediaUrl) || recipients.length === 0) {
+    return res.status(400).json({ error: 'name, template (or mediaUrl), and at least one recipient required' });
   }
   const cId = Number(
     db.prepare(
-      `INSERT INTO campaigns (user_id, name, template, channel, total_count, created_at, status)
-       VALUES (?, ?, ?, ?, ?, ?, 'draft')`
-    ).run(USER, name, template, channel, recipients.length, Date.now()).lastInsertRowid
+      `INSERT INTO campaigns (user_id, name, template, channel, total_count, created_at, status, media_url)
+       VALUES (?, ?, ?, ?, ?, ?, 'draft', ?)`
+    ).run(USER, name, template, channel, recipients.length, Date.now(), mediaUrl).lastInsertRowid
   );
   const ins = db.prepare(
     `INSERT INTO campaign_recipients (campaign_id, phone, name) VALUES (?, ?, ?)`
@@ -61,6 +75,7 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
       const body = String(campaign.template).replace(/\{\{\s*name\s*\}\}/g, r.name || 'there');
       try {
         const params: any = { to: r.phone, body };
+        if (campaign.media_url) params.mediaUrl = [campaign.media_url];   // MMS
         if (twilioConfig.messagingServiceSid) params.messagingServiceSid = twilioConfig.messagingServiceSid;
         else params.from = twilioConfig.defaultFrom;
         // Note: For RCS, requires a Messaging Service configured with an RCS sender

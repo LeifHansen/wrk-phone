@@ -32,6 +32,13 @@ export default function TabsLayout() {
         }}
       />
       <Tabs.Screen
+        name="contacts"
+        options={{
+          title: 'Contacts',
+          tabBarIcon: ({ color }) => <Icon glyph="≡" color={color} />,
+        }}
+      />
+      <Tabs.Screen
         name="campaigns"
         options={{
           title: 'Campaigns',

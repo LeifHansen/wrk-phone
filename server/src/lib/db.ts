@@ -117,6 +117,28 @@ db.exec(`
     PRIMARY KEY(user_id, platform)
   );
 
+  CREATE TABLE IF NOT EXISTS segments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    UNIQUE(user_id, name)
+  );
+  CREATE TABLE IF NOT EXISTS contact_segments (
+    contact_id INTEGER NOT NULL REFERENCES contacts(id) ON DELETE CASCADE,
+    segment_id INTEGER NOT NULL REFERENCES segments(id) ON DELETE CASCADE,
+    PRIMARY KEY (contact_id, segment_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS media (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    url TEXT NOT NULL,
+    prompt TEXT,
+    kind TEXT NOT NULL DEFAULT 'generated' CHECK(kind IN ('generated','upload')),
+    created_at INTEGER NOT NULL
+  );
+
   -- Per-user provisioned phone number (selected during onboarding).
   CREATE TABLE IF NOT EXISTS app_settings (
     user_id TEXT PRIMARY KEY,
@@ -134,6 +156,8 @@ function tryAddColumn(table: string, def: string) {
 tryAddColumn('conversations', 'agent_id INTEGER');
 tryAddColumn('messages', 'agent_id INTEGER');
 tryAddColumn('messages', 'safety_blocked INTEGER NOT NULL DEFAULT 0');
+tryAddColumn('messages', 'media_url TEXT');
+tryAddColumn('campaigns', 'media_url TEXT');
 
 // Migrate legacy agent_settings (single row per user) into agents.
 try {
