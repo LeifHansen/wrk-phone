@@ -160,18 +160,27 @@ function parseCsv(text: string): { name: string; phone: string }[] {
   return out;
 }
 
-function bulkUpsert(rows: { name: string; phone: string }[]) {
+function bulkUpsert(rows: { name: string; phone: string }[], segmentId?: number | null) {
   let synced = 0, skipped = 0;
   const up = db.prepare(
     `INSERT INTO contacts (user_id, phone, name) VALUES (?, ?, ?)
      ON CONFLICT(user_id, phone) DO UPDATE SET name = COALESCE(NULLIF(excluded.name,''), contacts.name)`
   );
+  const getId = db.prepare(`SELECT id FROM contacts WHERE user_id = ? AND phone = ?`);
+  const link = db.prepare(`INSERT OR IGNORE INTO contact_segments (contact_id, segment_id) VALUES (?, ?)`);
+  const validSeg = segmentId
+    ? db.prepare(`SELECT id FROM segments WHERE id = ? AND user_id = ?`).get(segmentId, USER)
+    : null;
   const tx = db.transaction((list: typeof rows) => {
     for (const r of list) {
       const phone = normalizePhone(r.phone);
       if (!phone) { skipped++; continue; }
       up.run(USER, phone, (r.name || '').slice(0, 120));
       synced++;
+      if (validSeg) {
+        const c = getId.get(USER, phone) as { id: number } | undefined;
+        if (c) link.run(c.id, segmentId);
+      }
     }
   });
   tx(rows);
@@ -191,7 +200,8 @@ contactsRouter.get('/contacts/export.csv', (_req, res) => {
 contactsRouter.post('/contacts/import-csv', (req, res) => {
   const rows = parseCsv(String(req.body?.csv || ''));
   if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed' });
-  const r = bulkUpsert(rows);
+  const segmentId = req.body?.segmentId ? Number(req.body.segmentId) : null;
+  const r = bulkUpsert(rows, segmentId);
   res.json({ ...r, total: (db.prepare(`SELECT COUNT(*) n FROM contacts WHERE user_id=?`).get(USER) as any).n });
 });
 
@@ -210,7 +220,7 @@ contactsRouter.post('/contacts/import-url', async (req, res) => {
     if (!r.ok) return res.status(400).json({ error: `fetch failed (${r.status}). For Google Sheets: Share → Anyone with the link → Viewer.` });
     const rows = parseCsv(await r.text());
     if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed — is the sheet shared publicly?' });
-    const out = bulkUpsert(rows);
+    const out = bulkUpsert(rows, req.body?.segmentId ? Number(req.body.segmentId) : null);
     res.json({ ...out, total: (db.prepare(`SELECT COUNT(*) n FROM contacts WHERE user_id=?`).get(USER) as any).n });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

@@ -21,6 +21,7 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
   const [newName, setNewName] = useState('');
   const [picked, setPicked] = useState<Contact | null>(null);
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [editSeg, setEditSeg] = useState<{ id: number; name: string } | null>(null);
 
   const load = () => {
     api.listContacts(q || undefined, activeSeg || undefined).then(setContacts).catch(() => {});
@@ -39,7 +40,32 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
   const newSegment = async () => {
     const name = prompt('Segment name (e.g. "VIP", "Leads")');
     if (!name?.trim()) return;
-    try { await api.addSegment(name.trim()); load(); } catch (e: any) { alert(e.message); }
+    try {
+      const s = await api.addSegment(name.trim());
+      await load();
+      setEditSeg({ id: s.id, name: s.name }); // jump straight into selecting members
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const inEditSeg = (c: Contact) => !!editSeg && c.segments.some((s) => s.id === editSeg.id);
+
+  const toggleMember = async (c: Contact) => {
+    if (!editSeg) return;
+    try {
+      if (inEditSeg(c)) await api.removeFromSegment(editSeg.id, c.id);
+      else await api.addToSegment(editSeg.id, c.id);
+      await load();
+    } catch (e: any) { alert(e.message); }
+  };
+
+  const importCsvFile = async (file: File) => {
+    if (!editSeg) return;
+    try {
+      const text = await file.text();
+      const r = await api.importContactsCsv(text, editSeg.id);
+      alert(`Imported ${r.synced} into "${editSeg.name}" (${r.skipped} skipped).`);
+      await load();
+    } catch (e: any) { alert(e.message); }
   };
 
   const toggleSeg = async (c: Contact, segId: number, has: boolean) => {
@@ -68,9 +94,22 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
     <>
       <div className="page-h">
         <div><h2>Contacts</h2><div className="sub">{contacts.length} shown</div></div>
-        <button className="btn ghost" onClick={newSegment}>+ Segment</button>
+        <button className="btn" onClick={newSegment}>+ Segment</button>
       </div>
       <div className="page-body">
+        {editSeg && (
+          <div className="cond-card" style={{ marginBottom: 14, background: 'var(--lime)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <b style={{ flex: 1 }}>Add to “{editSeg.name}” — tick contacts below</b>
+              <label className="btn ghost" style={{ cursor: 'pointer', margin: 0 }}>
+                Import .csv
+                <input type="file" accept=".csv,text/csv" style={{ display: 'none' }}
+                  onChange={(e) => { const f = e.target.files?.[0]; if (f) importCsvFile(f); e.currentTarget.value = ''; }} />
+              </label>
+              <button className="btn" onClick={() => setEditSeg(null)}>Done</button>
+            </div>
+          </div>
+        )}
         {/* add — phone is the only required field */}
         <div className="contact-add">
           <input className="input" placeholder="Phone (required) e.g. 4155550142"
@@ -132,13 +171,18 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
         <div className="contact-list">
           {contacts.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: 24 }}>No contacts. Add one above ↑</p>}
           {contacts.map((c) => (
-            <div key={c.id} className="contact-row" onClick={() => setPicked(c)}>
+            <div key={c.id} className="contact-row"
+              onClick={() => (editSeg ? toggleMember(c) : setPicked(c))}>
+              {editSeg && (
+                <input type="checkbox" readOnly checked={inEditSeg(c)}
+                  style={{ width: 20, height: 20, accentColor: 'var(--ink)' }} />
+              )}
               <div className="c-av">{(c.name || c.phone).replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#'}</div>
               <div className="c-body">
                 <div className="c-name">{c.name || pretty(c.phone)}</div>
                 <div className="c-sub">{c.name ? pretty(c.phone) : ''}{c.segments.map((s) => ` · ${s.name}`).join('')}</div>
               </div>
-              <span className="c-chev">›</span>
+              {!editSeg && <span className="c-chev">›</span>}
             </div>
           ))}
         </div>

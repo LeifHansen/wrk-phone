@@ -219,10 +219,10 @@ export const api = {
     req<{ url: string }>('/api/media/avatar', { method: 'POST', body: JSON.stringify({ kind, agentId, prompt }) }),
   account: () => req<{ avatarUrl: string | null }>('/api/account'),
   // contacts sync (Sheets/Excel)
-  importContactsCsv: (csv: string) =>
-    req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-csv', { method: 'POST', body: JSON.stringify({ csv }) }),
-  importContactsUrl: (url: string) =>
-    req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-url', { method: 'POST', body: JSON.stringify({ url }) }),
+  importContactsCsv: (csv: string, segmentId?: number) =>
+    req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-csv', { method: 'POST', body: JSON.stringify({ csv, segmentId }) }),
+  importContactsUrl: (url: string, segmentId?: number) =>
+    req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-url', { method: 'POST', body: JSON.stringify({ url, segmentId }) }),
   // recurring billing
   subscribe: (plan: 'a2p' | 'number', ref?: string) =>
     req<{ url: string | null; stub?: boolean; note?: string }>(
