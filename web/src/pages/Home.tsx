@@ -70,7 +70,10 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
   return (
     <div className="phone">
       <div className="phone-screen">
-        <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
+        <div className="phone-num-row">
+          <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
+          <button className="contacts-mini" onClick={openPicker} title="Pick a contact" aria-label="Contacts">≡</button>
+        </div>
         <div className="phone-toggle">
           <button className={'pt-btn' + (mode === 'call' ? ' on' : '')} onClick={() => setMode('call')}>CALL</button>
           <button className={'pt-btn' + (mode === 'text' ? ' on' : '')} onClick={() => setMode('text')}>TEXT</button>
