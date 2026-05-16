@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import twilio from 'twilio';
-import { db, getOrCreateConversation, getAgentForConversation, getCredits, spendCredits, addCredits, messageCost, MMS_MAX_CHARS } from '../lib/db.js';
+import { db, getOrCreateConversation, getAgentForConversation, getCredits, spendCredits, addCredits, messageCost, MMS_MAX_CHARS, classifyCompliance, setOptOut, isOptedOut } from '../lib/db.js';
 import { generateReply, SAFETY_REGEX } from '../lib/agent.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { routeInbound } from '../lib/routing.js';
@@ -15,6 +15,28 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   const body = String(req.body.Body || '');
   const sid = String(req.body.MessageSid || '');
   const convId = getOrCreateConversation(USER, from);
+
+  // Carrier-required opt-out handling. Always recorded, runs before the agent.
+  const compliance = classifyCompliance(body);
+  if (compliance) {
+    db.prepare(
+      `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at)
+       VALUES (?, 'in', ?, ?, 'received', ?)`
+    ).run(convId, body, sid, Date.now());
+    db.prepare('UPDATE conversations SET last_message_at = ?, unread_count = unread_count + 1 WHERE id = ?')
+      .run(Date.now(), convId);
+    const twiml = new MessagingResponse();
+    if (compliance === 'stop') {
+      setOptOut(USER, from, true);
+      twiml.message('You are unsubscribed and will receive no more messages. Reply START to resubscribe.');
+    } else if (compliance === 'start') {
+      setOptOut(USER, from, false);
+      twiml.message('You are resubscribed. Reply HELP for help, STOP to unsubscribe.');
+    } else { // help
+      twiml.message('Wrk Phone: reply STOP to unsubscribe. Msg & data rates may apply.');
+    }
+    return res.type('text/xml').send(twiml.toString());
+  }
 
   // If the conversation has no agent assigned yet, run auto-routing rules.
   // Once an agent is assigned, the conversation sticks with it (manual switch
@@ -73,6 +95,9 @@ smsRouter.post('/sms/send', async (req, res) => {
   if (!to || (!body && !mediaUrl)) return res.status(400).json({ error: 'to and body (or mediaUrl) required' });
   if (mediaUrl && body.length > MMS_MAX_CHARS) {
     return res.status(400).json({ error: `MMS text is limited to ${MMS_MAX_CHARS} characters (got ${body.length}).` });
+  }
+  if (isOptedOut(USER, to)) {
+    return res.status(409).json({ error: 'This contact has opted out (replied STOP). Messaging them is not allowed.' });
   }
   const cost = messageCost(body, !!mediaUrl);
   if (!spendCredits(USER, cost)) {
