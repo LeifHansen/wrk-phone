@@ -4,6 +4,7 @@ import { api } from './lib/api';
 import { Setup } from './pages/Setup';
 import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
+import { Login } from './pages/Login';
 import { Credits } from './pages/Credits';
 import { Numbers } from './pages/Numbers';
 import { A2P } from './pages/A2P';
@@ -83,6 +84,7 @@ export function App() {
       </aside>
       <main className="main">
         <Routes>
+          <Route path="/login" element={<Login />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />

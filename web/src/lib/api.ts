@@ -1,9 +1,18 @@
+export const auth = {
+  get token() { return localStorage.getItem('wrk_token'); },
+  set token(v: string | null) { v ? localStorage.setItem('wrk_token', v) : localStorage.removeItem('wrk_token'); },
+};
+
 async function req<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   let res: Response;
   try {
     res = await fetch(path, {
       ...init,
-      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+        ...(init.headers || {}),
+      },
     });
   } catch (e) {
     // eslint-disable-next-line no-console
@@ -70,6 +79,13 @@ export interface Optimization {
 }
 
 export const api = {
+  // auth
+  signup: (email: string, password: string) =>
+    req<{ token: string; email: string }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email: string, password: string) =>
+    req<{ token: string; email: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  me: () => req<{ userId: string; email: string | null; authenticated: boolean }>('/api/auth/me'),
+  logout: () => req('/api/auth/logout', { method: 'POST' }),
   // conversations
   listConversations: () => req<any[]>('/api/conversations'),
   getMessages: (id: number) => req<{ conversation: any; messages: any[]; agent: Agent | null }>(`/api/conversations/${id}/messages`),

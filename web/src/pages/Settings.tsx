@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ensureDevice } from '../lib/voice';
-import { api } from '../lib/api';
+import { api, auth } from '../lib/api';
 
 // Dev diagnostics (webhook plumbing, raw connection state) are hidden from
 // normal users. Toggle by running `localStorage.wrk_dev = '1'` in the console.
@@ -17,6 +17,8 @@ export function Settings() {
   const [avatar, setAvatar] = useState<string | null>(null);
   const [genning, setGenning] = useState(false);
   const [subs, setSubs] = useState<any[]>([]);
+  const [me, setMe] = useState<{ email: string | null; authenticated: boolean } | null>(null);
+  const nav = useNavigate();
 
   const loadHook = () => api.webhookStatus().then(setHook).catch(() => setHook(null));
 
@@ -26,6 +28,7 @@ export function Settings() {
     api.activeNumber().then(setLine).catch(() => {});
     api.account().then((a) => setAvatar(a.avatarUrl)).catch(() => {});
     api.billingSubs().then((b) => setSubs(b.subscriptions || [])).catch(() => {});
+    api.me().then(setMe).catch(() => {});
     if (DEV) loadHook();
   }, []);
 
@@ -60,6 +63,15 @@ export function Settings() {
         <div className="set-section">
           <h3>ACCOUNT</h3>
           <div className="set-card">
+            <Row label="Signed in as">
+              {me?.authenticated
+                ? <span>{me.email}</span>
+                : <Link to="/login" style={{ color: 'var(--neon)' }}>Log in / Sign up</Link>}
+            </Row>
+            {me?.authenticated && (
+              <button className="btn ghost" style={{ margin: '8px 0' }}
+                onClick={() => { auth.token = null; nav('/login'); }}>Log out</button>
+            )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0' }}>
               {avatar
                 ? <img src={avatar} alt="" style={{ width: 64, height: 64, borderRadius: '50%', border: 'var(--border)', objectFit: 'cover' }} />
