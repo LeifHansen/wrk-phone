@@ -13,7 +13,7 @@
 #   Status   POST  https://<app>.fly.dev/api/voice/status   (optional)
 #   Status   POST  https://<app>.fly.dev/api/sms/status     (optional)
 
-app = "wrk-phone"            # change before first launch
+app = "wrk-phone-8ebcfd"
 primary_region = "iad"
 
 [build]
