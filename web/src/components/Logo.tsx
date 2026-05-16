@@ -1,28 +1,26 @@
-// Wrk.Phone brand mark: lime rounded tile with a phone + signal glyph,
-// wordmark "Wrk" (mono) · purple dot · "Phone" (flowy script).
+// Wrk.Phone brand mark: lime rounded tile with a clean phone-receiver +
+// signal waves, wordmark "Wrk" (mono) · purple dot · "Phone" (script).
 export function LogoMark({ size = 44 }: { size?: number }) {
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
-      <rect x="3" y="3" width="58" height="58" rx="15"
-        fill="var(--lime)" stroke="var(--ink)" strokeWidth="4" />
-      {/* phone receiver — blocky rounded handset */}
+      <rect x="3" y="3" width="58" height="58" rx="16"
+        fill="var(--lime)" stroke="var(--ink)" strokeWidth="3.5" />
+      {/* clean filled phone receiver */}
       <path
-        d="M20 22c0-2.2 1.8-4 4-4h6c2.2 0 4 1.8 4 4v20c0 2.2-1.8 4-4 4h-6c-2.2 0-4-1.8-4-4V22z
-           M24 27h6"
+        d="M22.5 18c1.1 0 2 .7 2.4 1.8l1.5 4.2c.3.9.1 1.9-.6 2.6l-1.7 1.6a16 16 0 0 0 7.1 7.1l1.6-1.7c.7-.7 1.7-.9 2.6-.6l4.2 1.5c1.1.4 1.8 1.3 1.8 2.4v4.6a3 3 0 0 1-3.2 3A22 22 0 0 1 16 21.2a3 3 0 0 1 3-3.2h3.5z"
         fill="var(--ink)" />
-      <rect x="20" y="25" width="14" height="14" rx="3" fill="var(--lime)" />
-      {/* signal arcs */}
-      <path d="M40 24c4 3 4 13 0 16" stroke="var(--ink)" strokeWidth="4"
+      {/* signal waves */}
+      <path d="M41 22a10 10 0 0 1 0 14" stroke="var(--ink)" strokeWidth="3.5"
         fill="none" strokeLinecap="round" />
-      <path d="M45 20c7 5 7 19 0 24" stroke="var(--ink)" strokeWidth="4"
+      <path d="M46 17a17 17 0 0 1 0 24" stroke="var(--ink)" strokeWidth="3.5"
         fill="none" strokeLinecap="round" />
     </svg>
   );
 }
 
 export function Logo({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
-  const tile = size === 'lg' ? 64 : 40;
-  const word = size === 'lg' ? 30 : 18;
+  const tile = size === 'lg' ? 60 : 42;
+  const word = size === 'lg' ? 28 : 17;
   return (
     <div className="brand" style={{ flexDirection: size === 'lg' ? 'row' : 'column' }}>
       <LogoMark size={tile} />

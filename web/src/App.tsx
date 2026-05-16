@@ -6,6 +6,7 @@ import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
 import { Login } from './pages/Login';
 import { Logo } from './components/Logo';
+import { IconPhone, IconMessage, IconContacts, IconBlast, IconAgent, IconStats, IconGear } from './components/Icons';
 import { Credits } from './pages/Credits';
 import { Numbers } from './pages/Numbers';
 import { A2P } from './pages/A2P';
@@ -56,31 +57,31 @@ export function App() {
       <aside className="sidebar">
         <Logo size="sm" />
         <NavLink to="/" end className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Phone">
-          <span className="glyph">✆</span><span className="nav-label">PHONE</span>
+          <span className="glyph"><IconPhone /></span><span className="nav-label">PHONE</span>
         </NavLink>
         <NavLink to="/messages" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Messages">
-          <span className="glyph">✉</span><span className="nav-label">MSGS</span>
+          <span className="glyph"><IconMessage /></span><span className="nav-label">MSGS</span>
         </NavLink>
         <NavLink to="/contacts" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Contacts">
-          <span className="glyph">≡</span><span className="nav-label">CONTACTS</span>
+          <span className="glyph"><IconContacts /></span><span className="nav-label">CONTACTS</span>
         </NavLink>
         <NavLink to="/campaigns" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Campaigns">
-          <span className="glyph">➤</span><span className="nav-label">BLAST</span>
+          <span className="glyph"><IconBlast /></span><span className="nav-label">BLAST</span>
         </NavLink>
         <NavLink to="/agents" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agents">
-          <span className="glyph">✦</span><span className="nav-label">AGENTS</span>
+          <span className="glyph"><IconAgent /></span><span className="nav-label">AGENTS</span>
         </NavLink>
         <NavLink to="/analytics" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Analytics">
-          <span className="glyph">▦</span><span className="nav-label">STATS</span>
+          <span className="glyph"><IconStats /></span><span className="nav-label">STATS</span>
         </NavLink>
         <div className="spacer" />
         <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="dot">✆</div>
+          <div className="dot"><IconPhone size={18} /></div>
           <div className="lbl">WRK LINE</div>
           <div className="bars"><i /><i /><i /><i /></div>
         </NavLink>
         <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Admin">
-          <span className="glyph">⚙</span><span className="nav-label">ADMIN</span>
+          <span className="glyph"><IconGear /></span><span className="nav-label">ADMIN</span>
         </NavLink>
       </aside>
       <main className="main">
