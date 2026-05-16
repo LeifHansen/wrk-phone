@@ -158,6 +158,11 @@ db.exec(`
     credits INTEGER NOT NULL DEFAULT 100,
     updated_at INTEGER NOT NULL DEFAULT 0
   );
+
+  -- Indexes for hot read paths (defined last; all tables exist by here).
+  CREATE INDEX IF NOT EXISTS idx_conversations_user_recent ON conversations(user_id, last_message_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_campaign_recipients ON campaign_recipients(campaign_id, status);
+  CREATE INDEX IF NOT EXISTS idx_contacts_user_name ON contacts(user_id, name);
 `);
 
 // Lightweight migrations for upgrades from the v0.1 single-agent schema.
