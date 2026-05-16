@@ -51,9 +51,12 @@ function wireCall(call: Call, label: string) {
 
 export async function placeCall(to: string): Promise<Call> {
   const dev = await ensureDevice();
-  logInfo('placeCall', `connecting to ${to}`);
+  // Pass the user's selected shared-pool number as caller ID.
+  let from = '';
+  try { from = (await api.activeNumber()).activeNumber || ''; } catch { /* fall back server-side */ }
+  logInfo('placeCall', `connecting to ${to}${from ? ` from ${from}` : ''}`);
   try {
-    activeCall = await dev.connect({ params: { To: to } });
+    activeCall = await dev.connect({ params: { To: to, From: from } });
     wireCall(activeCall, 'outgoing');
     return activeCall;
   } catch (e) {

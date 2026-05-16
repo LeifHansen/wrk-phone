@@ -13,7 +13,13 @@ const USER = process.env.DEMO_USER_ID || 'demo';
 // The mobile/web SDK passes the dialed number as `To` parameter.
 voiceRouter.post('/voice/outbound', (req, res) => {
   const to = String(req.body.To || '').trim();
-  const callerId = getActiveNumber(USER) || twilioConfig.defaultFrom;
+  // The web/mobile SDK passes the caller's selected shared-pool number as
+  // `From`. Honor it (it's on the account); else fall back to the shared
+  // default. Loose E.164 check — Twilio rejects anything not on the account.
+  const picked = String(req.body.From || '').trim();
+  const callerId = /^\+\d{8,15}$/.test(picked)
+    ? picked
+    : (getActiveNumber(USER) || twilioConfig.defaultFrom);
   log.info('voice/outbound', `dial request`, { to, callerId, callSid: req.body.CallSid, from: req.body.From });
   const twiml = new VoiceResponse();
   try {

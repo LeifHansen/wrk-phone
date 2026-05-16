@@ -1,9 +1,12 @@
 import { Router } from 'express';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { getAppSettings, setActiveNumber } from '../lib/db.js';
+import { getUserId, OWNER_ID } from '../lib/auth.js';
 
 export const numbersRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+// Shared pool model: numbers live on the one Twilio account/Messaging Service
+// (OWNER). Each user *selects* one from the pool as their own outbound line
+// (per-user, app_settings keyed by req.userId). Webhook/infra stays OWNER.
 
 function publicBase(): string {
   return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
@@ -122,7 +125,7 @@ numbersRouter.post('/numbers/buy', async (req, res) => {
     // Auto-configure every webhook so inbound works immediately.
     const { urls, warnings } = await configureWebhooks(purchased.sid);
 
-    setActiveNumber(USER, purchased.phoneNumber, purchased.sid);
+    setActiveNumber(OWNER_ID, purchased.phoneNumber, purchased.sid);
     res.json({
       ok: true, number: purchased.phoneNumber, sid: purchased.sid,
       attachedToService, messagingServiceSid: twilioConfig.messagingServiceSid || null,
@@ -137,14 +140,14 @@ numbersRouter.post('/numbers/buy', async (req, res) => {
 // (use this when a number was set up before auto-config, or PUBLIC_BASE_URL changed).
 numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
   try {
-    const s = getAppSettings(USER);
+    const s = getAppSettings(OWNER_ID);
     let sid = s.active_number_sid;
     const num = s.active_number || twilioConfig.defaultFrom;
     if (!sid && num) {
       const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
       if (found.length) {
         sid = found[0].sid;
-        setActiveNumber(USER, num, sid);
+        setActiveNumber(OWNER_ID, num, sid);
       }
     }
     if (!sid) return res.status(400).json({ error: 'No active number found to repair. Buy/select a number first.' });
@@ -158,7 +161,7 @@ numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
 // GET /api/numbers/webhook-status — what Twilio currently has vs what we expect
 numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
   try {
-    const s = getAppSettings(USER);
+    const s = getAppSettings(OWNER_ID);
     const num = s.active_number || twilioConfig.defaultFrom;
     let sid = s.active_number_sid;
     if (!sid && num) {
@@ -206,8 +209,8 @@ numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
 });
 
 // GET /api/numbers/active
-numbersRouter.get('/numbers/active', (_req, res) => {
-  const s = getAppSettings(USER);
+numbersRouter.get('/numbers/active', (req, res) => {
+  const s = getAppSettings(getUserId(req));
   res.json({
     activeNumber: s.active_number || process.env.TWILIO_DEFAULT_FROM_NUMBER || null,
     activeNumberSid: s.active_number_sid || null,
@@ -219,9 +222,9 @@ numbersRouter.get('/numbers/active', (_req, res) => {
 
 // GET /api/numbers/list — every number owned on the account (for the
 // "Manage / add numbers" screen). Marks which one is active.
-numbersRouter.get('/numbers/list', async (_req, res) => {
+numbersRouter.get('/numbers/list', async (req, res) => {
   try {
-    const s = getAppSettings(USER);
+    const s = getAppSettings(getUserId(req));
     const nums = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
     res.json({
       active: s.active_number || twilioConfig.defaultFrom || null,
@@ -240,7 +243,8 @@ numbersRouter.get('/numbers/list', async (_req, res) => {
 });
 
 // POST /api/numbers/set-active  { sid }
-numbersRouter.post('/numbers/set-active', async (req, res) => {
+numbersRouter.post('/numbers/set-active', async (req: any, res) => {
+  const USER = getUserId(req);
   try {
     const sid = String(req.body?.sid || '');
     const n = await twilioClient.incomingPhoneNumbers(sid).fetch();
@@ -266,6 +270,8 @@ numbersRouter.post('/numbers/buy-additional', async (req, res) => {
       } catch { /* non-fatal */ }
     }
     const { warnings } = await configureWebhooks(purchased.sid);
+    // Joins the shared pool/campaign AND becomes the buyer's selected line.
+    setActiveNumber(getUserId(req), purchased.phoneNumber, purchased.sid);
     res.json({ ok: true, number: purchased.phoneNumber, sid: purchased.sid, monthly: 2.0, warnings });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
