@@ -28,9 +28,27 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
   const nav = useNavigate();
   const [num, setNum] = useState('');
   const [mode, setMode] = useState<'call' | 'text'>('call');
+  const [pick, setPick] = useState(false);
+  const [recents, setRecents] = useState<any[]>([]);
+  const [contacts, setContacts] = useState<any[]>([]);
+  const [q, setQ] = useState('');
 
   const press = (k: string) => setNum((n) => n + k);
   const back = () => setNum((n) => n.slice(0, -1));
+
+  const openPicker = async () => {
+    setPick(true); setQ('');
+    try {
+      const [c, r] = await Promise.all([api.listContacts(), api.listConversations()]);
+      setContacts(c);
+      setRecents(r.slice(0, 8));
+    } catch { /* logged in api layer */ }
+  };
+
+  const choose = (phone: string) => {
+    setNum(phone.replace(/^\+1/, '').replace(/[^\d+*#]/g, ''));
+    setPick(false);
+  };
 
   const go = async () => {
     const target = e164(num);
@@ -43,6 +61,11 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
       nav(`/conversation/${id}`);
     }
   };
+
+  const filtered = contacts.filter((c) => {
+    const s = q.trim().toLowerCase();
+    return !s || (c.name || '').toLowerCase().includes(s) || c.phone.includes(s);
+  });
 
   return (
     <div className="phone">
@@ -64,7 +87,7 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
       </div>
 
       <div className="phone-actions">
-        <button className="pa-side" onClick={() => nav('/contacts')} title="Contacts" aria-label="Contacts">
+        <button className="pa-side" onClick={openPicker} title="Add from contacts or recents" aria-label="Quick add">
           <span className="pa-glyph">≡</span>
           <span className="pa-cap">CONTACTS</span>
         </button>
@@ -80,6 +103,45 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
           <span className="pa-cap">{num ? 'DEL' : ''}</span>
         </button>
       </div>
+
+      {pick && (
+        <>
+          <div className="modal-backdrop" onClick={() => setPick(false)} />
+          <div className="sheet" style={{ maxHeight: '70vh', overflow: 'auto' }}>
+            <div className="handle" />
+            <h3>Quick add</h3>
+            <input className="input" placeholder="Search contacts" value={q}
+              onChange={(e) => setQ(e.target.value)} style={{ marginBottom: 12 }} />
+            {recents.length > 0 && !q && (
+              <>
+                <div className="sa-label">RECENTS</div>
+                {recents.map((r) => (
+                  <div key={'r' + r.id} className="sheet-row" onClick={() => choose(r.peer_phone)}>
+                    <div className="swatch" style={{ background: 'var(--surface-2)' }}>✆</div>
+                    <div style={{ flex: 1 }}>
+                      <div className="name">{r.name || r.peer_phone}</div>
+                      <div className="meta">{r.peer_phone}</div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+            <div className="sa-label" style={{ marginTop: 10 }}>CONTACTS</div>
+            {filtered.length === 0 && <div style={{ color: 'var(--muted)', fontSize: 13, padding: 8 }}>No contacts.</div>}
+            {filtered.slice(0, 50).map((c) => (
+              <div key={'c' + c.id} className="sheet-row" onClick={() => choose(c.phone)}>
+                <div className="swatch" style={{ background: 'var(--lime)' }}>
+                  {(c.name || c.phone).replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#'}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div className="name">{c.name || c.phone}</div>
+                  <div className="meta">{c.phone}</div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }

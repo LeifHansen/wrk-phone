@@ -3,6 +3,7 @@ import twilio from 'twilio';
 import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation, getActiveNumber } from '../lib/db.js';
 import { generateVoiceGreeting } from '../lib/agent.js';
 import { twilioConfig } from '../lib/twilio.js';
+import { log } from '../lib/log.js';
 
 export const voiceRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -13,19 +14,29 @@ const USER = process.env.DEMO_USER_ID || 'demo';
 voiceRouter.post('/voice/outbound', (req, res) => {
   const to = String(req.body.To || '').trim();
   const callerId = getActiveNumber(USER) || twilioConfig.defaultFrom;
+  log.info('voice/outbound', `dial request`, { to, callerId, callSid: req.body.CallSid, from: req.body.From });
   const twiml = new VoiceResponse();
-  if (!to) {
-    twiml.say('No destination number provided.');
-  } else {
-    const dial = twiml.dial({ callerId, answerOnBridge: true });
-    if (/^\+?\d+$/.test(to)) {
-      dial.number(to);
+  try {
+    if (!to) {
+      log.warn('voice/outbound', 'no destination — call will end');
+      twiml.say('No destination number provided.');
+    } else if (!callerId || /x{4,}/i.test(callerId)) {
+      log.error('voice/outbound', 'no valid caller ID (number not provisioned?) — call will fail', { callerId });
+      twiml.say('This line has no caller ID configured.');
     } else {
-      dial.client(to);
+      const dial = twiml.dial({ callerId, answerOnBridge: true });
+      if (/^\+?\d+$/.test(to)) dial.number(to);
+      else dial.client(to);
     }
+    const xml = twiml.toString();
+    log.info('voice/outbound', 'twiml returned', { xml });
+    res.type('text/xml').send(xml);
+  } catch (e: any) {
+    log.error('voice/outbound', 'handler threw', e);
+    res.type('text/xml').send(new VoiceResponse().toString());
   }
-  res.type('text/xml').send(twiml.toString());
 });
+
 
 // Inbound: Twilio number's Voice webhook -> ring the softphone client
 voiceRouter.post('/voice/inbound', (req, res) => {
@@ -94,9 +105,15 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
   res.sendStatus(204);
 });
 
-// Status callbacks (optional logging)
+// Status callbacks — call lifecycle logging + completed-call history.
+// This is the single best signal for "why did the call drop".
 voiceRouter.post('/voice/status', (req, res) => {
-  const { CallSid, From, To, CallStatus, CallDuration, Direction } = req.body;
+  const { CallSid, From, To, CallStatus, CallDuration, Direction, ErrorCode, ErrorMessage, SipResponseCode } = req.body;
+  if (ErrorCode || CallStatus === 'failed') {
+    log.error('voice/status', `call ${CallStatus}`, { CallSid, From, To, ErrorCode, ErrorMessage, SipResponseCode });
+  } else {
+    log.info('voice/status', `call ${CallStatus}`, { CallSid, From, To, CallDuration });
+  }
   if (CallStatus === 'completed') {
     const peer = Direction === 'inbound' ? String(From) : String(To);
     db.prepare(

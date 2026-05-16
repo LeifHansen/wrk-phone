@@ -19,6 +19,7 @@ import { contactsRouter } from './routes/contacts.js';
 import { mediaRouter, MEDIA_DIR } from './routes/media.js';
 import { creditsRouter, stripeWebhookHandler } from './routes/credits.js';
 import { voicesRouter } from './routes/voices.js';
+import { log } from './lib/log.js';
 import './lib/db.js'; // ensure migrations run
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -71,6 +72,14 @@ if (webDist) {
 } else {
   console.log('No web build found — running API-only.');
 }
+
+// Global error handler — nothing should crash silently.
+app.use((err: any, req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  log.error('express', `unhandled error on ${req.method} ${req.path}`, err);
+  if (!res.headersSent) res.status(500).json({ error: err?.message || 'internal error' });
+});
+process.on('unhandledRejection', (r) => log.error('process', 'unhandledRejection', r));
+process.on('uncaughtException', (e) => log.error('process', 'uncaughtException', e));
 
 const port = Number(process.env.PORT || 4000);
 app.listen(port, '0.0.0.0', () => {
