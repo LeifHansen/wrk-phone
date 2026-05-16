@@ -58,6 +58,10 @@ app.use('/api', a2pRouter);
 app.use('/api', analyticsRouter);
 app.use('/media', express.static(MEDIA_DIR));
 
+// Unknown API routes must return JSON 404 (not the SPA HTML fallback) so the
+// client's fetch wrapper gets a parseable error.
+app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }));
+
 // In production, the same container serves the built web SPA.
 // Dockerfile copies the Vite build into ./public next to dist/.
 const webDistCandidates = [
