@@ -185,6 +185,30 @@ export const api = {
       '/api/credits/checkout',
       { method: 'POST', body: JSON.stringify({ packageId, returnUrl: window.location.origin }) }
     ),
+  // numbers (multi-line, $2/mo each)
+  listNumbers: () => req<{ active: string | null; pricePerMonth: number;
+    numbers: { sid: string; phoneNumber: string; friendlyName: string; isActive: boolean }[] }>('/api/numbers/list'),
+  setActiveNumber: (sid: string) => req('/api/numbers/set-active', { method: 'POST', body: JSON.stringify({ sid }) }),
+  buyAdditional: (phoneNumber: string) =>
+    req<{ ok: boolean; number: string; monthly: number; warnings: string[] }>(
+      '/api/numbers/buy-additional', { method: 'POST', body: JSON.stringify({ phoneNumber }) }),
+  // A2P 10DLC
+  a2pDraft: (businessDescription: string) =>
+    req<any>('/api/a2p/draft', { method: 'POST', body: JSON.stringify({ businessDescription }) }),
+  a2pSubmit: (profile: any, pkg: any) =>
+    req<{ id: number; status: string; note: string }>('/api/a2p/submit', { method: 'POST', body: JSON.stringify({ profile, package: pkg }) }),
+  a2pStatus: () => req<any>('/api/a2p/status'),
+  // avatars
+  genAvatar: (kind: 'account' | 'agent', agentId?: number, prompt?: string) =>
+    req<{ url: string }>('/api/media/avatar', { method: 'POST', body: JSON.stringify({ kind, agentId, prompt }) }),
+  account: () => req<{ avatarUrl: string | null }>('/api/account'),
+  // contacts sync (Sheets/Excel)
+  importContactsCsv: (csv: string) =>
+    req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-csv', { method: 'POST', body: JSON.stringify({ csv }) }),
+  importContactsUrl: (url: string) =>
+    req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-url', { method: 'POST', body: JSON.stringify({ url }) }),
+  // analytics
+  analytics: () => req<any>('/api/analytics'),
   webhookStatus: () =>
     req<{ number: string; publicBaseUrl: string; reachable: boolean; ok: boolean; hint: string; numberCfg: any; serviceCfg: any }>(
       '/api/numbers/webhook-status'

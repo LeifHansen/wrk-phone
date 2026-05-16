@@ -140,3 +140,79 @@ contactsRouter.delete('/segments/:id/members/:contactId', (req, res) => {
     .run(Number(req.params.id), Number(req.params.contactId));
   res.json({ ok: true });
 });
+
+// ───── Google Sheets / Excel sync (both export CSV) ─────
+
+function parseCsv(text: string): { name: string; phone: string }[] {
+  const rows = text.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  if (rows.length === 0) return [];
+  // Detect + skip a header row.
+  const first = rows[0].toLowerCase();
+  const hasHeader = /name|phone|number|mobile/.test(first);
+  const out: { name: string; phone: string }[] = [];
+  for (const line of rows.slice(hasHeader ? 1 : 0)) {
+    const cells = line.split(',').map((c) => c.replace(/^"|"$/g, '').trim());
+    // Heuristic: the cell that looks most like a phone is the phone.
+    let phone = cells.find((c) => /[\d][\d\-\s().+]{6,}/.test(c)) || cells[cells.length - 1] || '';
+    let name = cells.find((c) => c && c !== phone && !/^\+?[\d\-\s().]+$/.test(c)) || '';
+    if (phone) out.push({ name, phone });
+  }
+  return out;
+}
+
+function bulkUpsert(rows: { name: string; phone: string }[]) {
+  let synced = 0, skipped = 0;
+  const up = db.prepare(
+    `INSERT INTO contacts (user_id, phone, name) VALUES (?, ?, ?)
+     ON CONFLICT(user_id, phone) DO UPDATE SET name = COALESCE(NULLIF(excluded.name,''), contacts.name)`
+  );
+  const tx = db.transaction((list: typeof rows) => {
+    for (const r of list) {
+      const phone = normalizePhone(r.phone);
+      if (!phone) { skipped++; continue; }
+      up.run(USER, phone, (r.name || '').slice(0, 120));
+      synced++;
+    }
+  });
+  tx(rows);
+  return { synced, skipped };
+}
+
+// Export every contact as CSV (opens in Excel / Google Sheets directly).
+contactsRouter.get('/contacts/export.csv', (_req, res) => {
+  const rows = db.prepare(`SELECT name, phone FROM contacts WHERE user_id = ? ORDER BY name`).all(USER) as any[];
+  const csv = 'name,phone\n' + rows.map((r) => `"${(r.name || '').replace(/"/g, '""')}","${r.phone}"`).join('\n');
+  res.setHeader('Content-Type', 'text/csv');
+  res.setHeader('Content-Disposition', 'attachment; filename="wrk-contacts.csv"');
+  res.send(csv);
+});
+
+// Import from pasted CSV (Excel "Save as CSV").  body: { csv }
+contactsRouter.post('/contacts/import-csv', (req, res) => {
+  const rows = parseCsv(String(req.body?.csv || ''));
+  if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed' });
+  const r = bulkUpsert(rows);
+  res.json({ ...r, total: (db.prepare(`SELECT COUNT(*) n FROM contacts WHERE user_id=?`).get(USER) as any).n });
+});
+
+// Import from a Google Sheets / Excel-Online URL.  body: { url }
+// Accepts a normal Sheets link and rewrites it to the CSV export endpoint.
+contactsRouter.post('/contacts/import-url', async (req, res) => {
+  let url = String(req.body?.url || '').trim();
+  if (!url) return res.status(400).json({ error: 'url required' });
+  const gs = url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  if (gs) {
+    const gid = (url.match(/[#&]gid=(\d+)/) || [])[1] || '0';
+    url = `https://docs.google.com/spreadsheets/d/${gs[1]}/export?format=csv&gid=${gid}`;
+  }
+  try {
+    const r = await fetch(url);
+    if (!r.ok) return res.status(400).json({ error: `fetch failed (${r.status}). For Google Sheets: Share → Anyone with the link → Viewer.` });
+    const rows = parseCsv(await r.text());
+    if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed — is the sheet shared publicly?' });
+    const out = bulkUpsert(rows);
+    res.json({ ...out, total: (db.prepare(`SELECT COUNT(*) n FROM contacts WHERE user_id=?`).get(USER) as any).n });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});

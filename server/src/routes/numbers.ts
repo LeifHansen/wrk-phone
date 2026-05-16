@@ -216,3 +216,58 @@ numbersRouter.get('/numbers/active', (_req, res) => {
     messagingServiceSid: twilioConfig.messagingServiceSid || null,
   });
 });
+
+// GET /api/numbers/list — every number owned on the account (for the
+// "Manage / add numbers" screen). Marks which one is active.
+numbersRouter.get('/numbers/list', async (_req, res) => {
+  try {
+    const s = getAppSettings(USER);
+    const nums = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
+    res.json({
+      active: s.active_number || twilioConfig.defaultFrom || null,
+      pricePerMonth: 2.0,
+      numbers: nums.map((n) => ({
+        sid: n.sid,
+        phoneNumber: n.phoneNumber,
+        friendlyName: n.friendlyName,
+        capabilities: n.capabilities,
+        isActive: n.phoneNumber === (s.active_number || twilioConfig.defaultFrom),
+      })),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/numbers/set-active  { sid }
+numbersRouter.post('/numbers/set-active', async (req, res) => {
+  try {
+    const sid = String(req.body?.sid || '');
+    const n = await twilioClient.incomingPhoneNumbers(sid).fetch();
+    setActiveNumber(USER, n.phoneNumber, n.sid);
+    res.json({ ok: true, active: n.phoneNumber });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// POST /api/numbers/buy-additional  { phoneNumber }
+// Same provisioning as the primary, but does NOT change the active line.
+// $2/mo recurring (billing wired later — see Stripe note in README).
+numbersRouter.post('/numbers/buy-additional', async (req, res) => {
+  const phoneNumber = String(req.body.phoneNumber || '').trim();
+  if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
+  try {
+    const purchased = await twilioClient.incomingPhoneNumbers.create({ phoneNumber, friendlyName: 'Wrk Phone' });
+    if (twilioConfig.messagingServiceSid) {
+      try {
+        await twilioClient.messaging.v1.services(twilioConfig.messagingServiceSid)
+          .phoneNumbers.create({ phoneNumberSid: purchased.sid });
+      } catch { /* non-fatal */ }
+    }
+    const { warnings } = await configureWebhooks(purchased.sid);
+    res.json({ ok: true, number: purchased.phoneNumber, sid: purchased.sid, monthly: 2.0, warnings });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});

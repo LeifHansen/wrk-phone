@@ -74,6 +74,18 @@ export function AgentDetail() {
 
       <div className="page-body" style={{ paddingTop: 16 }}>
         <div className="agent-section">
+          <h3>Avatar</h3>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            {(merged as any).avatar_url
+              ? <img src={(merged as any).avatar_url} alt="" style={{ width: 64, height: 64, border: 'var(--border)', borderRadius: 8, objectFit: 'cover' }} />
+              : <div className="swatch" style={{ width: 64, height: 64, background: COLOR_BG[merged.color], border: 'var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{merged.emoji}</div>}
+            <button className="btn pink" onClick={async () => {
+              try { const r = await api.genAvatar('agent', aid); setAgent((p) => p ? ({ ...p, avatar_url: r.url } as any) : p); }
+              catch (e: any) { alert(e.message); }
+            }}>✨ Generate AI avatar</button>
+          </div>
+        </div>
+        <div className="agent-section">
           <h3>Color</h3>
           <div className="color-row">
             {AGENT_COLORS.map((c) => (

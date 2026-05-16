@@ -81,6 +81,31 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
           <button className="btn" onClick={add} disabled={!newPhone.trim()}>Add</button>
         </div>
 
+        {/* Google Sheets / Excel sync */}
+        <div className="cond-card" style={{ marginBottom: 14 }}>
+          <div className="sa-label">SYNC FROM GOOGLE SHEETS / EXCEL</div>
+          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+            <input className="input" id="sheetUrl" placeholder="Paste a shared Google Sheet (or published Excel) link" />
+            <button className="btn" onClick={async () => {
+              const url = (document.getElementById('sheetUrl') as HTMLInputElement)?.value?.trim();
+              if (!url) return;
+              try { const r = await api.importContactsUrl(url); alert(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`); load(); }
+              catch (e: any) { alert(e.message); }
+            }}>Import</button>
+            <a className="btn ghost" href="/api/contacts/export.csv">Export CSV</a>
+          </div>
+          <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 6 }}>
+            Sheets: Share → “Anyone with the link”. Excel: File → Save As → CSV, then paste rows below.
+          </div>
+          <textarea className="textarea" id="csvPaste" placeholder={'Or paste CSV rows: name,phone'} style={{ marginTop: 8, minHeight: 70 }} />
+          <button className="btn ghost" style={{ marginTop: 6 }} onClick={async () => {
+            const csv = (document.getElementById('csvPaste') as HTMLTextAreaElement)?.value?.trim();
+            if (!csv) return;
+            try { const r = await api.importContactsCsv(csv); alert(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`); load(); }
+            catch (e: any) { alert(e.message); }
+          }}>Import pasted CSV</button>
+        </div>
+
         {/* segment filter chips */}
         <div className="seg-chips">
           <button className={'seg-chip' + (activeSeg === null ? ' on' : '')} onClick={() => setActiveSeg(null)}>
