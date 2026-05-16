@@ -20,6 +20,7 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
   const [newPhone, setNewPhone] = useState('');
   const [newName, setNewName] = useState('');
   const [picked, setPicked] = useState<Contact | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   const load = () => {
     api.listContacts(q || undefined, activeSeg || undefined).then(setContacts).catch(() => {});
@@ -81,7 +82,12 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
           <button className="btn" onClick={add} disabled={!newPhone.trim()}>Add</button>
         </div>
 
-        {/* Google Sheets / Excel sync */}
+        {/* Advanced: Google Sheets / Excel sync (collapsed by default) */}
+        <button className="btn ghost" style={{ marginBottom: showAdvanced ? 10 : 14 }}
+          onClick={() => setShowAdvanced(v => !v)}>
+          {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
+        </button>
+        {showAdvanced && (
         <div className="cond-card" style={{ marginBottom: 14 }}>
           <div className="sa-label">SYNC FROM GOOGLE SHEETS / EXCEL</div>
           <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
@@ -105,6 +111,7 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
             catch (e: any) { alert(e.message); }
           }}>Import pasted CSV</button>
         </div>
+        )}
 
         {/* segment filter chips */}
         <div className="seg-chips">
