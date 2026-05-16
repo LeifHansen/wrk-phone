@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import twilio from 'twilio';
-import { db, getOrCreateConversation, getAgentForConversation, getCredits, spendCredits, addCredits, messageCost, MMS_MAX_CHARS, classifyCompliance, setOptOut, isOptedOut } from '../lib/db.js';
+import { db, getOrCreateConversation, getAgentForConversation, getCredits, spendCredits, addCredits, messageCost, MMS_MAX_CHARS, classifyCompliance, setOptOut, isOptedOut, getActiveNumber } from '../lib/db.js';
 import { generateReply, SAFETY_REGEX } from '../lib/agent.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { routeInbound } from '../lib/routing.js';
+import { getUserId } from '../lib/auth.js';
 
 export const smsRouter = Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
@@ -107,8 +108,11 @@ smsRouter.post('/sms/send', async (req, res) => {
   try {
     const params: any = { to, body };
     if (mediaUrl) params.mediaUrl = [mediaUrl];        // MMS
-    if (twilioConfig.messagingServiceSid) params.messagingServiceSid = twilioConfig.messagingServiceSid;
-    else params.from = twilioConfig.defaultFrom;
+    // Send FROM the sending user's selected shared-pool number (so they keep
+    // their chosen local area code). Explicit `from` (not messagingServiceSid)
+    // so Twilio honors that specific number; it's still on the shared MS for
+    // A2P/deliverability. Inbound replies route to the shared inbox (OWNER).
+    params.from = getActiveNumber(getUserId(req)) || twilioConfig.defaultFrom;
     const msg = await twilioClient.messages.create(params);
     const result = db.prepare(
       `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, media_url)
