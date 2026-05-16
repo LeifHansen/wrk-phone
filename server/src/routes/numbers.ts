@@ -33,6 +33,7 @@ async function configureWebhooks(numberSid: string): Promise<{ urls: any; warnin
   const voiceUrl = `${base}/api/voice/inbound`;
   const smsUrl = `${base}/api/sms/inbound`;
   const statusCb = `${base}/api/voice/status`;
+  const outboundUrl = `${base}/api/voice/outbound`;
 
   // 1. The number itself (voice + sms fallback)
   await twilioClient.incomingPhoneNumbers(numberSid).update({
@@ -40,6 +41,25 @@ async function configureWebhooks(numberSid: string): Promise<{ urls: any; warnin
     smsUrl, smsMethod: 'POST',
     statusCallback: statusCb, statusCallbackMethod: 'POST',
   });
+
+  // 1b. THE TWIML APP — this powers OUTBOUND softphone calls. The token's
+  //     VoiceGrant.outgoingApplicationSid points here; if its Voice Request
+  //     URL is blank, Twilio gets no TwiML and the call disconnects before
+  //     it rings. This was the missing piece.
+  if (twilioConfig.twimlAppSid) {
+    try {
+      await twilioClient.applications(twilioConfig.twimlAppSid).update({
+        voiceUrl: outboundUrl,
+        voiceMethod: 'POST',
+        statusCallback: statusCb,
+        statusCallbackMethod: 'POST',
+      });
+    } catch (e: any) {
+      warnings.push(`TwiML App voice URL not set (outbound calls will fail): ${e.message}`);
+    }
+  } else {
+    warnings.push('No TWILIO_TWIML_APP_SID — outbound softphone calls cannot be routed.');
+  }
 
   // 2. The Messaging Service (authoritative inbound route for pooled numbers)
   if (twilioConfig.messagingServiceSid) {
@@ -56,7 +76,7 @@ async function configureWebhooks(numberSid: string): Promise<{ urls: any; warnin
     warnings.push('No TWILIO_MESSAGING_SERVICE_SID — inbound SMS uses the number webhook only.');
   }
 
-  return { urls: { voiceUrl, smsUrl, statusCb }, warnings };
+  return { urls: { voiceUrl, smsUrl, statusCb, outboundUrl }, warnings };
 }
 
 // GET /api/numbers/search
@@ -157,14 +177,28 @@ numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
       const svc = await twilioClient.messaging.v1.services(twilioConfig.messagingServiceSid).fetch();
       serviceCfg = { inboundRequestUrl: svc.inboundRequestUrl, useInboundWebhookOnNumber: svc.useInboundWebhookOnNumber };
     }
+    let twimlAppCfg: any = null;
+    if (twilioConfig.twimlAppSid) {
+      const app = await twilioClient.applications(twilioConfig.twimlAppSid).fetch();
+      twimlAppCfg = { voiceUrl: app.voiceUrl };
+    }
+    const expectedOutbound = `${base}/api/voice/outbound`;
     const reachable = baseLooksReal();
+    const inboundOk = reachable && serviceCfg?.inboundRequestUrl === expected.smsInbound;
+    const outboundOk = reachable && twimlAppCfg?.voiceUrl === expectedOutbound;
     res.json({
       number: num, publicBaseUrl: base, reachable,
-      expected, numberCfg, serviceCfg,
-      ok: reachable && serviceCfg?.inboundRequestUrl === expected.smsInbound,
-      hint: reachable
-        ? 'Looks routable. If inbound still misses, send a test text and check server logs for POST /api/sms/inbound.'
-        : 'PUBLIC_BASE_URL is not a reachable https URL — inbound cannot work until it is.',
+      expected: { ...expected, outboundUrl: expectedOutbound },
+      numberCfg, serviceCfg, twimlAppCfg,
+      inboundOk, outboundOk,
+      ok: inboundOk && outboundOk,
+      hint: !reachable
+        ? 'PUBLIC_BASE_URL is not a reachable https URL — calls/texts cannot work until it is.'
+        : !outboundOk
+          ? 'TwiML App voice URL not wired — outbound calls drop before ringing. Tap Repair.'
+          : !inboundOk
+            ? 'Inbound SMS route not wired — tap Repair.'
+            : 'Routable. If a call still drops, check server logs for POST /api/voice/outbound.',
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

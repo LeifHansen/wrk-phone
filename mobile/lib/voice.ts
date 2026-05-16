@@ -27,13 +27,35 @@ export async function registerVoice(identity: string) {
   return voice;
 }
 
+function wireCall(call: any) {
+  try {
+    const E = call?.Event || {};
+    const on = (evt: string, fn: (...a: any[]) => void) => { try { call.on(evt, fn); } catch {} };
+    on(E.Connected || 'connected', () => console.log('[voice] call connected'));
+    on(E.Ringing || 'ringing', () => console.log('[voice] call ringing'));
+    on(E.Disconnected || 'disconnected', (e: any) => console.log('[voice] call disconnected', e ?? ''));
+    on(E.ConnectFailure || 'connectFailure', (e: any) => console.error('[voice] connect failure', e ?? ''));
+    on(E.Reconnecting || 'reconnecting', (e: any) => console.error('[voice] reconnecting', e ?? ''));
+  } catch (e) { console.error('[voice] wireCall failed', e); }
+}
+
 export async function placeCall(identity: string, to: string) {
   const voice = await loadSdk();
-  if (!voice) throw new Error('Voice SDK not available — use a dev build');
+  if (!voice) {
+    console.error('[voice] placeCall: SDK unavailable (needs a custom dev build, not Expo Go)');
+    throw new Error('Voice SDK not available — use a dev build');
+  }
   const platform = Platform.OS === 'ios' ? 'ios' : 'android';
-  const { token } = await api.getVoiceToken(identity, platform);
-  activeCall = await voice.connect(token, { params: { To: to } });
-  return activeCall;
+  try {
+    const { token } = await api.getVoiceToken(identity, platform);
+    console.log(`[voice] placeCall → ${to}`);
+    activeCall = await voice.connect(token, { params: { To: to } });
+    wireCall(activeCall);
+    return activeCall;
+  } catch (e) {
+    console.error(`[voice] placeCall failed for ${to}`, e);
+    throw e;
+  }
 }
 
 export function hangup() {

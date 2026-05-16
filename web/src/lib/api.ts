@@ -1,9 +1,21 @@
 async function req<T = any>(path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(path, {
-    ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
-  });
-  if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      ...init,
+      headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+    });
+  } catch (e) {
+    // eslint-disable-next-line no-console
+    console.error(`[api] network error: ${init.method || 'GET'} ${path}`, e);
+    throw e;
+  }
+  if (!res.ok) {
+    const body = await res.text();
+    // eslint-disable-next-line no-console
+    console.error(`[api] ${res.status} on ${init.method || 'GET'} ${path}: ${body}`);
+    throw new Error(`${res.status} ${body}`);
+  }
   if (res.status === 204) return undefined as T;
   return res.json();
 }
