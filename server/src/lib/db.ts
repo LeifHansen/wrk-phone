@@ -149,6 +149,18 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS subscriptions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    plan TEXT NOT NULL,                 -- 'a2p' | 'number'
+    ref TEXT,                            -- e.g. the phone number for 'number'
+    stripe_sub_id TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',  -- pending|active|canceled|dev
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_subs_user ON subscriptions(user_id, plan);
+
   CREATE TABLE IF NOT EXISTS a2p_registrations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -351,3 +363,27 @@ export function messageCost(body: string, hasMedia: boolean): number {
   return Math.max(1, Math.ceil((body || '').length / 160));
 }
 export const MMS_MAX_CHARS = 560;
+
+// ---- subscriptions ----
+export function recordSubscription(userId: string, plan: string, ref: string | null, status: string, stripeSubId?: string) {
+  const now = Date.now();
+  const existing = db.prepare(
+    `SELECT id FROM subscriptions WHERE user_id=? AND plan=? AND IFNULL(ref,'')=IFNULL(?, '')`
+  ).get(userId, plan, ref) as { id: number } | undefined;
+  if (existing) {
+    db.prepare(`UPDATE subscriptions SET status=?, stripe_sub_id=COALESCE(?, stripe_sub_id), updated_at=? WHERE id=?`)
+      .run(status, stripeSubId || null, now, existing.id);
+    return existing.id;
+  }
+  const r = db.prepare(
+    `INSERT INTO subscriptions (user_id, plan, ref, stripe_sub_id, status, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(userId, plan, ref, stripeSubId || null, status, now, now);
+  return Number(r.lastInsertRowid);
+}
+export function listSubscriptions(userId: string) {
+  return db.prepare(`SELECT plan, ref, status, created_at FROM subscriptions WHERE user_id=? ORDER BY created_at DESC`).all(userId);
+}
+export function setSubscriptionStatusByStripeId(stripeSubId: string, status: string) {
+  db.prepare(`UPDATE subscriptions SET status=?, updated_at=? WHERE stripe_sub_id=?`).run(status, Date.now(), stripeSubId);
+}

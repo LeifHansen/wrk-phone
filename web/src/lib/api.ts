@@ -207,6 +207,12 @@ export const api = {
     req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-csv', { method: 'POST', body: JSON.stringify({ csv }) }),
   importContactsUrl: (url: string) =>
     req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-url', { method: 'POST', body: JSON.stringify({ url }) }),
+  // recurring billing
+  subscribe: (plan: 'a2p' | 'number', ref?: string) =>
+    req<{ url: string | null; stub?: boolean; note?: string }>(
+      '/api/billing/subscribe',
+      { method: 'POST', body: JSON.stringify({ plan, ref, returnUrl: location.origin }) }),
+  billingSubs: () => req<{ stripeEnabled: boolean; plans: any; subscriptions: any[] }>('/api/billing/subscriptions'),
   // analytics
   analytics: () => req<any>('/api/analytics'),
   webhookStatus: () =>

@@ -16,6 +16,7 @@ export function Settings() {
   const [line, setLine] = useState<{ activeNumber: string | null } | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [genning, setGenning] = useState(false);
+  const [subs, setSubs] = useState<any[]>([]);
 
   const loadHook = () => api.webhookStatus().then(setHook).catch(() => setHook(null));
 
@@ -24,6 +25,7 @@ export function Settings() {
     api.credits().then((c) => setCredits(c.balance)).catch(() => {});
     api.activeNumber().then(setLine).catch(() => {});
     api.account().then((a) => setAvatar(a.avatarUrl)).catch(() => {});
+    api.billingSubs().then((b) => setSubs(b.subscriptions || [])).catch(() => {});
     if (DEV) loadHook();
   }, []);
 
@@ -92,6 +94,18 @@ export function Settings() {
               Manage / add numbers
             </Link>
             <div style={{ color: 'var(--muted)', fontSize: 11 }}>Extra numbers $2/mo each</div>
+          </div>
+        </div>
+
+        <div className="set-section">
+          <h3>SUBSCRIPTIONS</h3>
+          <div className="set-card">
+            {subs.length === 0 && <Row label="Active plans"><span>None</span></Row>}
+            {subs.map((s, i) => (
+              <Row key={i} label={s.plan === 'a2p' ? 'Business line · $10/mo' : `Number ${s.ref || ''} · $2/mo`}>
+                <span>{String(s.status).toUpperCase()}</span>
+              </Row>
+            ))}
           </div>
         </div>
 
