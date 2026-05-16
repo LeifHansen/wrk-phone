@@ -1,12 +1,14 @@
 import { Router } from 'express';
 import { db, getAgentForConversation, hydrateAgent } from '../lib/db.js';
-import { getUserId } from '../lib/auth.js';
+import { OWNER_ID } from '../lib/auth.js';
+// Shared-line model: the inbox/conversations belong to the shared account
+// (OWNER), not the logged-in user. Per-user telephony is a future build.
 
 export const conversationsRouter = Router();
 
 // GET /api/conversations  -> inbox list (with assigned agent meta)
 conversationsRouter.get('/conversations', (req, res) => {
-  const USER = getUserId(req);
+  const USER = OWNER_ID;
   const rows = db.prepare(`
     SELECT c.id, c.peer_phone, c.last_message_at, c.unread_count, c.agent_id,
            (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_body,
@@ -24,7 +26,7 @@ conversationsRouter.get('/conversations', (req, res) => {
 
 // GET /api/conversations/:id/messages  (and currently-assigned agent)
 conversationsRouter.get('/conversations/:id/messages', (req, res) => {
-  const USER = getUserId(req);
+  const USER = OWNER_ID;
   const id = Number(req.params.id);
   const messages = db.prepare(
     `SELECT id, direction, body, status, created_at, is_ai, is_suggestion, agent_id
@@ -41,7 +43,7 @@ conversationsRouter.post('/conversations/:id/read', (req, res) => {
 });
 
 conversationsRouter.post('/conversations', (req, res) => {
-  const USER = getUserId(req);
+  const USER = OWNER_ID;
   const peer = String(req.body.peer_phone || '').trim();
   const name = req.body.name ? String(req.body.name) : null;
   if (!peer) return res.status(400).json({ error: 'peer_phone required' });
@@ -67,7 +69,7 @@ conversationsRouter.post('/conversations', (req, res) => {
 });
 
 conversationsRouter.get('/calls', (req, res) => {
-  const USER = getUserId(req);
+  const USER = OWNER_ID;
   const rows = db.prepare(
     `SELECT c.*, ct.name FROM calls c
      LEFT JOIN contacts ct ON ct.user_id = c.user_id AND ct.phone = c.peer_phone
