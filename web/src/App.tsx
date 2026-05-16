@@ -5,6 +5,7 @@ import { Setup } from './pages/Setup';
 import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
 import { Login } from './pages/Login';
+import { Logo } from './components/Logo';
 import { Credits } from './pages/Credits';
 import { Numbers } from './pages/Numbers';
 import { A2P } from './pages/A2P';
@@ -53,7 +54,7 @@ export function App() {
   return (
     <div className="app-shell">
       <aside className="sidebar">
-        <h1>Wrk<br /><span className="alt">Phone</span><span className="squig" /></h1>
+        <Logo size="sm" />
         <NavLink to="/" end className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Phone">
           <span className="glyph">✆</span><span className="nav-label">PHONE</span>
         </NavLink>

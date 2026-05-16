@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, auth } from '../lib/api';
+import { Logo } from '../components/Logo';
 
 export function Login() {
   const nav = useNavigate();
@@ -24,7 +25,7 @@ export function Login() {
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div className="cond-card" style={{ width: 380, maxWidth: '100%' }}>
-        <h2 style={{ fontFamily: 'var(--display)', fontSize: 30, margin: '0 0 4px' }}>Wrk Phone</h2>
+        <div style={{ marginBottom: 14 }}><Logo size="lg" /></div>
         <div style={{ color: 'var(--muted)', marginBottom: 18 }}>
           {mode === 'login' ? 'Welcome back.' : 'Create your account.'}
         </div>
