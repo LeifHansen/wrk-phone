@@ -23,6 +23,7 @@ import { billingRouter } from './routes/billing.js';
 import { a2pRouter } from './routes/a2p.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { log } from './lib/log.js';
+import { twilioWebhook } from './lib/twilioVerify.js';
 import './lib/db.js'; // ensure migrations run
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -38,6 +39,12 @@ app.use(express.urlencoded({ extended: false })); // Twilio webhooks
 app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
+
+// Verify Twilio signature on Twilio-originated webhooks only (NOT /api/sms/send,
+// which is client-originated). Must run after body parsing, before the routers.
+app.use('/api/voice', twilioWebhook);
+app.use('/api/sms/inbound', twilioWebhook);
+app.use('/api/sms/status', twilioWebhook);
 
 app.use('/api', tokenRouter);
 app.use('/api', voiceRouter);
