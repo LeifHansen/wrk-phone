@@ -291,10 +291,22 @@ code, pre { font-family: var(--mono); font-size: 12px; }
   border: var(--border); border-radius: var(--r); background: var(--surface);
   padding: 22px 18px; margin-bottom: 20px;
 }
+.phone-num-row { display: flex; align-items: center; gap: 10px; }
 .phone-num {
+  flex: 1;
   font-family: var(--pixel); font-size: 22px; text-align: center;
   min-height: 30px; word-break: break-all; letter-spacing: 1px;
 }
+.contacts-mini {
+  flex-shrink: 0;
+  width: 38px; height: 38px;
+  border: var(--border); border-radius: var(--r);
+  background: var(--surface); color: var(--ink);
+  font-size: 20px; font-weight: 700; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.contacts-mini:hover { background: var(--surface-2); }
+.contacts-mini:active { transform: translate(2px, 2px); }
 .phone-num .ph { color: var(--muted); font-size: 11px; }
 .phone-toggle { display: flex; margin-top: 18px; border: var(--border); }
 .pt-btn {
