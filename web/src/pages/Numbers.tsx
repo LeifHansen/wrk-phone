@@ -16,9 +16,13 @@ export function Numbers() {
     catch (e: any) { alert(e.message); } finally { setBusy(false); }
   };
   const buy = async (n: any) => {
-    if (!confirm(`Add ${n.phoneNumber}? $2/mo recurring (free during beta).`)) return;
-    try { await api.buyAdditional(n.phoneNumber); setAvail([]); load(); }
-    catch (e: any) { alert(e.message); }
+    if (!confirm(`Add ${n.phoneNumber}? $2/mo recurring.`)) return;
+    try {
+      await api.buyAdditional(n.phoneNumber);
+      const sub = await api.subscribe('number', n.phoneNumber);
+      setAvail([]); load();
+      if (sub.url) { window.location.href = sub.url; return; }
+    } catch (e: any) { alert(e.message); }
   };
   const setActive = async (sid: string) => { await api.setActiveNumber(sid); load(); };
 

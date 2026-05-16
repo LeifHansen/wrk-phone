@@ -25,6 +25,9 @@ export function A2P() {
     try {
       const r = await api.a2pSubmit(profile, pkg);
       setStatus(r); setStep('status');
+      // Start the $10/mo business-line subscription.
+      const sub = await api.subscribe('a2p');
+      if (sub.url) { window.location.href = sub.url; return; }
     } catch (e: any) { alert(e.message); } finally { setBusy(false); }
   };
 

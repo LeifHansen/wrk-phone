@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import Stripe from 'stripe';
-import { getCredits, addCredits } from '../lib/db.js';
+import { getCredits, addCredits, recordSubscription, setSubscriptionStatusByStripeId } from '../lib/db.js';
 
 export const creditsRouter = Router();
 const USER = process.env.DEMO_USER_ID || 'demo';
@@ -97,6 +97,17 @@ export function stripeWebhookHandler(req: Request, res: Response) {
     const uid = s.metadata?.userId || USER;
     const credits = Number(s.metadata?.credits || 0);
     if (credits > 0) addCredits(uid, credits);
+    // Subscription checkout (numbers $2/mo, A2P line $10/mo) also lands here.
+    if (s.mode === 'subscription' && s.metadata?.plan) {
+      recordSubscription(uid, s.metadata.plan, s.metadata.ref || null, 'active',
+        typeof s.subscription === 'string' ? s.subscription : undefined);
+    }
+  } else if (event.type === 'customer.subscription.deleted') {
+    const sub = event.data.object as Stripe.Subscription;
+    setSubscriptionStatusByStripeId(sub.id, 'canceled');
+  } else if (event.type === 'customer.subscription.updated') {
+    const sub = event.data.object as Stripe.Subscription;
+    setSubscriptionStatusByStripeId(sub.id, sub.status === 'active' ? 'active' : sub.status);
   }
   res.json({ received: true });
 }
