@@ -190,10 +190,21 @@ agentRouter.post('/agents/:id/apply-patch', (req, res) => {
   if (!a) return res.status(404).json({ error: 'not found' });
   const patch = req.body?.patch || {};
   const ah = hydrateAgent(a);
+  // RULES ARE ADDITIVE — never wipe the user's existing rules. Optimize used
+  // to replace the whole list, which silently turned intended behaviors into
+  // "don't" rules. Now we only append new, de-duplicated rules.
+  let rules = ah.rules;
+  if (Array.isArray(patch.rules)) {
+    const have = new Set(ah.rules.map((r: string) => r.trim().toLowerCase()));
+    const added = patch.rules
+      .map((r: any) => String(r).trim())
+      .filter((r: string) => r && !have.has(r.toLowerCase()));
+    rules = [...ah.rules, ...added];
+  }
   const next: any = {
     persona: typeof patch.persona === 'string' ? patch.persona : ah.persona,
     instructions: typeof patch.instructions === 'string' ? patch.instructions : ah.instructions,
-    rules: Array.isArray(patch.rules) ? patch.rules : ah.rules,
+    rules,
     examples: ah.examples,
     mode: ['off','suggest','auto'].includes(patch.mode) ? patch.mode : ah.mode,
   };

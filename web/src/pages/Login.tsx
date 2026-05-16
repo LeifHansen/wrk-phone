@@ -16,7 +16,7 @@ export function Login() {
     try {
       const r = mode === 'login' ? await api.login(email, pw) : await api.signup(email, pw);
       auth.token = r.token;
-      nav('/', { replace: true });
+      nav(mode === 'signup' ? '/welcome' : '/', { replace: true });
     } catch (e: any) {
       setErr(String(e.message || e).replace(/^\d+\s*/, ''));
     } finally { setBusy(false); }

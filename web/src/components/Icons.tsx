@@ -25,6 +25,15 @@ export const IconAgent = ({ size }: P) => (
 export const IconStats = ({ size }: P) => (
   <svg {...base(size)}><path d="M4 20V10M10 20V4M16 20v-7M22 20H2.5"/></svg>
 );
+export const IconTrash = ({ size }: P) => (
+  <svg {...base(size)}><path d="M4 6.5h16M9.5 6.5V4.5h5v2M6.5 6.5 7.5 20h9l1-13.5M10 10v6M14 10v6"/></svg>
+);
+export const IconPencil = ({ size }: P) => (
+  <svg {...base(size)}><path d="M14.5 5.5l4 4M4 20l1-4L16 5a2 2 0 0 1 3 3L8 19l-4 1z"/></svg>
+);
 export const IconGear = ({ size }: P) => (
-  <svg {...base(size)}><circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v3M12 18.5v3M2.5 12h3M18.5 12h3M5.2 5.2l2.1 2.1M16.7 16.7l2.1 2.1M18.8 5.2l-2.1 2.1M7.3 16.7l-2.1 2.1"/></svg>
+  <svg {...base(size)}>
+    <path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.5-1.9-3.3-2.3.9a7.6 7.6 0 0 0-1.7-1l-.4-2.4H10.9l-.4 2.4a7.6 7.6 0 0 0-1.7 1l-2.3-.9-1.9 3.3L4.6 11a7.6 7.6 0 0 0 0 2l-1.9 1.5 1.9 3.3 2.3-.9a7.6 7.6 0 0 0 1.7 1l.4 2.4h3.8l.4-2.4a7.6 7.6 0 0 0 1.7-1l2.3.9 1.9-3.3L19.4 13z"/>
+    <circle cx="12" cy="12" r="3"/>
+  </svg>
 );

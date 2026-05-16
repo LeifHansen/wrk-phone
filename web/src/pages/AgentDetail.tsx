@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Agent, AGENT_COLORS, COLOR_BG, COLOR_FG, api } from '../lib/api';
+import { toast } from '../components/Toast';
+import { IconPencil } from '../components/Icons';
 
 const MODES = [
   { key: 'off',     label: 'Off',     blurb: 'No AI replies.' },
@@ -16,6 +18,7 @@ export function AgentDetail() {
   const [dirty, setDirty] = useState<Partial<Agent>>({});
   const [advanced, setAdvanced] = useState(false);
   const [newRule, setNewRule] = useState('');
+  const [avatarBusy, setAvatarBusy] = useState(false);
 
   const load = () => api.getAgent(aid).then((a) => { setAgent(a); setDirty({}); }).catch(() => {});
   useEffect(() => { load(); }, [aid]);
@@ -25,27 +28,27 @@ export function AgentDetail() {
   const set = <K extends keyof Agent>(k: K, v: Agent[K]) => setDirty((d) => ({ ...d, [k]: v }));
 
   const save = async () => {
-    if (Object.keys(dirty).length === 0) return;
-    try { setAgent(await api.patchAgent(aid, dirty)); setDirty({}); }
-    catch (e: any) { alert(e.message); }
+    if (Object.keys(dirty).length === 0) { toast('Nothing to save', 'info'); return; }
+    try { setAgent(await api.patchAgent(aid, dirty)); setDirty({}); toast('Agent saved ✓'); }
+    catch (e: any) { toast(`Save failed: ${e.message}`, 'err'); }
   };
 
   const setMode = async (mode: 'off' | 'suggest' | 'auto') => {
     set('mode', mode);
-    try { await api.patchAgent(aid, { mode }); setAgent((a) => a ? { ...a, mode } : a); }
-    catch (e: any) { alert(e.message); }
+    try { await api.patchAgent(aid, { mode }); setAgent((a) => a ? { ...a, mode } : a); toast(`Messaging: ${mode.toUpperCase()} ✓`); }
+    catch (e: any) { toast(`Failed: ${e.message}`, 'err'); }
   };
   const setVoiceMode = async (voice_mode: 'off' | 'suggest' | 'auto') => {
     set('voice_mode', voice_mode);
-    try { await api.patchAgent(aid, { voice_mode }); setAgent((a) => a ? { ...a, voice_mode } : a); }
-    catch (e: any) { alert(e.message); }
+    try { await api.patchAgent(aid, { voice_mode }); setAgent((a) => a ? { ...a, voice_mode } : a); toast(`Voicemail: ${voice_mode.toUpperCase()} ✓`); }
+    catch (e: any) { toast(`Failed: ${e.message}`, 'err'); }
   };
 
   const onDelete = async () => {
-    if (merged.is_default) { alert('Cannot delete default agent. Set another default first.'); return; }
+    if (merged.is_default) { toast('Cannot delete the default agent — set another default first.', 'err'); return; }
     if (!confirm('Delete this agent? This cannot be undone.')) return;
-    try { await api.deleteAgent(aid); nav('/agents', { replace: true }); }
-    catch (e: any) { alert(e.message); }
+    try { await api.deleteAgent(aid); toast('Agent deleted'); nav('/agents', { replace: true }); }
+    catch (e: any) { toast(`Delete failed: ${e.message}`, 'err'); }
   };
 
   const updateExample = (i: number, k: 'in' | 'out', v: string) =>
@@ -56,16 +59,27 @@ export function AgentDetail() {
       <div className="agent-banner" style={{ background: COLOR_BG[merged.color], color: COLOR_FG[merged.color] }}>
         <div className="em">{merged.emoji}</div>
         <div style={{ flex: 1 }}>
-          <input
-            className="name"
-            value={merged.name}
-            onChange={(e) => set('name', e.target.value)}
-            style={{ color: COLOR_FG[merged.color] }}
-          />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <input
+              id="agentName"
+              className="name name-editable"
+              value={merged.name}
+              onChange={(e) => set('name', e.target.value)}
+              style={{ color: COLOR_FG[merged.color], borderColor: COLOR_FG[merged.color] }}
+            />
+            <button
+              title="Edit name"
+              onClick={() => { const el = document.getElementById('agentName') as HTMLInputElement; el?.focus(); el?.select(); }}
+              style={{ background: 'transparent', border: 0, cursor: 'pointer', color: COLOR_FG[merged.color], display: 'flex' }}
+            >
+              <IconPencil size={18} />
+            </button>
+          </div>
           {merged.is_default ? (
             <div style={{ fontSize: 12, fontWeight: 800, opacity: 0.85, marginTop: 4 }}>DEFAULT AGENT</div>
           ) : (
-            <button className="default-btn" style={{ color: COLOR_FG[merged.color] }} onClick={async () => { await api.makeDefault(aid); load(); }}>
+            <button className="default-btn" style={{ color: COLOR_FG[merged.color] }}
+              onClick={async () => { try { await api.makeDefault(aid); await load(); toast('Set as default agent ✓'); } catch (e: any) { toast(e.message, 'err'); } }}>
               Make default
             </button>
           )}
@@ -79,10 +93,18 @@ export function AgentDetail() {
             {(merged as any).avatar_url
               ? <img src={(merged as any).avatar_url} alt="" style={{ width: 64, height: 64, border: 'var(--border)', borderRadius: 8, objectFit: 'cover' }} />
               : <div className="swatch" style={{ width: 64, height: 64, background: COLOR_BG[merged.color], border: 'var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{merged.emoji}</div>}
-            <button className="btn pink" onClick={async () => {
-              try { const r = await api.genAvatar('agent', aid); setAgent((p) => p ? ({ ...p, avatar_url: r.url } as any) : p); }
-              catch (e: any) { alert(e.message); }
-            }}>✨ Generate AI avatar</button>
+            <button className="btn pink" disabled={avatarBusy} onClick={async () => {
+              setAvatarBusy(true);
+              toast('Generating avatar… (~10s)', 'info');
+              try {
+                const r = await api.genAvatar('agent', aid);
+                if (!r?.url) throw new Error('no image returned');
+                setAgent((p) => p ? ({ ...p, avatar_url: `${r.url}?t=${Date.now()}` } as any) : p);
+                toast('Avatar generated ✓');
+              } catch (e: any) {
+                toast(`Avatar failed: ${String(e.message || e).replace(/^\d+\s*/, '')}`, 'err');
+              } finally { setAvatarBusy(false); }
+            }}>{avatarBusy ? 'Generating…' : '✨ Generate AI avatar'}</button>
           </div>
         </div>
         <div className="agent-section">

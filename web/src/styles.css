@@ -347,6 +347,14 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 
 /* ---------- INBOX ---------- */
 .inbox-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.inbox-li { display: flex; align-items: stretch; gap: 8px; }
+.inbox-li .inbox-row { flex: 1; }
+.inbox-del {
+  flex-shrink: 0; width: 48px; border: var(--border); border-radius: var(--r);
+  background: var(--surface); color: var(--muted); cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+}
+.inbox-del:hover { background: var(--red); color: #fff; }
 .inbox-row {
   display: flex; align-items: center; gap: 12px;
   border: var(--border); border-radius: var(--r); background: var(--surface);
@@ -480,6 +488,8 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .agent-banner { display: flex; align-items: center; gap: 16px; padding: 24px 28px; border-bottom: var(--border); }
 .agent-banner .em { font-size: 52px; }
 .agent-banner input.name { background: transparent; border: 0; outline: none; font-family: var(--pixel); font-size: 18px; width: 100%; }
+.agent-banner input.name-editable { border-bottom: 2px dashed currentColor; padding-bottom: 3px; }
+.agent-banner input.name-editable:focus { border-bottom-style: solid; }
 .agent-banner .default-btn { font-family: var(--pixel); font-size: 7px; background: transparent; border: 0; cursor: pointer; text-decoration: underline; padding: 0; margin-top: 6px; }
 .agent-section { margin-top: 26px; }
 .agent-section h3 { font-family: var(--pixel); font-size: 9px; color: var(--muted); margin: 0 0 10px; }
@@ -651,6 +661,35 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .pkg-lbl { font-size: 13px; margin: 8px 0 4px; font-weight: 700; }
 .pkg-note { font-family: var(--pixel); font-size: 7px; color: var(--muted); margin-bottom: 10px; }
 .pkg .btn { width: 100%; margin-top: 8px; }
+
+/* ---------- onboarding wizard ---------- */
+.ob-wrap { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.ob-card {
+  width: 440px; max-width: 100%;
+  border: var(--border); border-radius: var(--r); background: var(--surface);
+  box-shadow: var(--shadow); padding: 28px; display: flex; flex-direction: column; gap: 12px;
+}
+.ob-dots { display: flex; gap: 7px; margin: 6px 0 4px; }
+.ob-dot { width: 9px; height: 9px; border: 2px solid var(--ink); background: var(--surface); }
+.ob-dot.on { background: var(--lime); }
+.ob-h { font-family: var(--display); font-size: 26px; margin: 6px 0 0; }
+.ob-p { color: var(--muted); font-size: 14px; line-height: 1.5; margin: 0 0 8px; }
+
+/* ---------- toasts ---------- */
+.toaster {
+  position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+  z-index: 2000; display: flex; flex-direction: column; gap: 8px; align-items: center;
+  pointer-events: none;
+}
+.toast {
+  border: var(--border); border-radius: var(--r); padding: 12px 18px;
+  font-weight: 700; font-size: 14px; box-shadow: var(--shadow);
+  background: var(--surface); color: var(--ink); animation: toastin .18s ease-out;
+}
+.toast-ok { background: var(--lime); }
+.toast-err { background: var(--red); color: #fff; }
+.toast-info { background: var(--surface); }
+@keyframes toastin { from { transform: translateY(10px); opacity: 0; } to { transform: none; opacity: 1; } }
 
 /* ---------- spinner (blocky) ---------- */
 .spinner { display: inline-block; width: 22px; height: 22px; background: var(--lime);
