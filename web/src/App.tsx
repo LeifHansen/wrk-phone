@@ -75,7 +75,7 @@ export function App() {
         <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="dot">✆</div>
           <div className="lbl">WRK LINE</div>
-          <div className="bars">▁▃▅▇</div>
+          <div className="bars"><i /><i /><i /><i /></div>
         </NavLink>
         <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Admin">
           <span className="glyph">⚙</span><span className="nav-label">ADMIN</span>

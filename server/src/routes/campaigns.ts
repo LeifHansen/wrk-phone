@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
-import { spendCredits, messageCost } from '../lib/db.js';
+import { spendCredits, messageCost, isOptedOut } from '../lib/db.js';
 
 export const campaignsRouter = Router();
 const USER = process.env.DEMO_USER_ID || 'demo';
@@ -73,6 +73,10 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
   (async () => {
     let sent = 0;
     for (const r of recipients) {
+      if (isOptedOut(USER, r.phone)) {
+        db.prepare(`UPDATE campaign_recipients SET status = 'failed', error = 'opted out (STOP)' WHERE id = ?`).run(r.id);
+        continue;
+      }
       const body = String(campaign.template).replace(/\{\{\s*name\s*\}\}/g, r.name || 'there');
       const cost = messageCost(body, !!campaign.media_url);
       if (!spendCredits(USER, cost)) {

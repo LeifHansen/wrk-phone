@@ -206,6 +206,7 @@ tryAddColumn('agents', 'voice_name TEXT');
 tryAddColumn('agents', 'tts_voice TEXT');
 tryAddColumn('agents', 'avatar_url TEXT');
 tryAddColumn('app_settings', 'avatar_url TEXT');
+tryAddColumn('contacts', 'opted_out INTEGER NOT NULL DEFAULT 0');
 
 // Migrate legacy agent_settings (single row per user) into agents.
 try {
@@ -363,6 +364,31 @@ export function messageCost(body: string, hasMedia: boolean): number {
   return Math.max(1, Math.ceil((body || '').length / 160));
 }
 export const MMS_MAX_CHARS = 560;
+
+// ---- SMS compliance (carrier-required opt-out) ----
+const STOP_WORDS = new Set(['stop', 'stopall', 'unsubscribe', 'cancel', 'end', 'quit', 'optout', 'opt-out']);
+const START_WORDS = new Set(['start', 'unstop', 'yes', 'optin', 'opt-in']);
+const HELP_WORDS = new Set(['help', 'info']);
+export type ComplianceKind = 'stop' | 'start' | 'help' | null;
+
+export function classifyCompliance(body: string): ComplianceKind {
+  const w = (body || '').trim().toLowerCase().replace(/[^\w-]/g, '');
+  if (STOP_WORDS.has(w)) return 'stop';
+  if (START_WORDS.has(w)) return 'start';
+  if (HELP_WORDS.has(w)) return 'help';
+  return null;
+}
+export function setOptOut(userId: string, phone: string, optedOut: boolean) {
+  // Ensure the contact row exists so the flag sticks even for unknown senders.
+  db.prepare(
+    `INSERT INTO contacts (user_id, phone, name, opted_out) VALUES (?, ?, '', ?)
+     ON CONFLICT(user_id, phone) DO UPDATE SET opted_out = ?`
+  ).run(userId, phone, optedOut ? 1 : 0, optedOut ? 1 : 0);
+}
+export function isOptedOut(userId: string, phone: string): boolean {
+  const r = db.prepare(`SELECT opted_out FROM contacts WHERE user_id = ? AND phone = ?`).get(userId, phone) as any;
+  return !!r?.opted_out;
+}
 
 // ---- subscriptions ----
 export function recordSubscription(userId: string, plan: string, ref: string | null, status: string, stripeSubId?: string) {
