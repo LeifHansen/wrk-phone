@@ -149,6 +149,19 @@ db.exec(`
     created_at INTEGER NOT NULL
   );
 
+  CREATE TABLE IF NOT EXISTS a2p_registrations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    profile_json TEXT NOT NULL,        -- business info
+    package_json TEXT NOT NULL,        -- AI-drafted campaign content
+    status TEXT NOT NULL DEFAULT 'draft',  -- draft|submitted|in_review|approved|failed|manual
+    twilio_brand_sid TEXT,
+    twilio_campaign_sid TEXT,
+    note TEXT,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+
   -- Per-user provisioned phone number (selected during onboarding).
   CREATE TABLE IF NOT EXISTS app_settings (
     user_id TEXT PRIMARY KEY,
@@ -156,6 +169,7 @@ db.exec(`
     active_number_sid TEXT,
     onboarded INTEGER NOT NULL DEFAULT 0,
     credits INTEGER NOT NULL DEFAULT 100,
+    avatar_url TEXT,
     updated_at INTEGER NOT NULL DEFAULT 0
   );
 
@@ -178,6 +192,8 @@ tryAddColumn('app_settings', 'credits INTEGER NOT NULL DEFAULT 100');
 tryAddColumn('agents', 'voice_id INTEGER');
 tryAddColumn('agents', 'voice_name TEXT');
 tryAddColumn('agents', 'tts_voice TEXT');
+tryAddColumn('agents', 'avatar_url TEXT');
+tryAddColumn('app_settings', 'avatar_url TEXT');
 
 // Migrate legacy agent_settings (single row per user) into agents.
 try {

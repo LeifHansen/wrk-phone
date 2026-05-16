@@ -5,6 +5,9 @@ import { Setup } from './pages/Setup';
 import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
 import { Credits } from './pages/Credits';
+import { Numbers } from './pages/Numbers';
+import { A2P } from './pages/A2P';
+import { Analytics } from './pages/Analytics';
 import { Inbox } from './pages/Inbox';
 import { Conversation } from './pages/Conversation';
 import { Keypad } from './pages/Keypad';
@@ -65,14 +68,17 @@ export function App() {
         <NavLink to="/agents" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agents">
           <span className="glyph">✦</span><span className="nav-label">AGENTS</span>
         </NavLink>
-        <NavLink to="/settings" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Settings">
-          <span className="glyph">⚙</span><span className="nav-label">CONFIG</span>
+        <NavLink to="/analytics" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Analytics">
+          <span className="glyph">▦</span><span className="nav-label">STATS</span>
         </NavLink>
         <div className="spacer" />
         <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }}>
           <div className="dot">✆</div>
           <div className="lbl">WRK LINE</div>
           <div className="bars">▁▃▅▇</div>
+        </NavLink>
+        <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Admin">
+          <span className="glyph">⚙</span><span className="nav-label">ADMIN</span>
         </NavLink>
       </aside>
       <main className="main">
@@ -93,6 +99,10 @@ export function App() {
           <Route path="/routing/:id" element={<RoutingEdit />} />
           <Route path="/campaigns" element={<Campaigns />} />
           <Route path="/credits" element={<Credits />} />
+          <Route path="/numbers" element={<Numbers />} />
+          <Route path="/a2p" element={<A2P />} />
+          <Route path="/analytics" element={<Analytics />} />
+          <Route path="/admin" element={<Settings />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>

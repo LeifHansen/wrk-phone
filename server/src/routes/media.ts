@@ -56,6 +56,48 @@ mediaRouter.post('/media/generate', async (req, res) => {
   }
 });
 
+async function genImageUrl(prompt: string): Promise<string> {
+  const result = await openai.images.generate({ model: 'gpt-image-1', prompt, size: '1024x1024', n: 1 });
+  const b64 = result.data?.[0]?.b64_json;
+  if (b64) return saveBytes(Buffer.from(b64, 'base64'), 'png').url;
+  if (result.data?.[0]?.url) {
+    const r = await fetch(result.data[0].url);
+    return saveBytes(Buffer.from(await r.arrayBuffer()), 'png').url;
+  }
+  throw new Error('no image returned');
+}
+
+// Auto-avatar generation. body: { kind:'account'|'agent', agentId?, prompt? }
+mediaRouter.post('/media/avatar', async (req, res) => {
+  const kind = req.body?.kind === 'agent' ? 'agent' : 'account';
+  try {
+    let prompt = String(req.body?.prompt || '').trim();
+    if (kind === 'agent') {
+      const a = db.prepare(`SELECT name, persona, role FROM agents WHERE id=? AND user_id=?`)
+        .get(Number(req.body?.agentId), USER) as any;
+      if (!a) return res.status(404).json({ error: 'agent not found' });
+      prompt = prompt ||
+        `Bold flat-vector avatar icon, retro arcade sticker style, thick outline, cream background, for an AI assistant named "${a.name}" whose job is ${a.role || 'messaging'} with a ${a.persona || 'friendly'} personality. Centered, simple, no text.`;
+      const url = await genImageUrl(prompt);
+      db.prepare(`UPDATE agents SET avatar_url=? WHERE id=? AND user_id=?`).run(url, Number(req.body.agentId), USER);
+      return res.json({ url });
+    }
+    prompt = prompt ||
+      `Friendly bold flat-vector profile avatar, retro arcade sticker style, thick black outline, cream background, abstract person, no text.`;
+    const url = await genImageUrl(prompt);
+    db.prepare(`UPDATE app_settings SET avatar_url=?, updated_at=? WHERE user_id=?`).run(url, Date.now(), USER);
+    res.json({ url });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/account — lightweight account profile (avatar).
+mediaRouter.get('/account', (_req, res) => {
+  const row = db.prepare(`SELECT avatar_url FROM app_settings WHERE user_id=?`).get(USER) as any;
+  res.json({ avatarUrl: row?.avatar_url || null });
+});
+
 // POST /api/media/upload  body: { dataUrl }  (base64 data URL from device photos / picker)
 mediaRouter.post('/media/upload', (req, res) => {
   const dataUrl = String(req.body?.dataUrl || '');

@@ -35,15 +35,35 @@
   --shadow-lg: 8px 8px 0 var(--ink);
   --r: 10px;
 
-  --pixel: 'Press Start 2P', monospace;
-  --mono: 'Space Mono', 'Courier New', monospace;
-  --sans: 'Inter', system-ui, sans-serif;
+  /* Artistic + flowy. Display = a flowing script for titles/wordmark,
+     body = a soft rounded sans for everything else. (--pixel/--mono kept
+     as aliases so existing rules don't need mass edits.) */
+  --display: 'Pacifico', cursive;
+  --body: 'Quicksand', system-ui, sans-serif;
+  --pixel: 'Quicksand', system-ui, sans-serif;
+  --mono: 'Quicksand', system-ui, sans-serif;
+  --sans: 'Quicksand', system-ui, sans-serif;
+}
+
+/* Flowy display script for the big, expressive type only */
+.sidebar h1,
+.page-h h2,
+.home-greet,
+.opt-hero h2,
+.train-hero h2,
+.cb-num,
+.empty-card h3,
+.wizard-step h1 {
+  font-family: var(--display) !important;
+  font-weight: 400 !important;
+  letter-spacing: 0 !important;
+  -webkit-text-stroke: 0 !important;
 }
 
 * { box-sizing: border-box; }
 html, body, #root { height: 100%; margin: 0; padding: 0; }
 body {
-  font-family: var(--mono);
+  font-family: var(--body);
   color: var(--ink);
   background-color: var(--bg);
   /* faint halftone dot grid — subtle retro print texture */
