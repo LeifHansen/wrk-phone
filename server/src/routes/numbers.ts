@@ -4,6 +4,13 @@ import { getAppSettings, setActiveNumber } from '../lib/db.js';
 import { getUserId, OWNER_ID } from '../lib/auth.js';
 
 export const numbersRouter = Router();
+
+// Number purchasing is locked until the 10DLC registration flow is built.
+// Until then everyone shares the existing pool on the main Twilio account
+// and just selects/swaps which pool number is their sending line.
+const PURCHASE_ENABLED = process.env.NUMBER_PURCHASE_ENABLED === '1';
+const purchaseLocked = (_req: any, res: any) =>
+  res.status(403).json({ error: 'Buying numbers is disabled until 10DLC registration is set up. Pick a number from the shared pool instead.' });
 // Shared pool model: numbers live on the one Twilio account/Messaging Service
 // (OWNER). Each user *selects* one from the pool as their own outbound line
 // (per-user, app_settings keyed by req.userId). Webhook/infra stays OWNER.
@@ -84,6 +91,7 @@ async function configureWebhooks(numberSid: string): Promise<{ urls: any; warnin
 
 // GET /api/numbers/search
 numbersRouter.get('/numbers/search', async (req, res) => {
+  if (!PURCHASE_ENABLED) return purchaseLocked(req, res);
   const country = String(req.query.country || 'US').toUpperCase();
   const areaCode = req.query.areaCode ? Number(req.query.areaCode) : undefined;
   const contains = req.query.contains ? String(req.query.contains) : undefined;
@@ -103,6 +111,7 @@ numbersRouter.get('/numbers/search', async (req, res) => {
 
 // POST /api/numbers/buy { phoneNumber }
 numbersRouter.post('/numbers/buy', async (req, res) => {
+  if (!PURCHASE_ENABLED) return purchaseLocked(req, res);
   const phoneNumber = String(req.body.phoneNumber || '').trim();
   if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
   try {
@@ -259,6 +268,7 @@ numbersRouter.post('/numbers/set-active', async (req: any, res) => {
 // Same provisioning as the primary, but does NOT change the active line.
 // $2/mo recurring (billing wired later — see Stripe note in README).
 numbersRouter.post('/numbers/buy-additional', async (req, res) => {
+  if (!PURCHASE_ENABLED) return purchaseLocked(req, res);
   const phoneNumber = String(req.body.phoneNumber || '').trim();
   if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
   try {
