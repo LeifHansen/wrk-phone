@@ -92,6 +92,7 @@ export const api = {
   startConversation: (peer_phone: string, name?: string) =>
     req<{ id: number }>('/api/conversations', { method: 'POST', body: JSON.stringify({ peer_phone, name }) }),
   markRead: (id: number) => req(`/api/conversations/${id}/read`, { method: 'POST' }),
+  deleteConversation: (id: number) => req(`/api/conversations/${id}`, { method: 'DELETE' }),
   assignAgent: (convId: number, agentId: number | null) =>
     req(`/api/conversations/${convId}/agent`, { method: 'PATCH', body: JSON.stringify({ agent_id: agentId }) }),
   // sms

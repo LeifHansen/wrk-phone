@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, COLOR_BG, COLOR_FG } from '../lib/api';
+import { IconTrash } from '../components/Icons';
+import { toast } from '../components/Toast';
 
 interface Row {
   id: number; peer_phone: string; name: string | null;
@@ -31,6 +33,13 @@ export function Inbox() {
   const navigate = useNavigate();
 
   const load = () => api.listConversations().then((r) => setRows(r as Row[])).catch(() => {});
+
+  const del = async (e: React.MouseEvent, id: number, label: string) => {
+    e.preventDefault(); e.stopPropagation();
+    if (!confirm(`Delete the conversation with ${label}? This removes all its messages.`)) return;
+    try { await api.deleteConversation(id); setRows((s) => s.filter((x) => x.id !== id)); toast('Conversation deleted'); }
+    catch (err: any) { toast(`Delete failed: ${err.message}`, 'err'); }
+  };
   useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
 
   const compose = async () => {
@@ -62,7 +71,7 @@ export function Inbox() {
         )}
         <ul className="inbox-list">
           {rows.map((r) => (
-            <li key={r.id}>
+            <li key={r.id} className="inbox-li">
               <Link to={`/conversation/${r.id}`} className="inbox-row">
                 {r.unread_count > 0 ? <div className="unread-dot" /> : <div style={{ width: 8 }} />}
                 <div className="avatar">{initial(r)}</div>
@@ -84,6 +93,10 @@ export function Inbox() {
                   )}
                 </div>
               </Link>
+              <button className="inbox-del" title="Delete conversation"
+                onClick={(e) => del(e, r.id, r.name || r.peer_phone)}>
+                <IconTrash size={20} />
+              </button>
             </li>
           ))}
         </ul>

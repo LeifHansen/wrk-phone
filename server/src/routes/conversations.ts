@@ -42,6 +42,14 @@ conversationsRouter.post('/conversations/:id/read', (req, res) => {
   res.json({ ok: true });
 });
 
+// Delete a whole conversation + its messages.
+conversationsRouter.delete('/conversations/:id', (req, res) => {
+  const id = Number(req.params.id);
+  db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
+  const r = db.prepare('DELETE FROM conversations WHERE id = ? AND user_id = ?').run(id, OWNER_ID);
+  res.json({ ok: true, deleted: r.changes });
+});
+
 conversationsRouter.post('/conversations', (req, res) => {
   const USER = OWNER_ID;
   const peer = String(req.body.peer_phone || '').trim();

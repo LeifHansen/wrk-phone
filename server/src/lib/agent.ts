@@ -211,7 +211,13 @@ export async function optimizeAgent(agent: AgentRow): Promise<Optimization[]> {
     return `${tag}: ${r.body.slice(0, 200)}`;
   }).join('\n');
 
-  const sys = `You are a coach for SMS auto-responder agents. You will be given an agent's current config and a sample of its recent traffic. Identify up to 5 specific improvements. Each must be one-click applicable as a JSON patch. Prefer additive, narrow changes (a new rule, a new example, a clearer persona phrase) over rewrites. Be honest if you don't have enough signal — return fewer items rather than guess. Output strict JSON.`;
+  const sys = `You are a coach for SMS auto-responder agents. Given the agent's config and recent traffic, propose up to 5 specific, one-click improvements as JSON patches.
+
+CRITICAL RULES:
+- A "rules" patch is ONLY for genuine guardrails the user clearly wants the agent to NEVER do (e.g. "never share pricing"). NEVER express the agent's intended/positive behavior as a rule. NEVER negate or restrict what the persona/instructions say the agent SHOULD do. If unsure, do not propose a rules patch.
+- Behavioral guidance ("be more concise", "ask a clarifying question") goes in an "instructions" patch, never as a "don't" rule.
+- "rules" patches must contain ONLY the NEW rule(s) to add — they are appended to existing rules, not a replacement list. Keep to 1-2 short additions.
+- Prefer additive, narrow changes. Be honest with low signal — return fewer items. Output strict JSON.`;
 
   const user = `Agent name: ${a.name}
 Role: ${a.role || 'unspecified'}
@@ -238,7 +244,7 @@ Return JSON of shape:
         // include EXACTLY ONE of these:
         "persona": "new full persona text"
         | "instructions": "new full instructions text"
-        | "rules": ["full new list of rules"]
+        | "rules": ["ONLY the new guardrail(s) to append — never the agent's intended behavior"]
         | "addExample": {"in":"...","out":"..."}
         | "mode": "off | suggest | auto"
       }

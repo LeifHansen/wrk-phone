@@ -5,7 +5,9 @@ import { Setup } from './pages/Setup';
 import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
 import { Login } from './pages/Login';
+import { Onboarding } from './pages/Onboarding';
 import { Logo } from './components/Logo';
+import { Toaster } from './components/Toast';
 import { IconPhone, IconMessage, IconContacts, IconBlast, IconAgent, IconStats, IconGear } from './components/Icons';
 import { Credits } from './pages/Credits';
 import { Numbers } from './pages/Numbers';
@@ -87,6 +89,7 @@ export function App() {
       <main className="main">
         <Routes>
           <Route path="/login" element={<Login />} />
+          <Route path="/welcome" element={<Onboarding />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />
@@ -111,6 +114,7 @@ export function App() {
         </Routes>
       </main>
       {inCall && <CallOverlay peer={peer} onEnd={() => setInCall(false)} />}
+      <Toaster />
     </div>
   );
 }
