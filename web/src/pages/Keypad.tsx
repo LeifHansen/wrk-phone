@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { placeCall } from '../lib/voice';
+import { toast } from '../components/Toast';
 
 const ROWS = [
   [{ d: '1', l: '' }, { d: '2', l: 'ABC' }, { d: '3', l: 'DEF' }],
@@ -27,7 +28,7 @@ export function Keypad({ onCall }: { onCall: (peer: string) => void }) {
     const target = num.startsWith('+') ? num : `+1${num.replace(/[^\d]/g, '')}`;
     onCall(target);
     try { await placeCall(target); }
-    catch (e: any) { alert(`Call failed: ${e.message}`); }
+    catch (e: any) { toast(`Call failed: ${e.message}`, 'err'); }
   };
 
   return (

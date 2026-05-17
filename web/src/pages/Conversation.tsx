@@ -41,7 +41,7 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     const text = draft.trim();
     setDraft('');
     try { await api.sendSms(conv.peer_phone, text); await load(); }
-    catch (e: any) { alert(e.message); setDraft(text); }
+    catch (e: any) { toast(e.message, 'err'); setDraft(text); }
     finally { setSending(false); }
   };
 
@@ -49,13 +49,13 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     if (!conv) return;
     onCall(conv.peer_phone);
     try { await placeCall(conv.peer_phone); }
-    catch (e: any) { alert(`Call failed: ${e.message}`); }
+    catch (e: any) { toast(`Call failed: ${e.message}`, 'err'); }
   };
 
   const openSwitcher = async (forAutopilot = false) => {
     setApPick(forAutopilot);
     try { setAllAgents(await api.listAgents()); setSheetOpen(true); }
-    catch (e: any) { alert(e.message); }
+    catch (e: any) { toast(e.message, 'err'); }
   };
   const pickAgent = async (a: Agent | null) => {
     setSheetOpen(false);

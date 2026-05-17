@@ -42,6 +42,30 @@ app.use(express.json({ limit: '2mb' }));
 
 app.get('/health', (_req, res) => res.json({ ok: true, ts: Date.now() }));
 
+// Detailed access + error logging for every /api request. Captures the JSON
+// body on non-2xx so any route that does `res.status(4xx/5xx).json(...)` in
+// its own catch is logged centrally — without touching each route.
+app.use('/api', (req, res, next) => {
+  const started = Date.now();
+  const origJson = res.json.bind(res);
+  (res as any).json = (body: any) => {
+    (res as any).__body = body;
+    return origJson(body);
+  };
+  res.on('finish', () => {
+    const ms = Date.now() - started;
+    const line = `${req.method} ${req.originalUrl} → ${res.statusCode} ${ms}ms`;
+    if (res.statusCode >= 500) {
+      log.error('api', line, { body: (res as any).__body, userId: (req as any).userId });
+    } else if (res.statusCode >= 400) {
+      log.warn('api', line, { body: (res as any).__body, userId: (req as any).userId });
+    } else {
+      log.info('api', line);
+    }
+  });
+  next();
+});
+
 // Resolve req.userId (bearer token → user, else OWNER) for every request.
 app.use(authContext);
 app.use('/api', authRouter);

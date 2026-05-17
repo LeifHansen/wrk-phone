@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { ensureDevice } from '../lib/voice';
 import { api, auth } from '../lib/api';
+import { toast } from '../components/Toast';
 
 // Dev diagnostics (webhook plumbing, raw connection state) are hidden from
 // normal users. Toggle by running `localStorage.wrk_dev = '1'` in the console.
@@ -35,7 +36,7 @@ export function Settings() {
   const genAvatar = async () => {
     setGenning(true);
     try { const r = await api.genAvatar('account'); setAvatar(r.url); }
-    catch (e: any) { alert(e.message); } finally { setGenning(false); }
+    catch (e: any) { toast(e.message, 'err'); } finally { setGenning(false); }
   };
 
   const reRegister = async () => {
@@ -48,9 +49,9 @@ export function Settings() {
     setRepairing(true);
     try {
       const r = await api.repairWebhooks();
-      alert(r.warnings?.length ? `⚠️ ${r.warnings.join('\n\n⚠️ ')}` : 'Line repaired — calls & texts should work now.');
+      toast(r.warnings?.length ? `⚠️ ${r.warnings.join('\n\n⚠️ ')}` : 'Line repaired — calls & texts should work now.', 'err');
       loadHook();
-    } catch (e: any) { alert(`Repair failed: ${e.message}`); }
+    } catch (e: any) { toast(`Repair failed: ${e.message}`, 'err'); }
     finally { setRepairing(false); }
   };
 

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { toast } from '../components/Toast';
 
 // 10DLC onboarding wizard. Sole proprietor is the live path (no EIN, mobile
 // OTP identity). Standard/registered business is scaffolded — the option is
@@ -41,7 +42,7 @@ export function A2P() {
     if (!desc.trim()) return;
     setBusy(true);
     try { setPkg(await api.a2pDraft(desc.trim())); setStep('review'); }
-    catch (e: any) { alert(e.message); } finally { setBusy(false); }
+    catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
 
   const submit = async () => {
@@ -51,7 +52,7 @@ export function A2P() {
       setStatus(r); setStep('status');
       const sub = await api.subscribe('a2p');
       if (sub.url) { window.location.href = sub.url; return; }
-    } catch (e: any) { alert(e.message); } finally { setBusy(false); }
+    } catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
 
   const identityValid = profile.brandType === 'standard'

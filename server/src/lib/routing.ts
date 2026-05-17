@@ -1,5 +1,6 @@
 import OpenAI from 'openai';
 import { db } from './db.js';
+import { log } from './log.js';
 
 // ─────────────────── Condition types ───────────────────
 //
@@ -115,7 +116,7 @@ async function classifyIntents(
     }
     return matched;
   } catch (e) {
-    console.warn('intent classify failed', e);
+    log.warn('routing', 'intent classification failed', e);
     return new Set();
   }
 }

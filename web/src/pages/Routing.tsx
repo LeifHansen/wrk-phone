@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { COLOR_BG, COLOR_FG, RoutingRule, api } from '../lib/api';
 import { describeCondition } from '../lib/conditions';
+import { toast } from '../components/Toast';
 
 export function Routing() {
   const [rules, setRules] = useState<RoutingRule[]>([]);
@@ -16,16 +17,16 @@ export function Routing() {
     const next = rules.slice();
     [next[idx], next[ni]] = [next[ni], next[idx]];
     setRules(next);
-    try { await api.reorderRules(next.map((r) => r.id)); } catch (e: any) { alert(e.message); load(); }
+    try { await api.reorderRules(next.map((r) => r.id)); } catch (e: any) { toast(e.message, 'err'); load(); }
   };
 
   const toggle = async (r: RoutingRule, val: boolean) => {
-    try { await api.patchRule(r.id, { enabled: val }); load(); } catch (e: any) { alert(e.message); }
+    try { await api.patchRule(r.id, { enabled: val }); load(); } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const onDelete = async (r: RoutingRule) => {
     if (!confirm(`Delete "${r.name}"?`)) return;
-    try { await api.deleteRule(r.id); load(); } catch (e: any) { alert(e.message); }
+    try { await api.deleteRule(r.id); load(); } catch (e: any) { toast(e.message, 'err'); }
   };
 
   return (

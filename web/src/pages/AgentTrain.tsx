@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api } from '../lib/api';
+import { toast } from '../components/Toast';
 
 export function AgentTrain() {
   const { id } = useParams();
@@ -15,7 +16,7 @@ export function AgentTrain() {
     try {
       const r = await api.trainingPrompts(aid);
       setPrompts(r.prompts);
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
     finally { setBusy(false); }
   };
   useEffect(() => { fresh(); }, [aid]);
@@ -27,7 +28,7 @@ export function AgentTrain() {
       const ex = [...(a.examples || []), { in: prompts[i], out: replies[i].trim() }];
       await api.patchAgent(aid, { examples: ex } as any);
       setSaved((s) => new Set([...s, i]));
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   return (

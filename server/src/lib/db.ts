@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
+import { log } from './log.js';
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -252,7 +253,7 @@ try {
     }
   }
 } catch (e) {
-  console.warn('legacy agent_settings migration failed', e);
+  log.warn('db.migrate', 'legacy agent_settings migration failed', e);
 }
 
 export function getOrCreateConversation(userId: string, peerPhone: string): number {

@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { spendCredits, messageCost, isOptedOut } from '../lib/db.js';
+import { log } from '../lib/log.js';
 
 export const campaignsRouter = Router();
 const USER = process.env.DEMO_USER_ID || 'demo';
@@ -107,7 +108,7 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
     }
     db.prepare(`UPDATE campaigns SET status = 'done' WHERE id = ?`).run(id);
   })().catch((e) => {
-    console.error('campaign send loop crashed', e);
+    log.error('campaigns', `send loop crashed for campaign ${id}`, e);
     db.prepare(`UPDATE campaigns SET status = 'failed' WHERE id = ?`).run(id);
   });
 });

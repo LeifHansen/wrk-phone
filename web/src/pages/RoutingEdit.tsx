@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, Condition, api } from '../lib/api';
 import { CONDITION_PRESETS, describeCondition } from '../lib/conditions';
+import { toast } from '../components/Toast';
 
 const DAYS = ['mon','tue','wed','thu','fri','sat','sun'];
 
@@ -44,13 +45,13 @@ export function RoutingEdit() {
       if (editId) await api.patchRule(editId, { name: name.trim(), agent_id: agentId!, conditions });
       else await api.createRule({ name: name.trim(), agent_id: agentId!, conditions });
       nav('/routing');
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const runTest = async () => {
     setTesting(true); setTestResult(null);
     try { setTestResult(await api.testRule(testFrom, testBody, conditions)); }
-    catch (e: any) { alert(e.message); }
+    catch (e: any) { toast(e.message, 'err'); }
     finally { setTesting(false); }
   };
 
