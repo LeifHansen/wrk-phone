@@ -7,53 +7,60 @@ function pretty(e164: string) {
   return m ? `(${m[1]}) ${m[2]}-${m[3]}` : e164;
 }
 
+// Numbers are auto-assigned from a shared pool — users never browse the pool.
+// This screen just provisions (idempotent) and confirms their line.
 export function Setup() {
   const nav = useNavigate();
-  const [data, setData] = useState<any>(null);
-  const [picking, setPicking] = useState<string | null>(null);
+  const [number, setNumber] = useState<string | null>(null);
+  const [err, setErr] = useState('');
 
-  const load = () => api.listNumbers().then(setData).catch(() => {});
-  useEffect(() => { load(); }, []);
-
-  const pick = async (sid: string, number: string) => {
-    setPicking(sid);
-    try {
-      await api.setActiveNumber(sid);
-      nav('/', { replace: true });
-    } catch (e: any) { alert(`Could not select ${pretty(number)}: ${e.message}`); }
-    finally { setPicking(null); }
+  const claim = () => {
+    setErr('');
+    api.claimNumber()
+      .then((r) => setNumber(r.number))
+      .catch((e) => setErr(e.message || 'Could not assign a number.'));
   };
+  useEffect(() => { claim(); }, []);
 
   return (
     <>
       <div className="page-h">
         <div>
-          <h2>Pick your number</h2>
-          <div className="sub">Choose a line from the shared team pool — you can swap anytime.</div>
+          <h2>Your work line</h2>
+          <div className="sub">We assign you a number automatically — nothing to pick.</div>
         </div>
       </div>
-      <div className="page-body">
-        {!data && <div className="spinner" style={{ margin: '32px auto', display: 'block' }} />}
-        <div className="setup-list">
-          {data?.numbers?.map((n: any) => (
-            <div key={n.sid} className="setup-num">
-              <div>
-                <div className="setup-num-text">{pretty(n.phoneNumber)}</div>
-                <div className="setup-num-meta">{n.isActive ? '★ current' : 'shared pool'}</div>
-              </div>
-              <button className="btn lime" disabled={!!picking} onClick={() => pick(n.sid, n.phoneNumber)}>
-                {picking === n.sid ? 'Selecting…' : n.isActive ? 'Keep' : 'Use this'}
-              </button>
-            </div>
-          ))}
-          {data && (!data.numbers || data.numbers.length === 0) && (
-            <p style={{ color: 'var(--muted)', textAlign: 'center', padding: 32 }}>
-              No numbers in the shared pool yet. Ask an admin to add one to the Twilio account.
+      <div className="page-body" style={{ maxWidth: 520 }}>
+        {!number && !err && (
+          <div className="cond-card" style={{ textAlign: 'center' }}>
+            <div className="spinner" style={{ margin: '8px auto' }} />
+            <p style={{ color: 'var(--muted)', marginTop: 12 }}>Setting up your number…</p>
+          </div>
+        )}
+
+        {number && (
+          <div className="cond-card" style={{ textAlign: 'center' }}>
+            <div className="setup-num-meta" style={{ color: 'var(--muted)' }}>YOUR NUMBER</div>
+            <div style={{ fontSize: 30, fontWeight: 800, margin: '10px 0 4px' }}>{pretty(number)}</div>
+            <p style={{ color: 'var(--muted)', fontSize: 13 }}>
+              Calls and texts you send show this number. It's ready to use now.
             </p>
-          )}
-        </div>
+            <button className="btn lime lg" style={{ marginTop: 14 }} onClick={() => nav('/', { replace: true })}>
+              Start using it
+            </button>
+          </div>
+        )}
+
+        {err && (
+          <div className="cond-card">
+            <p style={{ color: 'var(--red)' }}>{err}</p>
+            <button className="btn ghost" onClick={claim}>Try again</button>
+          </div>
+        )}
+
         <div className="cond-card" style={{ color: 'var(--muted)', fontSize: 13, marginTop: 16 }}>
-          🔒 Buying your own number unlocks after 10DLC registration is set up.
+          🔒 Bringing or buying your own dedicated number unlocks after 10DLC
+          registration. For now you share a pooled line — replies land in your inbox.
         </div>
       </div>
     </>
