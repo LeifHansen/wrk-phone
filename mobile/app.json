@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "Wrk Phone",
+    "name": "Werkphone",
     "slug": "wrk-phone",
     "scheme": "wrkphone",
     "version": "0.1.0",
@@ -11,8 +11,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.yourco.wrkphone",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Wrk Phone needs the mic for calls.",
-        "NSContactsUsageDescription": "Wrk Phone syncs your contacts so names show on calls and texts, and your agents can recognize known people.",
+        "NSMicrophoneUsageDescription": "Werkphone needs the mic for calls.",
+        "NSContactsUsageDescription": "Werkphone syncs your contacts so names show on calls and texts, and your agents can recognize known people.",
         "UIBackgroundModes": ["voip", "audio", "remote-notification"]
       }
     },
@@ -29,7 +29,7 @@
       "expo-router",
       [
         "expo-contacts",
-        { "contactsPermission": "Allow Wrk Phone to sync your contacts so names show on calls and texts." }
+        { "contactsPermission": "Allow Werkphone to sync your contacts so names show on calls and texts." }
       ]
     ],
     "extra": {

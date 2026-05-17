@@ -35,7 +35,7 @@ export function Onboarding() {
         {step === 0 && (
           <>
             <h2 className="ob-h">Welcome aboard.</h2>
-            <p className="ob-p">WorkPhone is your team's shared work line — calls, texts, and AI agents. Quick 60-second setup.</p>
+            <p className="ob-p">Werkphone is your team's shared work line — calls, texts, and AI agents. Quick 60-second setup.</p>
             <button className="btn lg" style={{ width: '100%' }} onClick={() => setStep(1)}>Get started</button>
           </>
         )}
