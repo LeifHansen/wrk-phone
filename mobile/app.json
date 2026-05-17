@@ -7,9 +7,16 @@
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FBF8EC"
+    },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.yourco.wrkphn",
+      "bundleIdentifier": "com.wrkphn.app",
+      "icon": "./assets/icon.png",
       "infoPlist": {
         "NSMicrophoneUsageDescription": "WrkPhn needs the mic for calls.",
         "NSContactsUsageDescription": "WrkPhn syncs your contacts so names show on calls and texts, and your agents can recognize known people.",
@@ -17,13 +24,20 @@
       }
     },
     "android": {
-      "package": "com.yourco.wrkphn",
+      "package": "com.wrkphn.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FBF8EC"
+      },
       "permissions": [
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
         "POST_NOTIFICATIONS",
         "READ_CONTACTS"
       ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
     },
     "plugins": [
       "expo-router",
@@ -33,7 +47,7 @@
       ]
     ],
     "extra": {
-      "apiBaseUrl": "https://wrk-phone-8ebcfd.fly.dev"
+      "apiBaseUrl": "https://wrkphn.com"
     }
   }
 }

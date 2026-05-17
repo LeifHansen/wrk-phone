@@ -50,3 +50,7 @@ yarn-error.log*
 
 # vite
 .vite/
+
+# Mobile store submission secrets
+mobile/play-service-account.json
+mobile/*.p8

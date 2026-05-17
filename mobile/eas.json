@@ -12,18 +12,30 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://wrk-phone-8ebcfd.fly.dev"
+        "EXPO_PUBLIC_API_BASE_URL": "https://wrkphn.com"
       }
     },
     "production": {
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://wrk-phone-8ebcfd.fly.dev"
+        "EXPO_PUBLIC_API_BASE_URL": "https://wrkphn.com"
       },
       "autoIncrement": true
     }
   },
   "submit": {
-    "production": {}
+    "production": {
+      "ios": {
+        "_comment": "Fill these from App Store Connect, then run: eas submit -p ios --profile production",
+        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
+        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
+        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+      },
+      "android": {
+        "_comment": "Place the Play service-account JSON at mobile/play-service-account.json (gitignored), then run: eas submit -p android --profile production",
+        "serviceAccountKeyPath": "./play-service-account.json",
+        "track": "internal"
+      }
+    }
   }
 }

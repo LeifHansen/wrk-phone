@@ -4,7 +4,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 const baseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ||                    // EAS Build / dev shell
   (Constants.expoConfig?.extra as any)?.apiBaseUrl ||        // app.json fallback
-  'https://wrk-phone-8ebcfd.fly.dev';                        // deployed default
+  'https://wrkphn.com';                                      // deployed default
 
 // Bearer token cached in memory, persisted to AsyncStorage.
 let _token: string | null = null;
