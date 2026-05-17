@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
@@ -34,9 +34,17 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
   const [recents, setRecents] = useState<any[]>([]);
   const [contacts, setContacts] = useState<any[]>([]);
   const [q, setQ] = useState('');
+  const textRef = useRef<HTMLInputElement>(null);
 
   const press = (k: string) => setNum((n) => n + k);
   const back = () => setNum((n) => n.slice(0, -1));
+
+  // Switching to TEXT shows a real input (soft keyboard) instead of the
+  // numeric dial pad; switching back to CALL restores the keypad.
+  const switchMode = (m: 'call' | 'text') => {
+    setMode(m);
+    if (m === 'text') setTimeout(() => textRef.current?.focus(), 50);
+  };
 
   const openPicker = async () => {
     setPick(true); setQ('');
@@ -71,33 +79,51 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
 
   return (
     <div className="phone">
+      {/* Mode toggle + contacts live ABOVE / OUTSIDE the number pane */}
+      <div className="dialer-bar">
+        <div className="phone-toggle">
+          <button className={'pt-btn' + (mode === 'call' ? ' on' : '')} onClick={() => switchMode('call')}>CALL</button>
+          <button className={'pt-btn' + (mode === 'text' ? ' on' : '')} onClick={() => switchMode('text')}>TEXT</button>
+        </div>
+        <button className="contacts-ico" onClick={openPicker} title="Select from contacts" aria-label="Select from contacts">
+          <IconContacts size={20} />
+        </button>
+      </div>
+
       <div className="phone-screen">
         <div className="phone-num-row">
           <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
-          <button className="contacts-mini" onClick={openPicker} title="Select from contacts" aria-label="Select from contacts">
-            <IconContacts size={16} /> Contacts
-          </button>
-        </div>
-        <div className="phone-toggle">
-          <button className={'pt-btn' + (mode === 'call' ? ' on' : '')} onClick={() => setMode('call')}>CALL</button>
-          <button className={'pt-btn' + (mode === 'text' ? ' on' : '')} onClick={() => setMode('text')}>TEXT</button>
         </div>
       </div>
 
-      <div className="phone-pad">
-        {KEYS.map(([d, l]) => (
-          <button key={d} className="phone-key" onClick={() => press(d)}>
-            <span className="kd">{d}</span>
-            {l && <span className="kl">{l}</span>}
-          </button>
-        ))}
-      </div>
+      {mode === 'call' ? (
+        <div className="phone-pad">
+          {KEYS.map(([d, l]) => (
+            <button key={d} className="phone-key" onClick={() => press(d)}>
+              <span className="kd">{d}</span>
+              {l && <span className="kl">{l}</span>}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <div className="text-entry">
+          <input
+            ref={textRef}
+            className="input"
+            type="tel"
+            inputMode="tel"
+            autoFocus
+            placeholder="Type a number, or pick a contact"
+            value={num}
+            onChange={(e) => setNum(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
+          />
+          <p className="text-entry-hint">Enter who to text, then tap ✉</p>
+        </div>
+      )}
 
       <div className="phone-actions">
-        <button className="pa-side" onClick={openPicker} title="Add from contacts or recents" aria-label="Quick add">
-          <span className="pa-glyph">≡</span>
-          <span className="pa-cap">CONTACTS</span>
-        </button>
+        <span className="pa-side" aria-hidden="true" />
         <button
           className={'pa-go ' + (mode === 'call' ? 'go-call' : 'go-text')}
           onClick={go}

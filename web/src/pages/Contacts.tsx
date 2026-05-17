@@ -30,6 +30,22 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
   };
   useEffect(load, [q, activeSeg]);
 
+  // 🎭 Easter egg: searching contacts for the magic phrase summons the
+  // hidden anti-spam PrankMode agent.
+  useEffect(() => {
+    if (q.trim().toLowerCase().replace(/\s+/g, '') !== 'prankmode') return;
+    let cancelled = false;
+    api.prankReveal()
+      .then((r) => {
+        if (cancelled) return;
+        setQ('');
+        toast('🎭 PrankMode unlocked — your anti-spam agent is ready');
+        nav(`/agents/${r.agent.id}`);
+      })
+      .catch((e: any) => toast(e.message, 'err'));
+    return () => { cancelled = true; };
+  }, [q]);
+
   const add = async () => {
     if (!newPhone.trim()) return;
     try {
@@ -128,28 +144,42 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
           {showAdvanced ? '▾ Advanced' : '▸ Advanced'}
         </button>
         {showAdvanced && (
-        <div className="cond-card" style={{ marginBottom: 14 }}>
-          <div className="sa-label">SYNC FROM GOOGLE SHEETS / EXCEL</div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
-            <input className="input" id="sheetUrl" placeholder="Paste a shared Google Sheet (or published Excel) link" />
-            <button className="btn" onClick={async () => {
-              const url = (document.getElementById('sheetUrl') as HTMLInputElement)?.value?.trim();
-              if (!url) return;
-              try { const r = await api.importContactsUrl(url); toast(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`, 'ok'); load(); }
-              catch (e: any) { toast(e.message, 'err'); }
-            }}>Import</button>
+        <div className="cond-card import-pane" style={{ marginBottom: 14 }}>
+          <div className="import-head">
+            <div className="sa-label">SYNC FROM GOOGLE SHEETS / EXCEL</div>
             <a className="btn ghost" href="/api/contacts/export.csv">Export CSV</a>
           </div>
-          <div style={{ color: 'var(--muted)', fontSize: 11, marginTop: 6 }}>
-            Sheets: Share → “Anyone with the link”. Excel: File → Save As → CSV, then paste rows below.
-          </div>
-          <textarea className="textarea" id="csvPaste" placeholder={'Or paste CSV rows: name,phone'} style={{ marginTop: 8, minHeight: 70 }} />
-          <button className="btn ghost" style={{ marginTop: 6 }} onClick={async () => {
+
+          <label className="import-field">
+            <span>From a link</span>
+            <input className="input" id="sheetUrl"
+              placeholder="Paste a shared Google Sheet or published Excel link" />
+          </label>
+          <button className="btn" style={{ width: '100%' }} onClick={async () => {
+            const url = (document.getElementById('sheetUrl') as HTMLInputElement)?.value?.trim();
+            if (!url) return;
+            try { const r = await api.importContactsUrl(url); toast(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`, 'ok'); load(); }
+            catch (e: any) { toast(e.message, 'err'); }
+          }}>Import from link</button>
+
+          <div className="import-divider"><span>or paste rows</span></div>
+
+          <label className="import-field">
+            <span>CSV rows — <code>name,phone</code></span>
+            <textarea className="textarea" id="csvPaste"
+              placeholder={'Jane Doe,+14155550142\nSam Lee,+12065550199'}
+              style={{ minHeight: 84 }} />
+          </label>
+          <button className="btn" style={{ width: '100%' }} onClick={async () => {
             const csv = (document.getElementById('csvPaste') as HTMLTextAreaElement)?.value?.trim();
             if (!csv) return;
             try { const r = await api.importContactsCsv(csv); toast(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`, 'ok'); load(); }
             catch (e: any) { toast(e.message, 'err'); }
           }}>Import pasted CSV</button>
+
+          <p className="import-hint">
+            Google Sheets: Share → “Anyone with the link”. Excel: File → Save As → CSV.
+          </p>
         </div>
         )}
 

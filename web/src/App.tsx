@@ -40,6 +40,7 @@ const isChromeless = (p: string) => CHROMELESS.includes(p) || p === '/blog' || p
 export function App() {
   const [inCall, setInCall] = useState(false);
   const [peer, setPeer] = useState('');
+  const [callSid, setCallSid] = useState<string | null>(null);
   const [acctAvatar, setAcctAvatar] = useState<string | null>(null);
   const nav = useNavigate();
   const loc = useLocation();
@@ -65,9 +66,10 @@ export function App() {
   useEffect(() => {
     onIncoming((call) => {
       setPeer(call.parameters.From || 'Unknown');
+      setCallSid(call.parameters.CallSid || (call as any).parameters?.CallSid || null);
       setInCall(true);
-      call.on('disconnect', () => setInCall(false));
-      call.on('cancel', () => setInCall(false));
+      call.on('disconnect', () => { setInCall(false); setCallSid(null); });
+      call.on('cancel', () => { setInCall(false); setCallSid(null); });
       call.accept();
     });
   }, []);
@@ -143,7 +145,7 @@ export function App() {
           <Route path="/settings" element={<Settings />} />
         </Routes>
       </main>
-      {inCall && <CallOverlay peer={peer} onEnd={() => setInCall(false)} />}
+      {inCall && <CallOverlay peer={peer} callSid={callSid} onEnd={() => { setInCall(false); setCallSid(null); }} />}
       <Toaster />
     </div>
   );
