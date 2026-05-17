@@ -1,23 +1,23 @@
 {
   "expo": {
-    "name": "Werkphone",
+    "name": "WrkPhn",
     "slug": "wrk-phone",
-    "scheme": "wrkphone",
+    "scheme": "wrkphn",
     "version": "0.1.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.yourco.wrkphone",
+      "bundleIdentifier": "com.yourco.wrkphn",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "Werkphone needs the mic for calls.",
-        "NSContactsUsageDescription": "Werkphone syncs your contacts so names show on calls and texts, and your agents can recognize known people.",
+        "NSMicrophoneUsageDescription": "WrkPhn needs the mic for calls.",
+        "NSContactsUsageDescription": "WrkPhn syncs your contacts so names show on calls and texts, and your agents can recognize known people.",
         "UIBackgroundModes": ["voip", "audio", "remote-notification"]
       }
     },
     "android": {
-      "package": "com.yourco.wrkphone",
+      "package": "com.yourco.wrkphn",
       "permissions": [
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
@@ -29,7 +29,7 @@
       "expo-router",
       [
         "expo-contacts",
-        { "contactsPermission": "Allow Werkphone to sync your contacts so names show on calls and texts." }
+        { "contactsPermission": "Allow WrkPhn to sync your contacts so names show on calls and texts." }
       ]
     ],
     "extra": {

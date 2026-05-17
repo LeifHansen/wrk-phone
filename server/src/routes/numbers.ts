@@ -116,7 +116,7 @@ numbersRouter.post('/numbers/buy', async (req, res) => {
   if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
   try {
     const purchased = await twilioClient.incomingPhoneNumbers.create({
-      phoneNumber, friendlyName: 'Wrk Phone',
+      phoneNumber, friendlyName: 'WrkPhn',
     });
 
     let attachedToService = false;
@@ -316,7 +316,7 @@ numbersRouter.post('/numbers/buy-additional', async (req, res) => {
   const phoneNumber = String(req.body.phoneNumber || '').trim();
   if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
   try {
-    const purchased = await twilioClient.incomingPhoneNumbers.create({ phoneNumber, friendlyName: 'Wrk Phone' });
+    const purchased = await twilioClient.incomingPhoneNumbers.create({ phoneNumber, friendlyName: 'WrkPhn' });
     if (twilioConfig.messagingServiceSid) {
       try {
         await twilioClient.messaging.v1.services(twilioConfig.messagingServiceSid)

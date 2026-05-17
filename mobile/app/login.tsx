@@ -25,7 +25,7 @@ export default function Login() {
 
   return (
     <View style={s.wrap}>
-      <Text style={s.title}>Werkphone</Text>
+      <Text style={s.title}>WrkPhn</Text>
       <Text style={s.sub}>{mode === 'login' ? 'Welcome back.' : 'Create your account.'}</Text>
 
       <TextInput style={s.input} placeholder="email" placeholderTextColor={theme.textMuted}

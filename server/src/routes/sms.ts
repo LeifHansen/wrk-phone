@@ -35,7 +35,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
       setOptOut(USER, from, false);
       twiml.message('You are resubscribed. Reply HELP for help, STOP to unsubscribe.');
     } else { // help
-      twiml.message('Wrk Phone: reply STOP to unsubscribe. Msg & data rates may apply.');
+      twiml.message('WrkPhn: reply STOP to unsubscribe. Msg & data rates may apply.');
     }
     return res.type('text/xml').send(twiml.toString());
   }

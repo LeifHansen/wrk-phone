@@ -1,4 +1,4 @@
-// Wrk Phone — RETRO ARCADE / 90s palette (matches web)
+// WrkPhn — RETRO ARCADE / 90s palette (matches web)
 // Warm paper surfaces, hard ink borders, lime/arcade accents.
 export const theme = {
   // surfaces

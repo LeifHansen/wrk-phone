@@ -43,7 +43,7 @@ billingRouter.post('/billing/subscribe', async (req, res) => {
           currency: 'usd',
           recurring: { interval: 'month' },
           unit_amount: plan.monthly * 100,
-          product_data: { name: `Wrk Phone — ${plan.label}` },
+          product_data: { name: `WrkPhn — ${plan.label}` },
         },
       }],
       success_url: `${base}/admin?sub=1`,

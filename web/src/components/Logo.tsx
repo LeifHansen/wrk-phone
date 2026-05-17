@@ -8,7 +8,7 @@ export function LogoMark({ size = 44 }: { size?: number }) {
   const [useAsset, setUseAsset] = useState(true);
   if (useAsset) {
     return (
-      <img src={ASSET} width={size} height={size} alt="Werkphone"
+      <img src={ASSET} width={size} height={size} alt="WrkPhn"
         style={{ display: 'block', objectFit: 'contain' }}
         onError={() => setUseAsset(false)} />
     );
@@ -38,7 +38,7 @@ export function Logo({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   return (
     <div className="brand" style={{ flexDirection: size === 'lg' ? 'row' : 'column' }}>
       <LogoMark size={tile} />
-      <div className="brand-word" style={{ fontSize: word }}>Werk Phone</div>
+      <div className="brand-word" style={{ fontSize: word }}>WrkPhn</div>
     </div>
   );
 }

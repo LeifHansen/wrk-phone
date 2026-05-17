@@ -38,7 +38,7 @@ export default function NumberOnboarding() {
   const buy = async (n: Avail) => {
     Alert.alert(
       'Get this number?',
-      `${pretty(n.phoneNumber)} — ${n.locality || n.region}\n\nThis purchases the number on your Twilio account and connects it to your Werkphone.`,
+      `${pretty(n.phoneNumber)} — ${n.locality || n.region}\n\nThis purchases the number on your Twilio account and connects it to your WrkPhn.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -50,7 +50,7 @@ export default function NumberOnboarding() {
               const warn = res.warnings?.length ? `\n\nNote:\n• ${res.warnings.join('\n• ')}` : '';
               Alert.alert(
                 'You\'re set 🎉',
-                `${pretty(res.number)} is now your Werkphone line${res.attachedToService ? ' and is connected to your messaging service' : ''}.${warn}`,
+                `${pretty(res.number)} is now your WrkPhn line${res.attachedToService ? ' and is connected to your messaging service' : ''}.${warn}`,
                 [{ text: 'Start', onPress: () => router.replace('/(tabs)/inbox') }]
               );
             } catch (e: any) {
@@ -70,7 +70,7 @@ export default function NumberOnboarding() {
         <Text style={styles.kicker}>STEP 2 OF 2</Text>
         <Text style={styles.h1}>Pick your number</Text>
         <Text style={styles.sub}>
-          This becomes your Werkphone line — for calls, texts, and your AI agents. You can search by area code.
+          This becomes your WrkPhn line — for calls, texts, and your AI agents. You can search by area code.
         </Text>
       </View>
 

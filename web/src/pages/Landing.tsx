@@ -52,7 +52,7 @@ const STEPS = [
 
 const FAQ = [
   {
-    q: 'Is Werkphone a real phone number?',
+    q: 'Is WrkPhn a real phone number?',
     a: 'Yes. You get a real, callable and textable number on a carrier-grade network. Calls and texts work in the browser and on mobile.',
   },
   {
@@ -72,16 +72,16 @@ const FAQ = [
 export function Landing() {
   useEffect(() => {
     const prev = document.title;
-    document.title = 'Werkphone — AI work phone with agents that text back';
+    document.title = 'WrkPhn — AI work phone with agents that text back';
     return () => { document.title = prev; };
   }, []);
 
   return (
     <div className="lp">
       <header className="lp-nav">
-        <Link to="/lp" className="lp-brand" aria-label="Werkphone home">
+        <Link to="/lp" className="lp-brand" aria-label="WrkPhn home">
           <LogoMark size={36} />
-          <span className="lp-brand-word">Werk Phone</span>
+          <span className="lp-brand-word">WrkPhn</span>
         </Link>
         <nav className="lp-nav-links" aria-label="Primary">
           <a href="#features">Features</a>
@@ -100,7 +100,7 @@ export function Landing() {
             <div className="lp-eyebrow">The AI work phone</div>
             <h1>Your business line, answered by an AI that sounds like you.</h1>
             <p className="lp-sub">
-              Werkphone gives your team one shared number with AI agents that
+              WrkPhn gives your team one shared number with AI agents that
               reply to texts, take calls, and run compliant campaigns — so you
               never miss a customer, even after hours.
             </p>
@@ -174,14 +174,14 @@ export function Landing() {
       <footer className="lp-footer">
         <div className="lp-foot-brand">
           <LogoMark size={28} />
-          <span>Werk Phone</span>
+          <span>WrkPhn</span>
         </div>
         <div className="lp-foot-links">
           <Link to="/login">Log in</Link>
           <Link to="/register">Register</Link>
           <a href="#features">Features</a>
         </div>
-        <div className="lp-foot-fine">© {new Date().getFullYear()} Werkphone. All rights reserved.</div>
+        <div className="lp-foot-fine">© {new Date().getFullYear()} WrkPhn. All rights reserved.</div>
       </footer>
     </div>
   );
