@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
+import { SmsAiTools } from '../components/SmsAiTools';
 import { placeCall } from '../lib/voice';
 
 interface Msg {
@@ -123,6 +124,11 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
           );
         })}
       </div>
+      {draft.trim() && (
+        <div style={{ padding: '8px 12px 0' }}>
+          <SmsAiTools text={draft} goal="1:1 customer text reply" onApply={setDraft} compact />
+        </div>
+      )}
       <div className="composer">
         <textarea
           value={draft}

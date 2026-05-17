@@ -22,11 +22,29 @@ export default function ContactsTab() {
   const [phone, setPhone] = useState('');
   const [name, setName] = useState('');
   const [picked, setPicked] = useState<Contact | null>(null);
+  const [syncing, setSyncing] = useState(false);
 
   const load = useCallback(async () => {
     try { setContacts(await api.listContacts(q || undefined)); } catch {}
   }, [q]);
   useFocusEffect(useCallback(() => { load(); }, [load]));
+
+  const syncNow = async () => {
+    if (syncing) return;
+    setSyncing(true);
+    try {
+      const { syncDeviceContacts } = await import('@/lib/contacts');
+      const r = await syncDeviceContacts();
+      if (!r.granted) {
+        Alert.alert('Permission needed', 'Enable Contacts access for WrkPhn in Settings to sync your address book.');
+      } else {
+        Alert.alert('Contacts synced', `Synced ${r.synced} number${r.synced === 1 ? '' : 's'} (${r.skipped} skipped). You now have ${r.total} contacts.`);
+        load();
+      }
+    } catch (e: any) {
+      Alert.alert('Sync failed', e.message || 'Could not read device contacts.');
+    } finally { setSyncing(false); }
+  };
 
   const add = async () => {
     if (!phone.trim()) return;
@@ -49,7 +67,12 @@ export default function ContactsTab() {
 
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
-      <Text style={styles.h1}>Contacts</Text>
+      <View style={styles.headRow}>
+        <Text style={styles.h1}>Contacts</Text>
+        <Pressable onPress={syncNow} disabled={syncing} style={[styles.syncBtn, syncing && { opacity: 0.5 }]}>
+          <Text style={styles.syncBtnText}>{syncing ? 'Syncing…' : '⟳ Sync device'}</Text>
+        </Pressable>
+      </View>
 
       {/* add — phone is the only required field */}
       <View style={styles.addRow}>
@@ -107,6 +130,9 @@ export default function ContactsTab() {
 const styles = StyleSheet.create({
   safe: { flex: 1, backgroundColor: theme.bg },
   h1: { fontSize: 34, fontWeight: '800', color: theme.text, letterSpacing: -0.5, paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  headRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingRight: spacing.lg },
+  syncBtn: { backgroundColor: theme.lime, borderRadius: radius.md, paddingHorizontal: 14, paddingVertical: 9, marginTop: spacing.sm },
+  syncBtnText: { fontWeight: '800', color: theme.black, fontSize: 13 },
   addRow: { flexDirection: 'row', gap: 8, padding: spacing.lg, flexWrap: 'wrap' },
   input: { backgroundColor: theme.bgSubtle, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 10, fontSize: 15, color: theme.text },
   addBtn: { backgroundColor: theme.black, borderRadius: radius.md, paddingHorizontal: 18, justifyContent: 'center' },

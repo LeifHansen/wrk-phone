@@ -161,6 +161,13 @@ export const api = {
   generateImage: (prompt: string) =>
     req<{ id: number; url: string; prompt: string }>('/api/media/generate', { method: 'POST', body: JSON.stringify({ prompt }) }),
   deleteMedia: (id: number) => req(`/api/media/${id}`, { method: 'DELETE' }),
+  // AI deliverability tools
+  smsLint: (text: string) =>
+    req<{ risk: 'low' | 'medium' | 'high'; flags: { term: string; why: string; severity: string }[]; summary: string; degraded?: boolean }>(
+      '/api/ai/sms-lint', { method: 'POST', body: JSON.stringify({ text }) }),
+  smsOptimize: (text: string, goal?: string) =>
+    req<{ optimized: string; changes: string[]; notes: string }>(
+      '/api/ai/sms-optimize', { method: 'POST', body: JSON.stringify({ text, goal }) }),
   // number provisioning
   searchNumbers: (params: { country?: string; areaCode?: string; contains?: string }) => {
     const q = new URLSearchParams();

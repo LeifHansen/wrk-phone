@@ -23,6 +23,7 @@ import { billingRouter } from './routes/billing.js';
 import { a2pRouter } from './routes/a2p.js';
 import { analyticsRouter } from './routes/analytics.js';
 import { blogRouter } from './routes/blog.js';
+import { aiRouter } from './routes/ai.js';
 import { startBlogScheduler } from './lib/blog.js';
 import { listBlogPosts } from './lib/db.js';
 import { log } from './lib/log.js';
@@ -97,6 +98,7 @@ app.use('/api', billingRouter);
 app.use('/api', a2pRouter);
 app.use('/api', analyticsRouter);
 app.use('/api', blogRouter);
+app.use('/api', aiRouter);
 app.use('/media', express.static(MEDIA_DIR));
 
 // Unknown API routes must return JSON 404 (not the SPA HTML fallback) so the
