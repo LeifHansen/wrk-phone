@@ -3,7 +3,7 @@ import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { theme } from '@/constants/theme';
-import { api } from '@/lib/api';
+import { api, auth } from '@/lib/api';
 
 function OnboardingGate() {
   const router = useRouter();
@@ -30,12 +30,18 @@ function OnboardingGate() {
 }
 
 export default function RootLayout() {
+  const [booted, setBooted] = useState(false);
+  // Restore persisted bearer token before any authed request fires.
+  useEffect(() => { auth.load().finally(() => setBooted(true)); }, []);
+  if (!booted) return null;
+
   return (
     <SafeAreaProvider>
       <StatusBar style="dark" />
       <OnboardingGate />
       <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: theme.bg } }}>
         <Stack.Screen name="(tabs)" />
+        <Stack.Screen name="login" options={{ presentation: 'modal', headerShown: true, headerTitle: 'Account' }} />
         <Stack.Screen name="onboarding/number" options={{ headerShown: false }} />
         <Stack.Screen name="conversation/[id]" options={{ headerShown: true, headerTitle: '' }} />
         <Stack.Screen name="new-message" options={{ presentation: 'modal', headerShown: true, headerTitle: 'New Message' }} />

@@ -6,8 +6,9 @@ export function Credits() {
   const [packages, setPackages] = useState<any[]>([]);
   const [rates, setRates] = useState<{ sms: string; mms: string } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
+  const [testMode, setTestMode] = useState(false);
 
-  const load = () => api.credits().then((c) => { setBalance(c.balance); setPackages(c.packages); setRates(c.rates); }).catch(() => {});
+  const load = () => api.credits().then((c) => { setBalance(c.balance); setPackages(c.packages); setRates(c.rates); setTestMode(!!c.testMode); }).catch(() => {});
   useEffect(() => { load(); }, []);
 
   const buy = async (id: string, price: number) => {
@@ -41,6 +42,11 @@ export function Credits() {
     <>
       <div className="page-h"><div><h2>Credits</h2><div className="sub">Free during beta</div></div></div>
       <div className="page-body">
+        {testMode && (
+          <div className="test-banner">
+            🧪 <b>TEST MODE</b> — no real money moves. Pay with card <code>4242 4242 4242 4242</code>, any future date / CVC / ZIP.
+          </div>
+        )}
         <div className="credit-balance">
           <div className="cb-num">{balance == null ? '…' : balance}</div>
           <div className="cb-lbl">CREDITS</div>
