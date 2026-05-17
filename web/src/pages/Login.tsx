@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { api, auth } from '../lib/api';
 import { Logo } from '../components/Logo';
 
-export function Login() {
+export function Login({ initialMode = 'login' }: { initialMode?: 'login' | 'signup' }) {
   const nav = useNavigate();
-  const [mode, setMode] = useState<'login' | 'signup'>('login');
+  const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
   const [busy, setBusy] = useState(false);

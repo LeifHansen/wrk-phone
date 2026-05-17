@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { api } from './lib/api';
 import { Setup } from './pages/Setup';
+import { Landing } from './pages/Landing';
 import { Home } from './pages/Home';
 import { Contacts } from './pages/Contacts';
 import { Login } from './pages/Login';
@@ -29,6 +30,9 @@ import { Settings } from './pages/Settings';
 import { CallOverlay } from './components/CallOverlay';
 import { onIncoming } from './lib/voice';
 
+// Routes rendered without the app sidebar (public marketing + auth + setup).
+const CHROMELESS = ['/lp', '/login', '/register', '/welcome', '/setup'];
+
 export function App() {
   const [inCall, setInCall] = useState(false);
   const [peer, setPeer] = useState('');
@@ -40,11 +44,15 @@ export function App() {
   // newly generated one appears everywhere without a full reload.
   useEffect(() => { api.account().then((a) => setAcctAvatar(a.avatarUrl)).catch(() => {}); }, [loc.pathname]);
 
-  // First-run gate: no provisioned number → force the setup screen.
+  // First-run gate: a visitor with no provisioned line lands on the public
+  // marketing page (not the app). Public/auth/setup paths are left alone so
+  // "Get started" → register → setup still flows.
   useEffect(() => {
     api.activeNumber()
       .then((s) => {
-        if (!s.isProvisioned && loc.pathname !== '/setup') nav('/setup', { replace: true });
+        if (!s.isProvisioned && !CHROMELESS.includes(loc.pathname)) {
+          nav('/lp', { replace: true });
+        }
       })
       .catch(() => {});
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -60,8 +68,11 @@ export function App() {
     });
   }, []);
 
+  const chromeless = CHROMELESS.includes(loc.pathname);
+
   return (
-    <div className="app-shell">
+    <div className={'app-shell' + (chromeless ? ' chromeless' : '')}>
+      {!chromeless && (
       <aside className="sidebar">
         <Logo size="sm" />
         <NavLink to="/" end className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Phone">
@@ -97,9 +108,12 @@ export function App() {
           <span className="nav-label">ADMIN</span>
         </NavLink>
       </aside>
+      )}
       <main className="main">
         <Routes>
+          <Route path="/lp" element={<Landing />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/register" element={<Login initialMode="signup" />} />
           <Route path="/welcome" element={<Onboarding />} />
           <Route path="/setup" element={<Setup />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
