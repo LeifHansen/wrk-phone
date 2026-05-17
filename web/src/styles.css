@@ -285,24 +285,37 @@ code, pre { font-family: var(--mono); font-size: 12px; }
   border: var(--border); border-radius: var(--r); background: var(--surface);
   padding: 22px 18px; margin-bottom: 20px;
 }
-.phone-num-row { display: flex; align-items: center; gap: 10px; }
+.phone-num-row { display: flex; align-items: center; justify-content: center; }
 .phone-num {
   flex: 1;
   font-family: var(--pixel); font-size: 22px; text-align: center;
   min-height: 30px; word-break: break-all; letter-spacing: 1px;
 }
-.contacts-mini {
-  flex-shrink: 0;
-  height: 38px; padding: 0 12px;
+.phone-num .ph { color: var(--muted); font-size: 11px; }
+
+/* Mode toggle + contacts: above and OUTSIDE the number pane */
+.dialer-bar {
+  display: flex; align-items: stretch; gap: 12px; margin-bottom: 16px;
+}
+.dialer-bar .phone-toggle { flex: 1; margin-top: 0; }
+.contacts-ico {
+  flex-shrink: 0; width: 52px;
   border: var(--border); border-radius: var(--r);
   background: var(--surface); color: var(--ink);
-  font-size: 13px; font-weight: 700; cursor: pointer;
-  display: flex; align-items: center; justify-content: center; gap: 6px;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  box-shadow: var(--shadow-sm);
 }
-.contacts-mini:hover { background: var(--surface-2); }
-.contacts-mini:active { transform: translate(2px, 2px); }
-.phone-num .ph { color: var(--muted); font-size: 11px; }
-.phone-toggle { display: flex; margin-top: 18px; border: var(--border); }
+.contacts-ico:hover { background: var(--surface-2); }
+.contacts-ico:active { transform: translate(2px, 2px); box-shadow: none; }
+
+.text-entry {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 12px; padding: 0 4px;
+}
+.text-entry .input { font-size: 18px; text-align: center; }
+.text-entry-hint { color: var(--muted); font-size: 12px; font-weight: 700; margin: 0; }
+
+.phone-toggle { display: flex; border: var(--border); }
 .pt-btn {
   flex: 1; padding: 12px; background: var(--surface); border: 0; cursor: pointer;
   font-family: var(--pixel); font-size: 10px; color: var(--muted);
@@ -859,3 +872,38 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .sms-ai-flags { margin: 8px 0 0; padding-left: 16px; font-size: 12px; }
 .sms-ai-flags li { margin: 4px 0; color: var(--ink); }
 .sms-ai-flags code { font-weight: 800; }
+
+/* ---------- contacts import pane (cleaned) ---------- */
+.import-pane { display: flex; flex-direction: column; gap: 10px; }
+.import-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.import-field { display: flex; flex-direction: column; gap: 6px; }
+.import-field > span { font-size: 12px; font-weight: 700; color: var(--muted); }
+.import-field code { font-family: var(--mono); }
+.import-divider {
+  display: flex; align-items: center; gap: 10px; color: var(--muted);
+  font-size: 11px; font-weight: 700; margin: 4px 0;
+}
+.import-divider::before, .import-divider::after {
+  content: ''; flex: 1; height: 2px; background: var(--surface-2);
+}
+.import-hint { color: var(--muted); font-size: 11px; margin: 4px 0 0; }
+
+/* ---------- Agents first-visit tour ---------- */
+.tour-card {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  z-index: 60; width: min(440px, 92vw);
+  background: var(--surface); border: var(--border); border-radius: var(--r);
+  box-shadow: var(--shadow-lg); padding: 26px 24px 20px; text-align: center;
+}
+.tour-skip {
+  position: absolute; top: 10px; right: 12px; background: none; border: none;
+  color: var(--muted); font-weight: 700; font-size: 12px; cursor: pointer;
+}
+.tour-icon { font-size: 44px; line-height: 1; margin-bottom: 10px; }
+.tour-title { font-family: var(--display); font-size: 24px; margin: 0 0 8px; }
+.tour-body { color: var(--muted); font-weight: 600; font-size: 14px; line-height: 1.55; margin: 0 0 18px; }
+.tour-dots { display: flex; gap: 7px; justify-content: center; margin-bottom: 18px; }
+.tour-dot { width: 8px; height: 8px; border-radius: 999px; background: var(--surface-2); border: 2px solid var(--ink); }
+.tour-dot.on { background: var(--lime); }
+.tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.tour-nav .btn { min-width: 110px; }

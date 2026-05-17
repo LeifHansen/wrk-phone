@@ -49,6 +49,7 @@ export interface Agent {
   tts_voice?: string | null;
   avatar_url?: string | null;
   send_number?: string | null;
+  hidden?: number;
 }
 export type Condition =
   | { type: 'keyword'; terms: string[]; mode?: 'any' | 'all' }
@@ -104,6 +105,10 @@ export const api = {
     req('/api/sms/send', { method: 'POST', body: JSON.stringify({ to, body, mediaUrl }) }),
   approveSuggestion: (id: number) => req(`/api/sms/suggestion/${id}/approve`, { method: 'POST' }),
   dismissSuggestion: (id: number) => req(`/api/sms/suggestion/${id}/dismiss`, { method: 'POST' }),
+  // prank-mode easter egg
+  prankReveal: () => req<{ ok: boolean; agent: Agent }>('/api/prank/reveal', { method: 'POST' }),
+  prankRedirect: (callSid: string) =>
+    req<{ ok: boolean }>('/api/prank/redirect', { method: 'POST', body: JSON.stringify({ callSid }) }),
   // agents
   listAgents: () => req<Agent[]>('/api/agents'),
   getAgent: (id: number) => req<Agent>(`/api/agents/${id}`),

@@ -3,11 +3,16 @@ import { Link } from 'react-router-dom';
 import { Agent, api } from '../lib/api';
 import { Avatar } from '../components/Avatar';
 import { IconAgent } from '../components/Icons';
+import { AgentsTour, shouldShowAgentsTour } from '../components/AgentsTour';
 
 export function Agents() {
   const [agents, setAgents] = useState<Agent[]>([]);
-  const load = () => api.listAgents().then(setAgents).catch(() => {});
+  const [tour, setTour] = useState(false);
+  // Hidden agents (e.g. the PrankMode easter egg) never show in the grid.
+  const load = () => api.listAgents().then((a) => setAgents(a.filter((x) => !x.hidden))).catch(() => {});
   useEffect(() => { load(); }, []);
+  // First-ever visit to Agents → run the interactive tutorial.
+  useEffect(() => { if (shouldShowAgentsTour()) setTour(true); }, []);
 
   return (
     <>
@@ -56,6 +61,7 @@ export function Agents() {
           </div>
         )}
       </div>
+      {tour && <AgentsTour onClose={() => setTour(false)} />}
     </>
   );
 }

@@ -252,6 +252,7 @@ tryAddColumn('app_settings', 'avatar_url TEXT');
 tryAddColumn('contacts', 'opted_out INTEGER NOT NULL DEFAULT 0');
 tryAddColumn('conversations', 'autopilot INTEGER NOT NULL DEFAULT 0');
 tryAddColumn('agents', 'send_number TEXT');
+tryAddColumn('agents', 'hidden INTEGER NOT NULL DEFAULT 0');
 
 // Migrate legacy agent_settings (single row per user) into agents.
 try {
