@@ -277,7 +277,7 @@ function VoicePicker({ current, onPick }: {
       const v = await api.createVoice(name.trim(), style.trim());
       onPick({ id: v.id, name: v.name, tts_voice: v.tts_voice });
       setName(''); setStyle(''); load();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
     finally { setCreating(false); }
   };
 

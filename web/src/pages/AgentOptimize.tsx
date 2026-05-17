@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { Optimization, api } from '../lib/api';
+import { toast } from '../components/Toast';
 
 const TYPE_META: Record<string, { color: string; label: string; emoji: string }> = {
   persona:      { color: '#FF3D9A', label: 'Tone',        emoji: '🎨' },
@@ -22,14 +23,14 @@ export function AgentOptimize() {
     try {
       const res = await api.optimize(aid);
       setOpts(res.optimizations);
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
     finally { setBusy(false); }
   };
   useEffect(() => { run(); }, [aid]);
 
   const apply = async (o: Optimization) => {
     try { await api.applyPatch(aid, o.patch); setApplied((s) => new Set([...s, o.id])); }
-    catch (e: any) { alert(e.message); }
+    catch (e: any) { toast(e.message, 'err'); }
   };
 
   return (

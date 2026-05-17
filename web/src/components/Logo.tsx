@@ -38,7 +38,7 @@ export function Logo({ size = 'sm' }: { size?: 'sm' | 'lg' }) {
   return (
     <div className="brand" style={{ flexDirection: size === 'lg' ? 'row' : 'column' }}>
       <LogoMark size={tile} />
-      <div className="brand-word" style={{ fontSize: word }}>Werkphone</div>
+      <div className="brand-word" style={{ fontSize: word }}>Werk Phone</div>
     </div>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { toast } from '../components/Toast';
 
 interface Campaign {
   id: number; name: string; template: string; channel: string; status: string;
@@ -42,7 +43,7 @@ export function Campaigns() {
     try {
       const m = await api.generateImage(imgPrompt.trim());
       setMediaUrl(m.url);
-    } catch (e: any) { alert(`Image gen failed: ${e.message}`); }
+    } catch (e: any) { toast(`Image gen failed: ${e.message}`, 'err'); }
     finally { setGenBusy(false); }
   };
 
@@ -51,27 +52,27 @@ export function Campaigns() {
     if (mediaUrl) payload.mediaUrl = mediaUrl;
     if (target === 'all') payload.allContacts = true;
     else if (target === 'segment') {
-      if (!segId) return alert('Pick a segment.');
+      if (!segId) return toast('Pick a segment.', 'err');
       payload.segmentId = segId;
     } else {
       const r = parseRecipients(recipientsRaw);
-      if (r.length === 0) return alert('Add at least one recipient.');
+      if (r.length === 0) return toast('Add at least one recipient.', 'err');
       payload.recipients = r;
     }
-    if (!payload.name || (!payload.template && !payload.mediaUrl)) return alert('Name + message (or image) required.');
+    if (!payload.name || (!payload.template && !payload.mediaUrl)) return toast('Name + message (or image) required.', 'err');
     setBusy(true);
     try {
       await api.createCampaign(payload);
       setShowNew(false); setName(''); setTemplate('Hi {{name}}, '); setRecipientsRaw('');
       setMediaUrl(null); setImgPrompt(''); setTarget('all'); setSegId(null);
       load();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
     finally { setBusy(false); }
   };
 
   const send = async (id: number) => {
     if (!confirm('Send to every recipient now?')) return;
-    try { await api.sendCampaign(id); load(); } catch (e: any) { alert(e.message); }
+    try { await api.sendCampaign(id); load(); } catch (e: any) { toast(e.message, 'err'); }
   };
 
   return (

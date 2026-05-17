@@ -81,7 +81,7 @@ export function Landing() {
       <header className="lp-nav">
         <Link to="/lp" className="lp-brand" aria-label="Werkphone home">
           <LogoMark size={36} />
-          <span className="lp-brand-word">Werkphone</span>
+          <span className="lp-brand-word">Werk Phone</span>
         </Link>
         <nav className="lp-nav-links" aria-label="Primary">
           <a href="#features">Features</a>
@@ -174,7 +174,7 @@ export function Landing() {
       <footer className="lp-footer">
         <div className="lp-foot-brand">
           <LogoMark size={28} />
-          <span>Werkphone</span>
+          <span>Werk Phone</span>
         </div>
         <div className="lp-foot-links">
           <Link to="/login">Log in</Link>

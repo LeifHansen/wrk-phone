@@ -4,6 +4,7 @@ import { db, getOrCreateConversation, getAgentForConversation, getCredits, spend
 import { generateReply, SAFETY_REGEX } from '../lib/agent.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { routeInbound } from '../lib/routing.js';
+import { log } from '../lib/log.js';
 import { getUserId } from '../lib/auth.js';
 
 export const smsRouter = Router();
@@ -49,7 +50,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
       if (matchedRule) {
         db.prepare(`UPDATE conversations SET agent_id = ? WHERE id = ?`).run(matchedRule.agent_id, convId);
       }
-    } catch (e) { console.warn('routing failed', e); }
+    } catch (e) { log.warn('sms.inbound', 'auto-routing failed', e); }
   }
 
   db.prepare(
@@ -94,7 +95,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
         ).run(convId, reply, Date.now(), agent.id, safetyBlocked);
       }
     } catch (err: any) {
-      console.error('agent error', err);
+      log.error('sms.inbound', 'agent reply generation failed', err);
     }
   }
 
@@ -135,6 +136,7 @@ smsRouter.post('/sms/send', async (req, res) => {
   } catch (err: any) {
     addCredits(USER, cost); // refund — the send failed
     const from = String(fromNum || '');
+    log.error('sms.send', `outbound send failed from ${from} to ${to}`, { code: err.code, message: err.message, moreInfo: err.moreInfo });
     const isTollFree = /^\+1(800|833|844|855|866|877|888)\d{7}$/.test(from);
     // Only blame Toll-Free Verification when Twilio actually says so
     // (30032 = TF number not verified). A verified toll-free that fails

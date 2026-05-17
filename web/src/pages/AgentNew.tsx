@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api, COLOR_BG, COLOR_FG } from '../lib/api';
+import { toast } from '../components/Toast';
 
 interface Preset {
   slug: string; label: string; emoji: string; color: string; blurb: string;
@@ -31,7 +32,7 @@ export function AgentNew() {
     try {
       const a = await api.createFromPreset(picked.slug, vibe || picked.vibes[0]?.slug, name.trim() || picked.label);
       nav(`/agents/${a.id}`, { replace: true });
-    } catch (e: any) { alert(e.message); setStep('name'); }
+    } catch (e: any) { toast(e.message, 'err'); setStep('name'); }
   };
 
   const finishBrief = async () => {
@@ -40,7 +41,7 @@ export function AgentNew() {
     try {
       const a = await api.createFromBrief(brief.trim(), name.trim() || undefined);
       nav(`/agents/${a.id}`, { replace: true });
-    } catch (e: any) { alert(e.message); setStep('role'); }
+    } catch (e: any) { toast(e.message, 'err'); setStep('role'); }
   };
 
   return (

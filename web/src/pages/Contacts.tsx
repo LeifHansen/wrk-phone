@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
+import { toast } from '../components/Toast';
 
 interface Contact { id: number; phone: string; name: string; segments: { id: number; name: string }[] }
 interface Segment { id: number; name: string; count: number }
@@ -34,7 +35,7 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
     try {
       await api.addContact(newPhone.trim(), newName.trim() || undefined);
       setNewPhone(''); setNewName(''); load();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const newSegment = async () => {
@@ -44,7 +45,7 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
       const s = await api.addSegment(name.trim());
       await load();
       setEditSeg({ id: s.id, name: s.name }); // jump straight into selecting members
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const inEditSeg = (c: Contact) => !!editSeg && c.segments.some((s) => s.id === editSeg.id);
@@ -55,7 +56,7 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
       if (inEditSeg(c)) await api.removeFromSegment(editSeg.id, c.id);
       else await api.addToSegment(editSeg.id, c.id);
       await load();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const importCsvFile = async (file: File) => {
@@ -63,9 +64,9 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
     try {
       const text = await file.text();
       const r = await api.importContactsCsv(text, editSeg.id);
-      alert(`Imported ${r.synced} into "${editSeg.name}" (${r.skipped} skipped).`);
+      toast(`Imported ${r.synced} into "${editSeg.name}" (${r.skipped} skipped).`, 'ok');
       await load();
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const toggleSeg = async (c: Contact, segId: number, has: boolean) => {
@@ -76,13 +77,13 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
       setContacts(fresh);
       setPicked(fresh.find((x) => x.id === c.id) || null);
       api.listSegments().then(setSegments);
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const call = async (c: Contact) => {
     setPicked(null);
     onCall(c.phone);
-    try { await placeCall(c.phone); } catch (e: any) { alert(`Call failed: ${e.message}`); }
+    try { await placeCall(c.phone); } catch (e: any) { toast(`Call failed: ${e.message}`, 'err'); }
   };
   const text = async (c: Contact) => {
     setPicked(null);
@@ -134,8 +135,8 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
             <button className="btn" onClick={async () => {
               const url = (document.getElementById('sheetUrl') as HTMLInputElement)?.value?.trim();
               if (!url) return;
-              try { const r = await api.importContactsUrl(url); alert(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`); load(); }
-              catch (e: any) { alert(e.message); }
+              try { const r = await api.importContactsUrl(url); toast(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`, 'ok'); load(); }
+              catch (e: any) { toast(e.message, 'err'); }
             }}>Import</button>
             <a className="btn ghost" href="/api/contacts/export.csv">Export CSV</a>
           </div>
@@ -146,8 +147,8 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
           <button className="btn ghost" style={{ marginTop: 6 }} onClick={async () => {
             const csv = (document.getElementById('csvPaste') as HTMLTextAreaElement)?.value?.trim();
             if (!csv) return;
-            try { const r = await api.importContactsCsv(csv); alert(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`); load(); }
-            catch (e: any) { alert(e.message); }
+            try { const r = await api.importContactsCsv(csv); toast(`Imported ${r.synced} (${r.skipped} skipped). Total ${r.total}.`, 'ok'); load(); }
+            catch (e: any) { toast(e.message, 'err'); }
           }}>Import pasted CSV</button>
         </div>
         )}

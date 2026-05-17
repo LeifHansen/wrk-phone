@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
 import { IconContacts } from '../components/Icons';
+import { toast } from '../components/Toast';
 
 const KEYS = [
   ['1', ''], ['2', 'ABC'], ['3', 'DEF'],
@@ -56,7 +57,7 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
     if (!target) return;
     if (mode === 'call') {
       onCall(target);
-      try { await placeCall(target); } catch (e: any) { alert(`Call failed: ${e.message}`); }
+      try { await placeCall(target); } catch (e: any) { toast(`Call failed: ${e.message}`, 'err'); }
     } else {
       const { id } = await api.startConversation(target);
       nav(`/conversation/${id}`);

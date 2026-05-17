@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
+import { toast } from '../components/Toast';
 
 export function Credits() {
   const [balance, setBalance] = useState<number | null>(null);
@@ -17,15 +18,15 @@ export function Credits() {
       if (price === 0) {
         const r = await api.buyCredits(id);
         setBalance(r.balance);
-        alert(`Added ${r.added} credits. Balance: ${r.balance}.`);
+        toast(`Added ${r.added} credits. Balance: ${r.balance}.`, 'ok');
       } else {
         const r = await api.checkout(id);
         if (r.url) { window.location.href = r.url; return; }       // → Stripe Checkout
         // dev fallback (no Stripe keys): credited instantly
         if (typeof r.balance === 'number') setBalance(r.balance);
-        alert(r.note || `Credited (dev mode). Balance: ${r.balance}.`);
+        toast(r.note || `Credited (dev mode). Balance: ${r.balance}.`, 'ok');
       }
-    } catch (e: any) { alert(e.message); }
+    } catch (e: any) { toast(e.message, 'err'); }
     finally { setBusy(null); }
   };
 
