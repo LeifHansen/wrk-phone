@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { toast } from '../components/Toast';
+import { SmsAiTools } from '../components/SmsAiTools';
 
 interface Campaign {
   id: number; name: string; template: string; channel: string; status: string;
@@ -87,6 +88,7 @@ export function Campaigns() {
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Campaign name (e.g. Spring promo)" />
             <textarea className="textarea" value={template} onChange={(e) => setTemplate(e.target.value)}
               placeholder="Message — use {{name}} to personalize" />
+            <SmsAiTools text={template} goal="bulk SMS/MMS marketing campaign" onApply={setTemplate} />
 
             {/* WHO */}
             <div>

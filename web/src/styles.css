@@ -838,3 +838,24 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .sa-stat-l { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: capitalize; margin-top: 4px; }
 .sa-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.4; }
 .sa-row input[type=checkbox] { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }
+
+/* ---------- SMS AI deliverability tools ---------- */
+.sms-ai { display: flex; flex-direction: column; gap: 8px; }
+.sms-ai-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.sms-ai-btn { font-size: 9px; padding: 9px 12px; }
+.sms-ai-report {
+  border: 2px solid var(--ink); border-radius: var(--r);
+  background: var(--surface); padding: 10px 12px;
+}
+.sms-ai-head { display: flex; align-items: center; gap: 10px; }
+.sms-ai-risk {
+  font-family: var(--pixel); font-size: 8px; color: #fff;
+  padding: 3px 7px; border: 2px solid var(--ink); border-radius: 4px;
+}
+.sms-ai-x {
+  margin-left: auto; background: none; border: none; cursor: pointer;
+  font-size: 18px; line-height: 1; color: var(--muted);
+}
+.sms-ai-flags { margin: 8px 0 0; padding-left: 16px; font-size: 12px; }
+.sms-ai-flags li { margin: 4px 0; color: var(--ink); }
+.sms-ai-flags code { font-weight: 800; }
