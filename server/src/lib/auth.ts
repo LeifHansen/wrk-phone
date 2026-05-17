@@ -73,3 +73,21 @@ export function authContext(req: Request, res: Response, next: NextFunction) {
 export function getUserId(req: Request): string {
   return (req as any).userId || OWNER_ID;
 }
+
+// Superadmin = the owner account, or any logged-in user whose email is in
+// SUPERADMIN_EMAILS (comma-separated). In the single-tenant default (no
+// AUTH_REQUIRED) the owner is superadmin so the dashboard works out of the box.
+const SUPERADMIN_EMAILS = (process.env.SUPERADMIN_EMAILS || '')
+  .split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
+
+export function isSuperadmin(req: Request): boolean {
+  const uid = getUserId(req);
+  if (uid === OWNER_ID) return true;
+  const u = db.prepare(`SELECT email FROM users WHERE id = ?`).get(uid) as { email?: string } | undefined;
+  return !!u?.email && SUPERADMIN_EMAILS.includes(u.email.toLowerCase());
+}
+
+export function requireSuperadmin(req: Request, res: Response, next: NextFunction) {
+  if (!isSuperadmin(req)) return res.status(403).json({ error: 'superadmin only' });
+  next();
+}

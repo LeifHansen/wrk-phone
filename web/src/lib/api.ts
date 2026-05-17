@@ -242,7 +242,34 @@ export const api = {
     req<{ number: string; publicBaseUrl: string; reachable: boolean; ok: boolean; hint: string; numberCfg: any; serviceCfg: any }>(
       '/api/numbers/webhook-status'
     ),
+  // blog (public)
+  blogList: () => req<{ posts: BlogCard[] }>('/api/blog'),
+  blogGet: (slug: string) => req<BlogPost>(`/api/blog/${slug}`),
+  // superadmin
+  adminWhoami: () => req<{ superadmin: boolean }>('/api/admin/whoami'),
+  adminOverview: () => req<Record<string, number>>('/api/admin/overview'),
+  adminBlogList: () => req<{ posts: BlogPost[] }>('/api/admin/blog'),
+  adminBlogCreate: (p: Partial<BlogPost>) => req<BlogPost>('/api/admin/blog', { method: 'POST', body: JSON.stringify(p) }),
+  adminBlogUpdate: (id: number, p: Partial<BlogPost>) => req<BlogPost>(`/api/admin/blog/${id}`, { method: 'PATCH', body: JSON.stringify(p) }),
+  adminBlogDelete: (id: number) => req(`/api/admin/blog/${id}`, { method: 'DELETE' }),
+  adminBlogSettings: () => req<{ settings: BlogSettings; defaultTopics: string[] }>('/api/admin/blog-settings'),
+  adminBlogSettingsSave: (s: Partial<BlogSettings>) => req<{ settings: BlogSettings }>('/api/admin/blog-settings', { method: 'PUT', body: JSON.stringify(s) }),
+  adminBlogGenerate: () => req<{ ok: boolean; post: BlogPost }>('/api/admin/blog/generate', { method: 'POST' }),
 };
+
+export interface BlogCard {
+  slug: string; title: string; excerpt: string; tags: string;
+  author: string; ai: number; published_at: number | null;
+}
+export interface BlogPost extends BlogCard {
+  id: number; body_html: string; keywords: string;
+  status: 'draft' | 'published'; created_at: number; updated_at: number;
+}
+export interface BlogSettings {
+  id: number; enabled: number; cadence_days: number; autopublish: number;
+  tone: string; topics: string; last_run_at: number | null;
+  next_run_at: number | null; updated_at: number;
+}
 
 export const AGENT_COLORS = ['lime', 'pink', 'orange', 'neon', 'red', 'black'] as const;
 export const COLOR_BG: Record<string, string> = {

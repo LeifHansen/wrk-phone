@@ -198,6 +198,36 @@ db.exec(`
     updated_at INTEGER NOT NULL DEFAULT 0
   );
 
+  -- SEO blog. Posts are public; an AI agent can auto-generate weekly.
+  CREATE TABLE IF NOT EXISTS blog_posts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    excerpt TEXT NOT NULL DEFAULT '',
+    body_html TEXT NOT NULL DEFAULT '',
+    tags TEXT NOT NULL DEFAULT '',
+    keywords TEXT NOT NULL DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'draft',   -- draft | published
+    author TEXT NOT NULL DEFAULT 'WrkPhn AI',
+    ai INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL,
+    published_at INTEGER
+  );
+
+  -- Single-row config for the weekly blog agent (id is always 1).
+  CREATE TABLE IF NOT EXISTS blog_settings (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    enabled INTEGER NOT NULL DEFAULT 0,
+    cadence_days INTEGER NOT NULL DEFAULT 7,
+    autopublish INTEGER NOT NULL DEFAULT 1,
+    tone TEXT NOT NULL DEFAULT 'practical, friendly, expert',
+    topics TEXT NOT NULL DEFAULT '',
+    last_run_at INTEGER,
+    next_run_at INTEGER,
+    updated_at INTEGER NOT NULL DEFAULT 0
+  );
+
   -- Indexes for hot read paths (defined last; all tables exist by here).
   CREATE INDEX IF NOT EXISTS idx_conversations_user_recent ON conversations(user_id, last_message_at DESC);
   CREATE INDEX IF NOT EXISTS idx_campaign_recipients ON campaign_recipients(campaign_id, status);
@@ -427,4 +457,113 @@ export function listSubscriptions(userId: string) {
 }
 export function setSubscriptionStatusByStripeId(stripeSubId: string, status: string) {
   db.prepare(`UPDATE subscriptions SET status=?, updated_at=? WHERE stripe_sub_id=?`).run(status, Date.now(), stripeSubId);
+}
+
+// ─────────────────── Blog ───────────────────
+export interface BlogPost {
+  id: number; slug: string; title: string; excerpt: string; body_html: string;
+  tags: string; keywords: string; status: 'draft' | 'published'; author: string;
+  ai: number; created_at: number; updated_at: number; published_at: number | null;
+}
+export interface BlogSettings {
+  id: number; enabled: number; cadence_days: number; autopublish: number;
+  tone: string; topics: string; last_run_at: number | null;
+  next_run_at: number | null; updated_at: number;
+}
+
+export function slugify(s: string): string {
+  return s.toLowerCase().trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .slice(0, 70).replace(/^-|-$/g, '');
+}
+
+export function uniqueSlug(base: string): string {
+  let slug = slugify(base) || 'post';
+  let n = 1;
+  while (db.prepare(`SELECT 1 FROM blog_posts WHERE slug = ?`).get(slug)) {
+    slug = `${slugify(base)}-${++n}`;
+  }
+  return slug;
+}
+
+export function listBlogPosts(opts: { includeDrafts?: boolean; limit?: number } = {}): BlogPost[] {
+  const where = opts.includeDrafts ? '' : `WHERE status = 'published'`;
+  const lim = opts.limit ? `LIMIT ${Number(opts.limit)}` : '';
+  return db.prepare(
+    `SELECT * FROM blog_posts ${where} ORDER BY COALESCE(published_at, created_at) DESC ${lim}`
+  ).all() as BlogPost[];
+}
+export function getBlogPostBySlug(slug: string): BlogPost | null {
+  return (db.prepare(`SELECT * FROM blog_posts WHERE slug = ?`).get(slug) as BlogPost) || null;
+}
+export function getBlogPost(id: number): BlogPost | null {
+  return (db.prepare(`SELECT * FROM blog_posts WHERE id = ?`).get(id) as BlogPost) || null;
+}
+export function createBlogPost(p: {
+  title: string; excerpt?: string; body_html?: string; tags?: string;
+  keywords?: string; status?: 'draft' | 'published'; author?: string; ai?: boolean; slug?: string;
+}): BlogPost {
+  const now = Date.now();
+  const slug = uniqueSlug(p.slug || p.title);
+  const status = p.status === 'published' ? 'published' : 'draft';
+  const r = db.prepare(
+    `INSERT INTO blog_posts (slug, title, excerpt, body_html, tags, keywords, status, author, ai, created_at, updated_at, published_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(
+    slug, p.title, p.excerpt || '', p.body_html || '', p.tags || '', p.keywords || '',
+    status, p.author || 'WrkPhn AI', p.ai ? 1 : 0, now, now,
+    status === 'published' ? now : null,
+  );
+  return getBlogPost(Number(r.lastInsertRowid))!;
+}
+export function updateBlogPost(id: number, patch: Partial<BlogPost>): BlogPost | null {
+  const cur = getBlogPost(id);
+  if (!cur) return null;
+  const next = {
+    title: patch.title ?? cur.title,
+    excerpt: patch.excerpt ?? cur.excerpt,
+    body_html: patch.body_html ?? cur.body_html,
+    tags: patch.tags ?? cur.tags,
+    keywords: patch.keywords ?? cur.keywords,
+    status: (patch.status as string) ?? cur.status,
+    author: patch.author ?? cur.author,
+  };
+  const wasPublished = cur.status === 'published';
+  const publishedAt = next.status === 'published'
+    ? (cur.published_at || Date.now())
+    : (next.status === 'draft' && wasPublished ? null : cur.published_at);
+  db.prepare(
+    `UPDATE blog_posts SET title=?, excerpt=?, body_html=?, tags=?, keywords=?, status=?, author=?, updated_at=?, published_at=? WHERE id=?`
+  ).run(next.title, next.excerpt, next.body_html, next.tags, next.keywords, next.status, next.author, Date.now(), publishedAt, id);
+  return getBlogPost(id);
+}
+export function deleteBlogPost(id: number) {
+  db.prepare(`DELETE FROM blog_posts WHERE id = ?`).run(id);
+}
+
+export function getBlogSettings(): BlogSettings {
+  let row = db.prepare(`SELECT * FROM blog_settings WHERE id = 1`).get() as BlogSettings | undefined;
+  if (!row) {
+    db.prepare(`INSERT INTO blog_settings (id, updated_at) VALUES (1, ?)`).run(Date.now());
+    row = db.prepare(`SELECT * FROM blog_settings WHERE id = 1`).get() as BlogSettings;
+  }
+  return row;
+}
+export function saveBlogSettings(patch: Partial<BlogSettings>): BlogSettings {
+  const cur = getBlogSettings();
+  const n = {
+    enabled: patch.enabled != null ? (patch.enabled ? 1 : 0) : cur.enabled,
+    cadence_days: patch.cadence_days != null ? Math.max(1, Number(patch.cadence_days)) : cur.cadence_days,
+    autopublish: patch.autopublish != null ? (patch.autopublish ? 1 : 0) : cur.autopublish,
+    tone: patch.tone != null ? String(patch.tone) : cur.tone,
+    topics: patch.topics != null ? String(patch.topics) : cur.topics,
+    last_run_at: patch.last_run_at !== undefined ? patch.last_run_at : cur.last_run_at,
+    next_run_at: patch.next_run_at !== undefined ? patch.next_run_at : cur.next_run_at,
+  };
+  db.prepare(
+    `UPDATE blog_settings SET enabled=?, cadence_days=?, autopublish=?, tone=?, topics=?, last_run_at=?, next_run_at=?, updated_at=? WHERE id=1`
+  ).run(n.enabled, n.cadence_days, n.autopublish, n.tone, n.topics, n.last_run_at, n.next_run_at, Date.now());
+  return getBlogSettings();
 }

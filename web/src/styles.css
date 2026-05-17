@@ -827,3 +827,21 @@ code, pre { font-family: var(--mono); font-size: 12px; }
   padding: 3px 8px; border-radius: 999px;
 }
 .brand-opt .badge.muted { background: var(--surface-2); color: var(--muted); border: 2px solid var(--ink); }
+
+/* ---------- blog post body ---------- */
+.blog-body { font-size: 17px; line-height: 1.7; color: var(--ink); }
+.blog-body h2 { font-family: var(--display); font-size: 26px; margin: 32px 0 10px; }
+.blog-body h3 { font-size: 19px; margin: 24px 0 8px; }
+.blog-body p { margin: 0 0 16px; }
+.blog-body ul, .blog-body ol { margin: 0 0 16px; padding-left: 22px; }
+.blog-body li { margin: 6px 0; }
+.blog-body a { color: var(--ink); font-weight: 700; text-decoration: underline; text-decoration-color: var(--lime); }
+.blog-body strong { font-weight: 800; }
+
+/* ---------- superadmin ---------- */
+.sa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; }
+.sa-stat { text-align: center; padding: 22px 14px; }
+.sa-stat-n { font-size: 30px; font-weight: 800; }
+.sa-stat-l { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: capitalize; margin-top: 4px; }
+.sa-row { display: flex; align-items: flex-start; gap: 10px; font-size: 14px; line-height: 1.4; }
+.sa-row input[type=checkbox] { width: 18px; height: 18px; margin-top: 2px; flex-shrink: 0; }

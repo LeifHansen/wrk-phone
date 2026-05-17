@@ -22,6 +22,9 @@ import { voicesRouter } from './routes/voices.js';
 import { billingRouter } from './routes/billing.js';
 import { a2pRouter } from './routes/a2p.js';
 import { analyticsRouter } from './routes/analytics.js';
+import { blogRouter } from './routes/blog.js';
+import { startBlogScheduler } from './lib/blog.js';
+import { listBlogPosts } from './lib/db.js';
 import { log } from './lib/log.js';
 import { twilioWebhook } from './lib/twilioVerify.js';
 import { authContext } from './lib/auth.js';
@@ -93,11 +96,37 @@ app.use('/api', voicesRouter);
 app.use('/api', billingRouter);
 app.use('/api', a2pRouter);
 app.use('/api', analyticsRouter);
+app.use('/api', blogRouter);
 app.use('/media', express.static(MEDIA_DIR));
 
 // Unknown API routes must return JSON 404 (not the SPA HTML fallback) so the
 // client's fetch wrapper gets a parseable error.
 app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }));
+
+// Dynamic sitemap — core marketing pages + every published blog post, so
+// new AI-written posts get indexed without redeploying. Registered before
+// the SPA fallback so it wins over a stale static file.
+app.get('/sitemap.xml', (_req, res) => {
+  const base = (process.env.PUBLIC_BASE_URL || 'https://wrkphn.com').replace(/\/$/, '');
+  const core = [
+    { loc: '/', pri: '1.0', f: 'weekly' },
+    { loc: '/lp', pri: '0.9', f: 'weekly' },
+    { loc: '/register', pri: '0.8', f: 'monthly' },
+    { loc: '/login', pri: '0.5', f: 'monthly' },
+    { loc: '/blog', pri: '0.8', f: 'daily' },
+  ];
+  let urls = core.map((u) =>
+    `  <url><loc>${base}${u.loc}</loc><changefreq>${u.f}</changefreq><priority>${u.pri}</priority></url>`);
+  try {
+    for (const p of listBlogPosts({ includeDrafts: false })) {
+      const lm = new Date(p.published_at || p.updated_at).toISOString().slice(0, 10);
+      urls.push(`  <url><loc>${base}/blog/${p.slug}</loc><lastmod>${lm}</lastmod><changefreq>monthly</changefreq><priority>0.7</priority></url>`);
+    }
+  } catch { /* table may be empty */ }
+  res.type('application/xml').send(
+    `<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n${urls.join('\n')}\n</urlset>\n`
+  );
+});
 
 // In production, the same container serves the built web SPA.
 // Dockerfile copies the Vite build into ./public next to dist/.
@@ -134,4 +163,5 @@ app.listen(port, '0.0.0.0', () => {
   if (!process.env.PUBLIC_BASE_URL) {
     console.warn('Warning: PUBLIC_BASE_URL not set. Twilio webhooks need a public URL.');
   }
+  startBlogScheduler();
 });
