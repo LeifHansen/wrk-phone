@@ -98,9 +98,7 @@ export function App() {
           <span className="glyph"><IconStats /></span><span className="nav-label">STATS</span>
         </NavLink>
         <div className="spacer" />
-        <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-          <div className="dot"><IconPhone size={18} /></div>
-          <div className="lbl">WRK LINE</div>
+        <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }} aria-label="Work line">
           <div className="bars"><i /><i /><i /><i /></div>
         </NavLink>
         <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Account / Admin">
