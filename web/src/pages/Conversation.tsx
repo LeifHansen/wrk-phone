@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
 import { Avatar } from '../components/Avatar';
+import { toast } from '../components/Toast';
 import { placeCall } from '../lib/voice';
 
 interface Msg {
@@ -21,6 +22,7 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
   const [sending, setSending] = useState(false);
   const [sheetOpen, setSheetOpen] = useState(false);
   const [allAgents, setAllAgents] = useState<Agent[]>([]);
+  const [apPick, setApPick] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -50,14 +52,27 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     catch (e: any) { alert(`Call failed: ${e.message}`); }
   };
 
-  const openSwitcher = async () => {
+  const openSwitcher = async (forAutopilot = false) => {
+    setApPick(forAutopilot);
     try { setAllAgents(await api.listAgents()); setSheetOpen(true); }
     catch (e: any) { alert(e.message); }
   };
   const pickAgent = async (a: Agent | null) => {
     setSheetOpen(false);
-    try { await api.assignAgent(convId, a?.id ?? null); load(); }
-    catch (e: any) { alert(e.message); }
+    try {
+      if (apPick && a) { await api.setAutopilot(convId, true, a.id); toast(`Autopilot ON — ${a.name} is handling this thread`); }
+      else { await api.assignAgent(convId, a?.id ?? null); }
+      load();
+    } catch (e: any) { toast(e.message, 'err'); }
+    finally { setApPick(false); }
+  };
+  const toggleAutopilot = async () => {
+    if (conv?.autopilot) {
+      try { await api.setAutopilot(convId, false); toast('Autopilot OFF'); load(); }
+      catch (e: any) { toast(e.message, 'err'); }
+    } else {
+      openSwitcher(true); // pick which agent takes over
+    }
   };
 
   return (
@@ -65,11 +80,15 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
       <div className="convo-header">
         <Link to="/messages" className="btn ghost" style={{ padding: 0 }}>‹ Inbox</Link>
         <span className="peer">{conv?.peer_phone || ''}</span>
+        <button className={'btn ' + (conv?.autopilot ? 'lime' : 'ghost')} onClick={toggleAutopilot}
+          title="Let an agent take over this thread">
+          🤖 Autopilot {conv?.autopilot ? 'ON' : 'OFF'}
+        </button>
         <button className="btn ghost" onClick={callPeer}>📞</button>
       </div>
 
       {agent && agent.mode !== 'off' && (
-        <div className="agent-bar" style={{ background: COLOR_BG[agent.color], color: COLOR_FG[agent.color] }} onClick={openSwitcher}>
+        <div className="agent-bar" style={{ background: COLOR_BG[agent.color], color: COLOR_FG[agent.color] }} onClick={() => openSwitcher()}>
           <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <Avatar url={(agent as any).avatar_url} emoji={agent.emoji} color={agent.color} size={22} round />
             {agent.name} on duty · {agent.mode.toUpperCase()}

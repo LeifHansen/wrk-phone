@@ -18,13 +18,15 @@ export function LogoMark({ size = 44 }: { size?: number }) {
     <svg width={size} height={size} viewBox="0 0 64 64" aria-hidden="true">
       <rect x="2.5" y="2.5" width="59" height="59" rx="17"
         fill="var(--lime)" stroke="var(--ink)" strokeWidth="3" />
+      {/* compact handset, kept to the left ~half so it never touches the waves */}
       <path
-        d="M23 19.5c1.2 0 2.2.8 2.5 1.9l1.6 4.6c.3 1 0 2-.7 2.7l-1.9 1.8a17.5 17.5 0 0 0 7.9 7.9l1.8-1.9c.7-.7 1.7-1 2.7-.7l4.6 1.6c1.1.3 1.9 1.3 1.9 2.5v4.9a3.2 3.2 0 0 1-3.4 3.2A24 24 0 0 1 16.4 22.9a3.2 3.2 0 0 1 3.2-3.4H23z"
+        d="M17 17.5c.9 0 1.7.6 2 1.5l1.2 3.6c.25.8.05 1.6-.55 2.2l-1.5 1.45a13.5 13.5 0 0 0 6.05 6.05l1.45-1.5c.6-.6 1.4-.8 2.2-.55l3.6 1.2c.9.3 1.5 1.1 1.5 2v3.8a2.6 2.6 0 0 1-2.8 2.6A18.5 18.5 0 0 1 14.4 20.3 2.6 2.6 0 0 1 17 17.5z"
         fill="var(--ink)" />
-      <g stroke="var(--ink)" strokeWidth="3.4" fill="none" strokeLinecap="round">
-        <path d="M39.5 23a9 9 0 0 1 0 12.5" />
-        <path d="M43.5 18.5a15 15 0 0 1 0 21.5" />
-        <path d="M47.5 14a21 21 0 0 1 0 30.5" />
+      {/* signal waves on the right, clear gap from the handset */}
+      <g stroke="var(--ink)" strokeWidth="3.2" fill="none" strokeLinecap="round">
+        <path d="M40 25a7 7 0 0 1 0 14" />
+        <path d="M45 20a13 13 0 0 1 0 24" />
+        <path d="M50 15a19 19 0 0 1 0 34" />
       </g>
     </svg>
   );

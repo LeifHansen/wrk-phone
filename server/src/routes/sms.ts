@@ -60,14 +60,28 @@ smsRouter.post('/sms/inbound', async (req, res) => {
     .run(Date.now(), convId);
 
   const agent = getAgentForConversation(USER, convId);
+  // Per-thread autopilot overrides the agent's global mode → 'auto' for THIS
+  // conversation, so a created agent works without changing it globally.
+  const autopilot = !!(db.prepare(`SELECT autopilot FROM conversations WHERE id = ?`)
+    .get(convId) as { autopilot: number } | undefined)?.autopilot;
+  const effectiveMode = autopilot ? 'auto' : agent?.mode;
   const twiml = new MessagingResponse();
 
-  if (agent && agent.mode !== 'off') {
+  if (agent && effectiveMode !== 'off') {
     try {
       const { reply, safeToAutoSend } = await generateReply(USER, convId, body);
       const safetyBlocked = SAFETY_REGEX.test(body) ? 1 : 0;
-      if (agent.mode === 'auto' && reply && safeToAutoSend && spendCredits(USER, messageCost(reply, false))) {
-        twiml.message(reply);
+      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(USER, messageCost(reply, false))) {
+        const agentNum = (agent as any).send_number;
+        if (agentNum) {
+          // Reply FROM the agent's assigned number (out-of-band, not TwiML).
+          try {
+            const p: any = { to: from, body: reply, from: agentNum };
+            await twilioClient.messages.create(p);
+          } catch (e) { twiml.message(reply); /* fallback to reply on same number */ }
+        } else {
+          twiml.message(reply);
+        }
         db.prepare(
           `INSERT INTO messages (conversation_id, direction, body, status, created_at, is_ai, agent_id)
            VALUES (?, 'out', ?, 'queued', ?, 1, ?)`
@@ -105,14 +119,12 @@ smsRouter.post('/sms/send', async (req, res) => {
     return res.status(402).json({ error: `Not enough credits. This message costs ${cost} (balance ${getCredits(USER)}).`, cost });
   }
   const convId = getOrCreateConversation(USER, to);
+  // Send FROM the sending user's selected shared-pool number (keeps their
+  // chosen local area code). Explicit `from` so Twilio honors that number.
+  const fromNum = getActiveNumber(getUserId(req)) || twilioConfig.defaultFrom;
   try {
-    const params: any = { to, body };
+    const params: any = { to, body, from: fromNum };
     if (mediaUrl) params.mediaUrl = [mediaUrl];        // MMS
-    // Send FROM the sending user's selected shared-pool number (so they keep
-    // their chosen local area code). Explicit `from` (not messagingServiceSid)
-    // so Twilio honors that specific number; it's still on the shared MS for
-    // A2P/deliverability. Inbound replies route to the shared inbox (OWNER).
-    params.from = getActiveNumber(getUserId(req)) || twilioConfig.defaultFrom;
     const msg = await twilioClient.messages.create(params);
     const result = db.prepare(
       `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, media_url)
@@ -122,7 +134,12 @@ smsRouter.post('/sms/send', async (req, res) => {
     res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status, creditsSpent: cost });
   } catch (err: any) {
     addCredits(USER, cost); // refund — the send failed
-    res.status(500).json({ error: err.message });
+    const from = String(fromNum || '');
+    const tollFree = /^\+1(800|833|844|855|866|877|888)\d{7}$/.test(from);
+    const msg = tollFree
+      ? `Couldn't send from ${from}. Toll-free numbers must complete Twilio Toll-Free Verification before they can text. Pick a local number from the pool (Numbers) and try again.`
+      : err.message;
+    res.status(500).json({ error: msg, code: err.code });
   }
 });
 

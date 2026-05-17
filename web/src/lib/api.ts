@@ -47,6 +47,8 @@ export interface Agent {
   voice_id?: number | null;
   voice_name?: string | null;
   tts_voice?: string | null;
+  avatar_url?: string | null;
+  send_number?: string | null;
 }
 export type Condition =
   | { type: 'keyword'; terms: string[]; mode?: 'any' | 'all' }
@@ -93,6 +95,8 @@ export const api = {
     req<{ id: number }>('/api/conversations', { method: 'POST', body: JSON.stringify({ peer_phone, name }) }),
   markRead: (id: number) => req(`/api/conversations/${id}/read`, { method: 'POST' }),
   deleteConversation: (id: number) => req(`/api/conversations/${id}`, { method: 'DELETE' }),
+  setAutopilot: (convId: number, on: boolean, agentId?: number) =>
+    req<{ ok: boolean; autopilot: boolean }>(`/api/conversations/${convId}/autopilot`, { method: 'PATCH', body: JSON.stringify({ on, agentId }) }),
   assignAgent: (convId: number, agentId: number | null) =>
     req(`/api/conversations/${convId}/agent`, { method: 'PATCH', body: JSON.stringify({ agent_id: agentId }) }),
   // sms

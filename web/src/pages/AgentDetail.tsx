@@ -108,6 +108,18 @@ export function AgentDetail() {
           </div>
         </div>
         <div className="agent-section">
+          <h3>Sends from</h3>
+          <p className="hint">Which number this agent texts from when it auto-replies. Default uses the active line.</p>
+          <SendNumberPicker
+            value={(merged as any).send_number || ''}
+            onChange={async (v) => {
+              try { await api.patchAgent(aid, { send_number: v || null } as any); setAgent((p) => p ? ({ ...p, send_number: v || null } as any) : p); toast('Send number updated ✓'); }
+              catch (e: any) { toast(e.message, 'err'); }
+            }}
+          />
+        </div>
+
+        <div className="agent-section">
           <h3>Color</h3>
           <div className="color-row">
             {AGENT_COLORS.map((c) => (
@@ -299,5 +311,16 @@ function VoicePicker({ current, onPick }: {
         </button>
       </div>
     </div>
+  );
+}
+
+function SendNumberPicker({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [nums, setNums] = useState<{ phoneNumber: string }[]>([]);
+  useEffect(() => { api.listNumbers().then((d: any) => setNums(d.numbers || [])).catch(() => {}); }, []);
+  return (
+    <select className="input" value={value} onChange={(e) => onChange(e.target.value)} style={{ maxWidth: 320 }}>
+      <option value="">Default (active line)</option>
+      {nums.map((n) => <option key={n.phoneNumber} value={n.phoneNumber}>{n.phoneNumber}</option>)}
+    </select>
   );
 }

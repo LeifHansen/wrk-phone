@@ -129,10 +129,11 @@ agentRouter.patch('/agents/:id', (req, res) => {
     voice_id: req.body.voice_id !== undefined ? (req.body.voice_id === null ? null : Number(req.body.voice_id)) : (a as any).voice_id,
     voice_name: req.body.voice_name !== undefined ? String(req.body.voice_name).slice(0, 40) : (a as any).voice_name,
     tts_voice: req.body.tts_voice !== undefined ? String(req.body.tts_voice).slice(0, 60) : (a as any).tts_voice,
+    send_number: req.body.send_number !== undefined ? (req.body.send_number ? String(req.body.send_number) : null) : (a as any).send_number,
   };
   db.prepare(
-    `UPDATE agents SET name=?, emoji=?, color=?, persona=?, instructions=?, examples_json=?, rules_json=?, mode=?, voice_mode=?, voice_id=?, voice_name=?, tts_voice=?, updated_at=? WHERE id=?`
-  ).run(next.name, next.emoji, next.color, next.persona, next.instructions, next.examples_json, next.rules_json, next.mode, next.voice_mode, next.voice_id, next.voice_name, next.tts_voice, Date.now(), id);
+    `UPDATE agents SET name=?, emoji=?, color=?, persona=?, instructions=?, examples_json=?, rules_json=?, mode=?, voice_mode=?, voice_id=?, voice_name=?, tts_voice=?, send_number=?, updated_at=? WHERE id=?`
+  ).run(next.name, next.emoji, next.color, next.persona, next.instructions, next.examples_json, next.rules_json, next.mode, next.voice_mode, next.voice_id, next.voice_name, next.tts_voice, next.send_number, Date.now(), id);
   res.json(hydrateAgent(fetchAgent(id)!));
 });
 

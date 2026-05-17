@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
+import { IconContacts } from '../components/Icons';
 
 const KEYS = [
   ['1', ''], ['2', 'ABC'], ['3', 'DEF'],
@@ -72,7 +73,9 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
       <div className="phone-screen">
         <div className="phone-num-row">
           <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
-          <button className="contacts-mini" onClick={openPicker} title="Pick a contact" aria-label="Contacts">≡</button>
+          <button className="contacts-mini" onClick={openPicker} title="Select from contacts" aria-label="Select from contacts">
+            <IconContacts size={16} /> Contacts
+          </button>
         </div>
         <div className="phone-toggle">
           <button className={'pt-btn' + (mode === 'call' ? ' on' : '')} onClick={() => setMode('call')}>CALL</button>
