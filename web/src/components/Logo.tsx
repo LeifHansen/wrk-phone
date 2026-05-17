@@ -1,8 +1,8 @@
 import { useState } from 'react';
 
-// Drop your exact logo art (background removed) at web/public/logo.svg
-// (or .png) and it's used automatically — no code change.
-const ASSET = '/logo.svg';
+// Brand mark lives at web/public/logo.png (transparent). If it ever fails
+// to load, the inline SVG fallback below renders instead.
+const ASSET = '/logo.png';
 
 export function LogoMark({ size = 44 }: { size?: number }) {
   const [useAsset, setUseAsset] = useState(true);
