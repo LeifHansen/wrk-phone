@@ -42,6 +42,22 @@ conversationsRouter.post('/conversations/:id/read', (req, res) => {
   res.json({ ok: true });
 });
 
+// Toggle per-thread agent autopilot. body: { on, agentId? }
+// on=true forces the (assigned/default) agent to auto-reply on THIS thread,
+// regardless of the agent's global mode. Optionally (re)assign the agent.
+conversationsRouter.patch('/conversations/:id/autopilot', (req, res) => {
+  const id = Number(req.params.id);
+  const on = req.body?.on ? 1 : 0;
+  const agentId = req.body?.agentId != null ? Number(req.body.agentId) : null;
+  if (agentId != null) {
+    const a = db.prepare('SELECT id FROM agents WHERE id = ? AND user_id = ?').get(agentId, OWNER_ID);
+    if (!a) return res.status(404).json({ error: 'agent not found' });
+    db.prepare('UPDATE conversations SET agent_id = ? WHERE id = ?').run(agentId, id);
+  }
+  db.prepare('UPDATE conversations SET autopilot = ? WHERE id = ? AND user_id = ?').run(on, id, OWNER_ID);
+  res.json({ ok: true, autopilot: !!on });
+});
+
 // Delete a whole conversation + its messages.
 conversationsRouter.delete('/conversations/:id', (req, res) => {
   const id = Number(req.params.id);
