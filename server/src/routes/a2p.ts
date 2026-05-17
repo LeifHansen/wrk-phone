@@ -36,9 +36,22 @@ a2pRouter.post('/a2p/draft', async (req, res) => {
 a2pRouter.post('/a2p/submit', async (req, res) => {
   const profile = req.body?.profile || {};
   const pkg = req.body?.package || {};
-  if (!profile.legalName || !profile.ein) {
-    return res.status(400).json({ error: 'legalName and ein are required' });
+  // Brand type drives validation. Sole proprietor is the low-friction path
+  // (no EIN; personal identity + mobile OTP). Standard/registered business
+  // is scaffolded for later (requires EIN + legal entity).
+  const brandType = profile.brandType === 'standard' ? 'standard' : 'sole_prop';
+  if (brandType === 'standard') {
+    if (!profile.legalName || !profile.ein) {
+      return res.status(400).json({ error: 'legalName and ein are required for a standard brand' });
+    }
+  } else {
+    const missing = ['firstName', 'lastName', 'mobilePhone', 'email']
+      .filter((k) => !String(profile[k] || '').trim());
+    if (missing.length) {
+      return res.status(400).json({ error: `Sole proprietor requires: ${missing.join(', ')}` });
+    }
   }
+  profile.brandType = brandType;
   const now = Date.now();
   const row = db.prepare(
     `INSERT INTO a2p_registrations (user_id, profile_json, package_json, status, created_at, updated_at)
@@ -64,7 +77,9 @@ a2pRouter.post('/a2p/submit', async (req, res) => {
       note = 'Brand submitted to Twilio. Carrier vetting is async (hours–days).';
     } else {
       status = 'manual';
-      note = 'Account not ISV-enabled for fully-automated brand creation. The complete, carrier-ready package has been generated and saved — submit it in Twilio Console → Messaging → Regulatory Compliance (one paste).';
+      note = brandType === 'sole_prop'
+        ? 'Sole-proprietor package generated and saved. Final step is a one-time code (OTP) Twilio texts to your mobile to verify identity — file in Twilio Console → Messaging → Regulatory Compliance (everything is pre-filled).'
+        : 'Account not ISV-enabled for fully-automated brand creation. The complete, carrier-ready package has been generated and saved — submit it in Twilio Console → Messaging → Regulatory Compliance (one paste).';
     }
   } catch (e: any) {
     status = 'manual';

@@ -796,3 +796,34 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .lp-foot-links a { color: var(--muted); text-decoration: none; font-weight: 700; font-size: 14px; }
 .lp-foot-links a:hover { color: var(--ink); }
 .lp-foot-fine { color: var(--muted); font-size: 12px; font-weight: 600; }
+
+/* ---------- 10DLC wizard ---------- */
+.wiz-steps { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.wiz-step { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 700; color: var(--muted); }
+.wiz-step .wiz-dot {
+  width: 24px; height: 24px; border-radius: 999px; border: 2px solid var(--ink);
+  display: flex; align-items: center; justify-content: center; background: var(--surface);
+  font-size: 12px;
+}
+.wiz-step.on { color: var(--ink); }
+.wiz-step.on .wiz-dot { background: var(--lime); }
+.wiz-step.done .wiz-dot { background: var(--ink); color: var(--surface); }
+.wiz-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+@media (max-width: 560px) { .wiz-row { grid-template-columns: 1fr; } }
+.wiz-nav { display: flex; gap: 10px; margin-top: 6px; }
+.wiz-nav .btn.lg { flex: 1; }
+.brand-opt {
+  text-align: left; background: var(--surface); border: var(--border);
+  border-radius: var(--r); padding: 16px; cursor: pointer; display: block; width: 100%;
+  box-shadow: var(--shadow-sm);
+}
+.brand-opt.on { background: var(--lime); }
+.brand-opt.disabled { opacity: .55; cursor: not-allowed; box-shadow: none; }
+.brand-opt-h { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 16px; }
+.brand-opt-d { color: var(--muted); font-size: 13px; font-weight: 600; margin-top: 6px; line-height: 1.45; }
+.brand-opt.on .brand-opt-d { color: var(--ink); }
+.brand-opt .badge {
+  font-size: 11px; font-weight: 800; background: var(--ink); color: var(--surface);
+  padding: 3px 8px; border-radius: 999px;
+}
+.brand-opt .badge.muted { background: var(--surface-2); color: var(--muted); border: 2px solid var(--ink); }
