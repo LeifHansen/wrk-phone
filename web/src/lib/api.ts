@@ -210,6 +210,8 @@ export const api = {
   listNumbers: () => req<{ active: string | null; pricePerMonth: number;
     numbers: { sid: string; phoneNumber: string; friendlyName: string; isActive: boolean }[] }>('/api/numbers/list'),
   setActiveNumber: (sid: string) => req('/api/numbers/set-active', { method: 'POST', body: JSON.stringify({ sid }) }),
+  claimNumber: () => req<{ ok: boolean; number: string; sid: string; alreadyHad: boolean }>(
+    '/api/numbers/claim', { method: 'POST' }),
   buyAdditional: (phoneNumber: string) =>
     req<{ ok: boolean; number: string; monthly: number; warnings: string[] }>(
       '/api/numbers/buy-additional', { method: 'POST', body: JSON.stringify({ phoneNumber }) }),

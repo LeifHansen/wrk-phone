@@ -217,7 +217,39 @@ numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
   }
 });
 
-// GET /api/numbers/active
+// Assign a number to a user from the shared pool WITHOUT exposing the pool.
+// We never show users the list of available numbers — they just get one.
+// Numbers may be shared across accounts (that's acceptable for now); pool
+// numbers already have webhooks/Messaging Service wired by OWNER, so we only
+// need to point this user's app_settings at one.
+async function claimPoolNumber(userId: string) {
+  const s = getAppSettings(userId);
+  if (s.active_number) {
+    return { phoneNumber: s.active_number, sid: s.active_number_sid, alreadyHad: true };
+  }
+  const pool = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
+  if (!pool.length) throw new Error('No numbers in the shared pool yet. An admin must add one to the Twilio account.');
+  // Prefer SMS-capable numbers; spread users across the pool with a random pick.
+  const usable = pool.filter((n) => n.capabilities?.sms !== false);
+  const chosen = (usable.length ? usable : pool)[Math.floor(Math.random() * (usable.length ? usable.length : pool.length))];
+  setActiveNumber(userId, chosen.phoneNumber, chosen.sid);
+  return { phoneNumber: chosen.phoneNumber, sid: chosen.sid, alreadyHad: false };
+}
+
+// POST /api/numbers/claim — idempotently give the caller a pool number.
+// Called on signup and as a safety net from Setup. No pool is ever returned.
+numbersRouter.post('/numbers/claim', async (req, res) => {
+  try {
+    const r = await claimPoolNumber(getUserId(req));
+    res.json({ ok: true, number: r.phoneNumber, sid: r.sid, alreadyHad: r.alreadyHad });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// GET /api/numbers/active — read-only. A pool number is assigned explicitly
+// at signup (and as a Setup safety net), not here, so anonymous visitors
+// still see the marketing page instead of silently consuming a number.
 numbersRouter.get('/numbers/active', (req, res) => {
   const s = getAppSettings(getUserId(req));
   res.json({
@@ -229,23 +261,35 @@ numbersRouter.get('/numbers/active', (req, res) => {
   });
 });
 
-// GET /api/numbers/list — every number owned on the account (for the
-// "Manage / add numbers" screen). Marks which one is active.
+// GET /api/numbers/list — ONLY the caller's own line. The shared pool is
+// never exposed to users; they get one auto-assigned number until they
+// purchase their own (purchasing unlocks after 10DLC).
 numbersRouter.get('/numbers/list', async (req, res) => {
   try {
-    const s = getAppSettings(getUserId(req));
-    const nums = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
-    res.json({
-      active: s.active_number || twilioConfig.defaultFrom || null,
-      pricePerMonth: 2.0,
-      numbers: nums.map((n) => ({
-        sid: n.sid,
-        phoneNumber: n.phoneNumber,
-        friendlyName: n.friendlyName,
-        capabilities: n.capabilities,
-        isActive: n.phoneNumber === (s.active_number || twilioConfig.defaultFrom),
-      })),
-    });
+    const userId = getUserId(req);
+    let s = getAppSettings(userId);
+    if (!s.active_number) {
+      try { await claimPoolNumber(userId); s = getAppSettings(userId); }
+      catch { /* pool empty — return no numbers */ }
+    }
+    const numbers: any[] = [];
+    if (s.active_number) {
+      let capabilities: any = { sms: true, voice: true, mms: true };
+      try {
+        if (s.active_number_sid) {
+          const n = await twilioClient.incomingPhoneNumbers(s.active_number_sid).fetch();
+          capabilities = n.capabilities;
+        }
+      } catch { /* keep optimistic defaults */ }
+      numbers.push({
+        sid: s.active_number_sid,
+        phoneNumber: s.active_number,
+        friendlyName: 'Your line',
+        capabilities,
+        isActive: true,
+      });
+    }
+    res.json({ active: s.active_number || null, pricePerMonth: 2.0, numbers });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
