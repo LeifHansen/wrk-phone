@@ -1,17 +1,36 @@
 import Constants from 'expo-constants';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const baseUrl =
   process.env.EXPO_PUBLIC_API_BASE_URL ||                    // EAS Build / dev shell
   (Constants.expoConfig?.extra as any)?.apiBaseUrl ||        // app.json fallback
-  'http://localhost:4000';
+  'https://wrk-phone-8ebcfd.fly.dev';                        // deployed default
+
+// Bearer token cached in memory, persisted to AsyncStorage.
+let _token: string | null = null;
+export const auth = {
+  get token() { return _token; },
+  async load() { _token = await AsyncStorage.getItem('wrk_token'); return _token; },
+  async set(v: string | null) {
+    _token = v;
+    if (v) await AsyncStorage.setItem('wrk_token', v);
+    else await AsyncStorage.removeItem('wrk_token');
+  },
+};
 
 async function request<T = any>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`${baseUrl}${path}`, {
     ...init,
-    headers: { 'Content-Type': 'application/json', ...(init.headers || {}) },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(_token ? { Authorization: `Bearer ${_token}` } : {}),
+      ...(init.headers || {}),
+    },
   });
   if (!res.ok) {
     const text = await res.text();
+    // eslint-disable-next-line no-console
+    console.error(`[api] ${res.status} ${init.method || 'GET'} ${path}: ${text}`);
     throw new Error(`${res.status} ${text}`);
   }
   if (res.status === 204) return undefined as T;
@@ -67,6 +86,13 @@ export interface Optimization {
 
 export const api = {
   base: baseUrl,
+  // auth
+  signup: (email: string, password: string) =>
+    request<{ token: string; email: string }>('/api/auth/signup', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  login: (email: string, password: string) =>
+    request<{ token: string; email: string }>('/api/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  me: () => request<{ userId: string; email: string | null; authenticated: boolean }>('/api/auth/me'),
+  logout: () => request('/api/auth/logout', { method: 'POST' }),
   // conversations
   listConversations: () => request<any[]>('/api/conversations'),
   getMessages: (id: number) => request<{ conversation: any; messages: any[]; agent: Agent | null }>(`/api/conversations/${id}/messages`),

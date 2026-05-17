@@ -12,13 +12,13 @@
       "distribution": "internal",
       "channel": "preview",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://wrk-phone.fly.dev"
+        "EXPO_PUBLIC_API_BASE_URL": "https://wrk-phone-8ebcfd.fly.dev"
       }
     },
     "production": {
       "channel": "production",
       "env": {
-        "EXPO_PUBLIC_API_BASE_URL": "https://wrk-phone.fly.dev"
+        "EXPO_PUBLIC_API_BASE_URL": "https://wrk-phone-8ebcfd.fly.dev"
       },
       "autoIncrement": true
     }

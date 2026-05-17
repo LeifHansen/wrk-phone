@@ -180,7 +180,7 @@ export const api = {
       '/api/numbers/repair-webhooks', { method: 'POST' }
     ),
   credits: () =>
-    req<{ balance: number; packages: { id: string; credits: number; price: number; label: string; note?: string }[]; rates: { sms: string; mms: string } }>(
+    req<{ balance: number; packages: { id: string; credits: number; price: number; label: string; note?: string }[]; rates: { sms: string; mms: string }; testMode?: boolean }>(
       '/api/credits'
     ),
   listVoices: () =>

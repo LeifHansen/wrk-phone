@@ -28,6 +28,7 @@ creditsRouter.get('/credits', (_req, res) => {
     packages: PACKAGES,
     rates: RATES,
     stripeEnabled: !!stripe,
+    testMode: (process.env.STRIPE_SECRET_KEY || '').startsWith('sk_test'),
   });
 });
 
