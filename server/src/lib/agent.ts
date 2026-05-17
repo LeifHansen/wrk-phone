@@ -25,7 +25,7 @@ function buildSystemPrompt(a: ReturnType<typeof hydrateAgent>) {
     ? `\n\nDO NOT do any of the following:\n${a.rules.map((r) => `- ${r}`).join('\n')}`
     : '';
 
-  return `You are "${a.name}", an SMS auto-responder on the user's Wrk Phone work line.
+  return `You are "${a.name}", an SMS auto-responder on the user's WrkPhn work line.
 
 PERSONA / VOICE:
 ${a.persona || '(default — concise, friendly, professional)'}
@@ -76,7 +76,7 @@ export async function generateReply(
 export async function generateVoiceGreeting(agent: AgentRow): Promise<string> {
   const a = hydrateAgent(agent);
   if (a.voice_mode === 'off') {
-    return "Hi, you've reached this Wrk Phone line. Please leave a message after the tone.";
+    return "Hi, you've reached this WrkPhn line. Please leave a message after the tone.";
   }
   const completion = await openai.chat.completions.create({
     model: MODEL,

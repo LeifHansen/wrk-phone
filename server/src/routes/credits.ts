@@ -65,7 +65,7 @@ creditsRouter.post('/credits/checkout', async (req, res) => {
         price_data: {
           currency: 'usd',
           unit_amount: pkg.price * 100,
-          product_data: { name: `Wrk Phone — ${pkg.label} (${pkg.credits} credits)` },
+          product_data: { name: `WrkPhn — ${pkg.label} (${pkg.credits} credits)` },
         },
       }],
       success_url: `${base}/credits?paid=1`,

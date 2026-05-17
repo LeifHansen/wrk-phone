@@ -130,7 +130,7 @@ process.on('uncaughtException', (e) => log.error('process', 'uncaughtException',
 
 const port = Number(process.env.PORT || 4000);
 app.listen(port, '0.0.0.0', () => {
-  console.log(`Wrk Phone server listening on :${port}`);
+  console.log(`WrkPhn server listening on :${port}`);
   if (!process.env.PUBLIC_BASE_URL) {
     console.warn('Warning: PUBLIC_BASE_URL not set. Twilio webhooks need a public URL.');
   }
