@@ -8,6 +8,7 @@ import { Login } from './pages/Login';
 import { Onboarding } from './pages/Onboarding';
 import { Logo } from './components/Logo';
 import { Toaster } from './components/Toast';
+import { Avatar } from './components/Avatar';
 import { IconPhone, IconMessage, IconContacts, IconBlast, IconAgent, IconStats, IconGear } from './components/Icons';
 import { Credits } from './pages/Credits';
 import { Numbers } from './pages/Numbers';
@@ -31,8 +32,13 @@ import { onIncoming } from './lib/voice';
 export function App() {
   const [inCall, setInCall] = useState(false);
   const [peer, setPeer] = useState('');
+  const [acctAvatar, setAcctAvatar] = useState<string | null>(null);
   const nav = useNavigate();
   const loc = useLocation();
+
+  // Account avatar shown app-wide in the sidebar; refresh on navigation so a
+  // newly generated one appears everywhere without a full reload.
+  useEffect(() => { api.account().then((a) => setAcctAvatar(a.avatarUrl)).catch(() => {}); }, [loc.pathname]);
 
   // First-run gate: no provisioned number → force the setup screen.
   useEffect(() => {
@@ -82,8 +88,13 @@ export function App() {
           <div className="lbl">WRK LINE</div>
           <div className="bars"><i /><i /><i /><i /></div>
         </NavLink>
-        <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Admin">
-          <span className="glyph"><IconGear /></span><span className="nav-label">ADMIN</span>
+        <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Account / Admin">
+          <span className="glyph">
+            {acctAvatar
+              ? <Avatar url={acctAvatar} size={28} round />
+              : <IconGear />}
+          </span>
+          <span className="nav-label">ADMIN</span>
         </NavLink>
       </aside>
       <main className="main">

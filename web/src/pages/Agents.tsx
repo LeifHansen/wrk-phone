@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
+import { Agent, api } from '../lib/api';
+import { Avatar } from '../components/Avatar';
 
 export function Agents() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -34,9 +35,7 @@ export function Agents() {
           <div className="agents-grid">
             {agents.map((a) => (
               <Link key={a.id} to={`/agents/${a.id}`} className="agent-card" style={{ textDecoration: 'none', color: 'inherit' }}>
-                <div className="swatch" style={{ background: COLOR_BG[a.color], color: COLOR_FG[a.color] }}>
-                  {a.emoji}
-                </div>
+                <Avatar url={(a as any).avatar_url} emoji={a.emoji} color={a.color} size={56} />
                 <div>
                   <div className="name">{a.name} {a.is_default ? <span className="pill black" style={{ marginLeft: 6, verticalAlign: 'middle' }}>DEFAULT</span> : null}</div>
                   <div className="meta">{a.conversations ?? 0} convos · {a.ai_sent_7d ?? 0} sent (7d)</div>

@@ -14,7 +14,7 @@ conversationsRouter.get('/conversations', (req, res) => {
            (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_body,
            (SELECT direction FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_direction,
            (SELECT name FROM contacts WHERE user_id = c.user_id AND phone = c.peer_phone LIMIT 1) AS name,
-           a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color, a.mode AS agent_mode
+           a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color, a.mode AS agent_mode, a.avatar_url AS agent_avatar
     FROM conversations c
     LEFT JOIN agents a ON a.id = COALESCE(c.agent_id,
                                           (SELECT id FROM agents WHERE user_id = c.user_id AND is_default = 1 LIMIT 1))
