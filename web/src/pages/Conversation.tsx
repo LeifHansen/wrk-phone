@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
+import { Avatar } from '../components/Avatar';
 import { placeCall } from '../lib/voice';
 
 interface Msg {
@@ -69,7 +70,10 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
 
       {agent && agent.mode !== 'off' && (
         <div className="agent-bar" style={{ background: COLOR_BG[agent.color], color: COLOR_FG[agent.color] }} onClick={openSwitcher}>
-          <span>{agent.emoji} {agent.name} on duty · {agent.mode.toUpperCase()}</span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <Avatar url={(agent as any).avatar_url} emoji={agent.emoji} color={agent.color} size={22} round />
+            {agent.name} on duty · {agent.mode.toUpperCase()}
+          </span>
           <span style={{ fontSize: 13, fontWeight: 800 }}>Switch ›</span>
         </div>
       )}
@@ -119,7 +123,7 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
             <h3>On-duty agent</h3>
             {allAgents.map((a) => (
               <div key={a.id} className="sheet-row" onClick={() => pickAgent(a)}>
-                <div className="swatch" style={{ background: COLOR_BG[a.color], color: COLOR_FG[a.color] }}>{a.emoji}</div>
+                <Avatar url={(a as any).avatar_url} emoji={a.emoji} color={a.color} size={40} />
                 <div style={{ flex: 1 }}>
                   <div className="name">{a.name}</div>
                   <div className="meta">{a.mode.toUpperCase()}{a.is_default ? ' · default' : ''}</div>

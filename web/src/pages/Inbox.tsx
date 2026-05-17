@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, COLOR_BG, COLOR_FG } from '../lib/api';
 import { IconTrash } from '../components/Icons';
+import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
 
 interface Row {
@@ -10,6 +11,7 @@ interface Row {
   last_message_at: number; unread_count: number;
   agent_id: number | null; agent_name: string | null;
   agent_emoji: string | null; agent_color: string | null;
+  agent_avatar?: string | null;
   agent_mode: 'off' | 'suggest' | 'auto' | null;
 }
 
@@ -86,9 +88,10 @@ export function Inbox() {
                   {r.agent_color && r.agent_mode && r.agent_mode !== 'off' && (
                     <span
                       className="agent-chip"
-                      style={{ background: COLOR_BG[r.agent_color], color: COLOR_FG[r.agent_color] }}
+                      style={{ background: COLOR_BG[r.agent_color], color: COLOR_FG[r.agent_color], display: 'inline-flex', alignItems: 'center', gap: 5 }}
                     >
-                      {r.agent_emoji} {r.agent_name} · {r.agent_mode.toUpperCase()}
+                      <Avatar url={r.agent_avatar} emoji={r.agent_emoji} color={r.agent_color} size={16} round />
+                      {r.agent_name} · {r.agent_mode.toUpperCase()}
                     </span>
                   )}
                 </div>
