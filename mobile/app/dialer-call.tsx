@@ -25,7 +25,7 @@ export default function CallScreen() {
     <View style={styles.wrap}>
       <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center' }}>
         <View style={styles.avatar}><Text style={styles.avatarText}>·</Text></View>
-        <Text style={styles.peer}>Wrk Phone Call</Text>
+        <Text style={styles.peer}>Werkphone Call</Text>
         <Text style={styles.timer}>{fmt(seconds)}</Text>
       </View>
       <View style={styles.actions}>

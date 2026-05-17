@@ -61,7 +61,7 @@ export default function Settings() {
       const { syncDeviceContacts } = await import('@/lib/contacts');
       const r = await syncDeviceContacts();
       if (!r.granted) {
-        Alert.alert('Permission needed', 'Enable Contacts access for Wrk Phone in Settings to sync.');
+        Alert.alert('Permission needed', 'Enable Contacts access for Werkphone in Settings to sync.');
       } else {
         setContactsTotal(r.total);
         Alert.alert('Contacts synced', `Synced ${r.synced} number${r.synced === 1 ? '' : 's'} (${r.skipped} skipped). You now have ${r.total} contacts.`);
