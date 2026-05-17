@@ -139,6 +139,16 @@ export function Settings() {
           </div>
         </div>
 
+        <div className="set-section">
+          <h3>SUPERADMIN</h3>
+          <div className="set-card">
+            <Row label="Blog agent"><span style={{ fontSize: 12 }}>SEO posts, content & stats</span></Row>
+            <Link className="btn" to="/superadmin" style={{ display: 'inline-block', margin: '8px 0', textDecoration: 'none' }}>
+              Open superadmin
+            </Link>
+          </div>
+        </div>
+
         {DEV && (
           <>
             <div className="set-section">

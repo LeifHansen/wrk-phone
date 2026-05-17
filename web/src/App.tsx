@@ -27,11 +27,15 @@ import { Routing } from './pages/Routing';
 import { RoutingEdit } from './pages/RoutingEdit';
 import { Campaigns } from './pages/Campaigns';
 import { Settings } from './pages/Settings';
+import { Blog } from './pages/Blog';
+import { BlogPost } from './pages/BlogPost';
+import { Superadmin } from './pages/Superadmin';
 import { CallOverlay } from './components/CallOverlay';
 import { onIncoming } from './lib/voice';
 
 // Routes rendered without the app sidebar (public marketing + auth + setup).
 const CHROMELESS = ['/lp', '/login', '/register', '/welcome', '/setup'];
+const isChromeless = (p: string) => CHROMELESS.includes(p) || p === '/blog' || p.startsWith('/blog/');
 
 export function App() {
   const [inCall, setInCall] = useState(false);
@@ -50,7 +54,7 @@ export function App() {
   useEffect(() => {
     api.activeNumber()
       .then((s) => {
-        if (!s.isProvisioned && !CHROMELESS.includes(loc.pathname)) {
+        if (!s.isProvisioned && !isChromeless(loc.pathname)) {
           nav('/lp', { replace: true });
         }
       })
@@ -68,7 +72,7 @@ export function App() {
     });
   }, []);
 
-  const chromeless = CHROMELESS.includes(loc.pathname);
+  const chromeless = isChromeless(loc.pathname);
 
   return (
     <div className={'app-shell' + (chromeless ? ' chromeless' : '')}>
@@ -116,6 +120,9 @@ export function App() {
           <Route path="/register" element={<Login initialMode="signup" />} />
           <Route path="/welcome" element={<Onboarding />} />
           <Route path="/setup" element={<Setup />} />
+          <Route path="/blog" element={<Blog />} />
+          <Route path="/blog/:slug" element={<BlogPost />} />
+          <Route path="/superadmin" element={<Superadmin />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />
           <Route path="/contacts" element={<Contacts onCall={(p) => { setPeer(p); setInCall(true); }} />} />
