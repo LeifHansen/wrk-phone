@@ -135,10 +135,16 @@ smsRouter.post('/sms/send', async (req, res) => {
   } catch (err: any) {
     addCredits(USER, cost); // refund — the send failed
     const from = String(fromNum || '');
-    const tollFree = /^\+1(800|833|844|855|866|877|888)\d{7}$/.test(from);
-    const msg = tollFree
-      ? `Couldn't send from ${from}. Toll-free numbers must complete Twilio Toll-Free Verification before they can text. Pick a local number from the pool (Numbers) and try again.`
-      : err.message;
+    const isTollFree = /^\+1(800|833|844|855|866|877|888)\d{7}$/.test(from);
+    // Only blame Toll-Free Verification when Twilio actually says so
+    // (30032 = TF number not verified). A verified toll-free that fails
+    // for another reason must surface its REAL error, not a misleading
+    // "go verify your number" message.
+    const tfUnverified = err.code === 30032 ||
+      /toll[- ]?free.*(verif|not been verified)/i.test(String(err.message || ''));
+    const msg = (isTollFree && tfUnverified)
+      ? `Couldn't send from ${from}: this toll-free number hasn't completed Twilio Toll-Free Verification yet. Use a different number or finish verification, then try again.`
+      : `Couldn't send from ${from}: ${err.message}${err.code ? ` (Twilio ${err.code})` : ''}`;
     res.status(500).json({ error: msg, code: err.code });
   }
 });
