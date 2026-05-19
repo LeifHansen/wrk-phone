@@ -89,9 +89,11 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
 
       {mode === 'call' ? (
         <>
-          <div className="phone-screen">
-            <div className="phone-num-row">
-              <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
+          <div className="call-field">
+            <div className="text-entry-field">
+              <div className={'input num-display' + (num ? '' : ' is-empty')}>
+                {fmt(num) || 'Enter a number, or pick a contact'}
+              </div>
               {!num && (
                 <button className="contacts-ico in-field" onClick={openPicker}
                   title="Select from contacts" aria-label="Select from contacts">
