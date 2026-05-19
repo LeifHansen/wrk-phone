@@ -4,6 +4,7 @@ import { api } from './api';
 let device: Device | null = null;
 let activeCall: Call | null = null;
 let incomingCb: ((call: Call) => void) | null = null;
+let currentIdentity: string | null = null;
 
 function logErr(scope: string, msg: string, extra?: unknown) {
   // eslint-disable-next-line no-console
@@ -14,8 +15,25 @@ function logInfo(scope: string, msg: string, extra?: unknown) {
   console.log(`[voice] ${scope}: ${msg}`, extra ?? '');
 }
 
+// Destroy the device and drop all registration/listeners. Call on logout so
+// a re-login doesn't keep a Device holding a stale JWT/identity.
+export function teardownDevice() {
+  try { activeCall?.disconnect(); } catch { /* noop */ }
+  activeCall = null;
+  if (device) {
+    try { device.destroy(); } catch (e) { logErr('teardownDevice', 'destroy threw', e); }
+    logInfo('teardownDevice', 'device destroyed');
+  }
+  device = null;
+  currentIdentity = null;
+}
+
 export async function ensureDevice(identity = 'demo'): Promise<Device> {
-  if (device) return device;
+  // Reuse only if it's the SAME identity. A different identity (re-login as
+  // another account) must get a fresh device — the old one is bound to the
+  // previous JWT/registration.
+  if (device && currentIdentity === identity) return device;
+  if (device && currentIdentity !== identity) teardownDevice();
   try {
     const { token } = await api.getVoiceToken(identity);
     device = new Device(token, { codecPreferences: ['opus' as any, 'pcmu' as any], logLevel: 1 });
@@ -38,10 +56,12 @@ export async function ensureDevice(identity = 'demo'): Promise<Device> {
       } catch (e) { logErr('device', 'token refresh failed', e); }
     });
     await device.register();
+    currentIdentity = identity;
     return device;
   } catch (e) {
     logErr('ensureDevice', 'could not init/register device', e);
     device = null;
+    currentIdentity = null;
     throw e;
   }
 }

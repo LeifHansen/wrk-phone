@@ -66,10 +66,17 @@ function checkSenderPhone(c: Extract<Condition, { type: 'sender_phone' }>, fromP
 }
 
 function checkAreaCode(c: Extract<Condition, { type: 'area_code' }>, fromPhone: string): boolean {
-  const np = normalizePhone(fromPhone);
-  // strip leading + and country code (assume US: +1XXXXXXXXXX => XXXXXXXXXX)
-  const local = np.startsWith('+1') ? np.slice(2) : np.startsWith('1') && np.length === 11 ? np.slice(1) : np.replace(/^\+/, '');
-  return local.startsWith(c.value);
+  const digits = (normalizePhone(fromPhone) || '').replace(/\D/g, '');
+  // "Area code" is a NANP (US/Canada/Caribbean, country code 1) concept:
+  // the 3 digits after the country code. Extract it precisely; for
+  // non-NANP numbers (+44, +61, …) there is no NANP-style area code, so
+  // the condition simply doesn't match — instead of the old behaviour of
+  // false-matching the country-code prefix and mis-routing them.
+  let areaCode: string | null = null;
+  if (digits.length === 11 && digits.startsWith('1')) areaCode = digits.slice(1, 4);
+  else if (digits.length === 10) areaCode = digits.slice(0, 3);
+  if (areaCode == null) return false;
+  return areaCode.startsWith(c.value.replace(/\D/g, ''));
 }
 
 function checkTime(c: Extract<Condition, { type: 'time' }>): boolean {

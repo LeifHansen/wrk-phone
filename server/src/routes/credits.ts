@@ -84,6 +84,14 @@ export function stripeWebhookHandler(req: Request, res: Response) {
   if (!stripe) return res.status(503).send('stripe not configured');
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   let event: Stripe.Event;
+  if (!secret) {
+    // No signature secret = cannot prove the request is really Stripe. The
+    // unsigned fallback would let anyone forge a "payment completed" and
+    // credit themselves, so it is dev-only and fails closed in production.
+    if (process.env.NODE_ENV === 'production') {
+      return res.status(503).send('stripe webhook secret not configured');
+    }
+  }
   try {
     if (secret) {
       event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'] as string, secret);

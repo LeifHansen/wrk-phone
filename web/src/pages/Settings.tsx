@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { ensureDevice } from '../lib/voice';
+import { ensureDevice, teardownDevice } from '../lib/voice';
 import { api, auth } from '../lib/api';
 import { toast } from '../components/Toast';
 
@@ -71,7 +71,12 @@ export function Settings() {
             </Row>
             {me?.authenticated && (
               <button className="btn ghost" style={{ margin: '8px 0' }}
-                onClick={() => { auth.token = null; nav('/login'); }}>Log out</button>
+                onClick={() => {
+                  teardownDevice();
+                  api.logout().catch(() => {});
+                  auth.token = null;
+                  nav('/login');
+                }}>Log out</button>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0' }}>
               {avatar
