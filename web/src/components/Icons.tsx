@@ -32,8 +32,11 @@ export const IconPencil = ({ size }: P) => (
   <svg {...base(size)}><path d="M14.5 5.5l4 4M4 20l1-4L16 5a2 2 0 0 1 3 3L8 19l-4 1z"/></svg>
 );
 export const IconGear = ({ size }: P) => (
+  // Clean symmetric cog: hub + ring + 8 evenly-spaced teeth (was a
+  // hand-approximated path that rendered lumpy/distorted at small sizes).
   <svg {...base(size)}>
-    <path d="M19.4 13a7.6 7.6 0 0 0 0-2l1.9-1.5-1.9-3.3-2.3.9a7.6 7.6 0 0 0-1.7-1l-.4-2.4H10.9l-.4 2.4a7.6 7.6 0 0 0-1.7 1l-2.3-.9-1.9 3.3L4.6 11a7.6 7.6 0 0 0 0 2l-1.9 1.5 1.9 3.3 2.3-.9a7.6 7.6 0 0 0 1.7 1l.4 2.4h3.8l.4-2.4a7.6 7.6 0 0 0 1.7-1l2.3.9 1.9-3.3L19.4 13z"/>
-    <circle cx="12" cy="12" r="3"/>
+    <circle cx="12" cy="12" r="3.2" />
+    <circle cx="12" cy="12" r="7" />
+    <path d="M12 2.2v2.6M12 19.2v2.6M2.2 12h2.6M19.2 12h2.6M5.05 5.05l1.85 1.85M17.1 17.1l1.85 1.85M18.95 5.05l-1.85 1.85M6.9 17.1l-1.85 1.85" />
   </svg>
 );
