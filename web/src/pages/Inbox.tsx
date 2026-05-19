@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, COLOR_BG, COLOR_FG } from '../lib/api';
+import { usePolling } from '../lib/usePolling';
 import { IconTrash } from '../components/Icons';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
@@ -42,7 +43,7 @@ export function Inbox() {
     try { await api.deleteConversation(id); setRows((s) => s.filter((x) => x.id !== id)); toast('Conversation deleted'); }
     catch (err: any) { toast(`Delete failed: ${err.message}`, 'err'); }
   };
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
+  usePolling(load, 4000);
 
   const compose = async () => {
     if (!phone.trim() || !body.trim()) return;

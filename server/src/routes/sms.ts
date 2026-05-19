@@ -16,6 +16,16 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   const from = String(req.body.From || '');
   const body = String(req.body.Body || '');
   const sid = String(req.body.MessageSid || '');
+
+  // Idempotency: Twilio retries the webhook (up to ~15s, then again) when a
+  // response is slow. Two OpenAI round-trips below routinely exceed that, so
+  // without this guard a retry re-inserts the inbound and re-bills a second
+  // AI reply. First write wins; retries get an empty 200.
+  if (sid) {
+    const dup = db.prepare(`SELECT 1 FROM messages WHERE twilio_sid = ? LIMIT 1`).get(sid);
+    if (dup) return res.type('text/xml').send(new MessagingResponse().toString());
+  }
+
   const convId = getOrCreateConversation(USER, from);
 
   // Carrier-required opt-out handling. Always recorded, runs before the agent.
@@ -123,18 +133,13 @@ smsRouter.post('/sms/send', async (req, res) => {
   // Send FROM the sending user's selected shared-pool number (keeps their
   // chosen local area code). Explicit `from` so Twilio honors that number.
   const fromNum = getActiveNumber(getUserId(req)) || twilioConfig.defaultFrom;
+  let msg: any;
   try {
     const params: any = { to, body, from: fromNum };
     if (mediaUrl) params.mediaUrl = [mediaUrl];        // MMS
-    const msg = await twilioClient.messages.create(params);
-    const result = db.prepare(
-      `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, media_url)
-       VALUES (?, 'out', ?, ?, ?, ?, ?)`
-    ).run(convId, body, msg.sid, msg.status, Date.now(), mediaUrl);
-    db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(Date.now(), convId);
-    res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status, creditsSpent: cost });
+    msg = await twilioClient.messages.create(params);
   } catch (err: any) {
-    addCredits(USER, cost); // refund — the send failed
+    addCredits(USER, cost); // refund — the send itself failed, nothing went out
     const from = String(fromNum || '');
     log.error('sms.send', `outbound send failed from ${from} to ${to}`, { code: err.code, message: err.message, moreInfo: err.moreInfo });
     const isTollFree = /^\+1(800|833|844|855|866|877|888)\d{7}$/.test(from);
@@ -144,10 +149,24 @@ smsRouter.post('/sms/send', async (req, res) => {
     // "go verify your number" message.
     const tfUnverified = err.code === 30032 ||
       /toll[- ]?free.*(verif|not been verified)/i.test(String(err.message || ''));
-    const msg = (isTollFree && tfUnverified)
+    const errMsg = (isTollFree && tfUnverified)
       ? `Couldn't send from ${from}: this toll-free number hasn't completed Twilio Toll-Free Verification yet. Use a different number or finish verification, then try again.`
       : `Couldn't send from ${from}: ${err.message}${err.code ? ` (Twilio ${err.code})` : ''}`;
-    res.status(500).json({ error: msg, code: err.code });
+    return res.status(500).json({ error: errMsg, code: err.code });
+  }
+
+  // The SMS is already sent. A failure persisting it must NOT refund — the
+  // credit was correctly consumed; just log and still report success.
+  try {
+    const result = db.prepare(
+      `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, media_url)
+       VALUES (?, 'out', ?, ?, ?, ?, ?)`
+    ).run(convId, body, msg.sid, msg.status, Date.now(), mediaUrl);
+    db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(Date.now(), convId);
+    res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status, creditsSpent: cost });
+  } catch (dbErr: any) {
+    log.error('sms.send', `sent (sid ${msg?.sid}) but failed to persist message`, dbErr);
+    res.json({ conversationId: convId, twilioSid: msg.sid, status: msg.status, creditsSpent: cost, warning: 'message sent but not recorded' });
   }
 });
 

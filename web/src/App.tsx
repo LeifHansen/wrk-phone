@@ -1,37 +1,45 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { api } from './lib/api';
-import { Setup } from './pages/Setup';
-import { Landing } from './pages/Landing';
-import { Home } from './pages/Home';
-import { Contacts } from './pages/Contacts';
-import { Login } from './pages/Login';
-import { Onboarding } from './pages/Onboarding';
 import { Logo } from './components/Logo';
 import { Toaster } from './components/Toast';
 import { Avatar } from './components/Avatar';
 import { IconPhone, IconMessage, IconContacts, IconBlast, IconAgent, IconStats, IconGear } from './components/Icons';
-import { Credits } from './pages/Credits';
-import { Numbers } from './pages/Numbers';
-import { A2P } from './pages/A2P';
-import { Analytics } from './pages/Analytics';
-import { Inbox } from './pages/Inbox';
-import { Conversation } from './pages/Conversation';
-import { Keypad } from './pages/Keypad';
-import { Agents } from './pages/Agents';
-import { AgentNew } from './pages/AgentNew';
-import { AgentDetail } from './pages/AgentDetail';
-import { AgentOptimize } from './pages/AgentOptimize';
-import { AgentTrain } from './pages/AgentTrain';
-import { Routing } from './pages/Routing';
-import { RoutingEdit } from './pages/RoutingEdit';
-import { Campaigns } from './pages/Campaigns';
-import { Settings } from './pages/Settings';
-import { Blog } from './pages/Blog';
-import { BlogPost } from './pages/BlogPost';
-import { Superadmin } from './pages/Superadmin';
 import { CallOverlay } from './components/CallOverlay';
 import { onIncoming } from './lib/voice';
+
+// Pages are route-split: each becomes its own chunk so the initial load
+// isn't one ~470KB bundle. `lazy` needs a default export, so map the named one.
+const page = <T extends Record<string, any>>(
+  loader: () => Promise<T>,
+  name: keyof T,
+) => lazy(() => loader().then((m) => ({ default: m[name] })));
+
+const Setup = page(() => import('./pages/Setup'), 'Setup');
+const Landing = page(() => import('./pages/Landing'), 'Landing');
+const Home = page(() => import('./pages/Home'), 'Home');
+const Contacts = page(() => import('./pages/Contacts'), 'Contacts');
+const Login = page(() => import('./pages/Login'), 'Login');
+const Onboarding = page(() => import('./pages/Onboarding'), 'Onboarding');
+const Credits = page(() => import('./pages/Credits'), 'Credits');
+const Numbers = page(() => import('./pages/Numbers'), 'Numbers');
+const A2P = page(() => import('./pages/A2P'), 'A2P');
+const Analytics = page(() => import('./pages/Analytics'), 'Analytics');
+const Inbox = page(() => import('./pages/Inbox'), 'Inbox');
+const Conversation = page(() => import('./pages/Conversation'), 'Conversation');
+const Keypad = page(() => import('./pages/Keypad'), 'Keypad');
+const Agents = page(() => import('./pages/Agents'), 'Agents');
+const AgentNew = page(() => import('./pages/AgentNew'), 'AgentNew');
+const AgentDetail = page(() => import('./pages/AgentDetail'), 'AgentDetail');
+const AgentOptimize = page(() => import('./pages/AgentOptimize'), 'AgentOptimize');
+const AgentTrain = page(() => import('./pages/AgentTrain'), 'AgentTrain');
+const Routing = page(() => import('./pages/Routing'), 'Routing');
+const RoutingEdit = page(() => import('./pages/RoutingEdit'), 'RoutingEdit');
+const Campaigns = page(() => import('./pages/Campaigns'), 'Campaigns');
+const Settings = page(() => import('./pages/Settings'), 'Settings');
+const Blog = page(() => import('./pages/Blog'), 'Blog');
+const BlogPost = page(() => import('./pages/BlogPost'), 'BlogPost');
+const Superadmin = page(() => import('./pages/Superadmin'), 'Superadmin');
 
 // Routes rendered without the app sidebar (public marketing + auth + setup).
 const CHROMELESS = ['/lp', '/login', '/register', '/welcome', '/setup'];
@@ -114,6 +122,7 @@ export function App() {
       </aside>
       )}
       <main className="main">
+        <Suspense fallback={<div className="page-loading" />}>
         <Routes>
           <Route path="/lp" element={<Landing />} />
           <Route path="/login" element={<Login />} />
@@ -144,6 +153,7 @@ export function App() {
           <Route path="/admin" element={<Settings />} />
           <Route path="/settings" element={<Settings />} />
         </Routes>
+        </Suspense>
       </main>
       {inCall && <CallOverlay peer={peer} callSid={callSid} onEnd={() => { setInCall(false); setCallSid(null); }} />}
       <Toaster />

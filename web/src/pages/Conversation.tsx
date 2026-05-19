@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
+import { usePolling } from '../lib/usePolling';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
 import { SmsAiTools } from '../components/SmsAiTools';
@@ -30,8 +31,8 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     const res = await api.getMessages(convId);
     setConv(res.conversation); setMessages(res.messages); setAgent(res.agent);
   };
-  useEffect(() => { load().catch(() => {}); api.markRead(convId).catch(() => {}); }, [convId]);
-  useEffect(() => { const t = setInterval(load, 3500); return () => clearInterval(t); }, [convId]);
+  useEffect(() => { api.markRead(convId).catch(() => {}); }, [convId]);
+  usePolling(() => { load().catch(() => {}); }, 3500, [convId]);
   useEffect(() => {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [messages.length]);

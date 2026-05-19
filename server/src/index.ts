@@ -29,7 +29,7 @@ import { startBlogScheduler } from './lib/blog.js';
 import { listBlogPosts } from './lib/db.js';
 import { log } from './lib/log.js';
 import { twilioWebhook } from './lib/twilioVerify.js';
-import { authContext } from './lib/auth.js';
+import { authContext, requireOwner } from './lib/auth.js';
 import { authRouter } from './routes/auth.js';
 import './lib/db.js'; // ensure migrations run
 
@@ -80,6 +80,12 @@ app.use('/api', authRouter);
 app.use('/api/voice', twilioWebhook);
 app.use('/api/sms/inbound', twilioWebhook);
 app.use('/api/sms/status', twilioWebhook);
+
+// Shared-line authorization. Runs after /api/auth (login/register/me) and the
+// Twilio/Stripe signature checks. No-op unless AUTH_REQUIRED=1; webhooks have
+// no bearer so they resolve to OWNER and pass. Blocks logged-in non-owners
+// from the shared inbox/campaign/telephony surface.
+app.use('/api', requireOwner);
 
 app.use('/api', tokenRouter);
 app.use('/api', voiceRouter);

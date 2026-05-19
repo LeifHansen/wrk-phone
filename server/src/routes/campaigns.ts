@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
-import { spendCredits, messageCost, isOptedOut } from '../lib/db.js';
+import { spendCredits, addCredits, getCredits, messageCost, isOptedOut } from '../lib/db.js';
 import { log } from '../lib/log.js';
 
 export const campaignsRouter = Router();
@@ -63,27 +63,42 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
   if (campaign.status === 'sending' || campaign.status === 'done') {
     return res.status(409).json({ error: `already ${campaign.status}` });
   }
-  db.prepare(`UPDATE campaigns SET status = 'sending' WHERE id = ?`).run(id);
   const recipients = db.prepare(
     `SELECT * FROM campaign_recipients WHERE campaign_id = ? AND status = 'pending'`
   ).all(id) as any[];
 
-  res.json({ ok: true, started: recipients.length });
+  // Build the worklist up front so cost is known before we charge anything.
+  // Opted-out recipients are excluded from the reservation (we never send to
+  // them) and marked failed without a charge.
+  const work = recipients.map((r) => {
+    const body = String(campaign.template).replace(/\{\{\s*name\s*\}\}/g, r.name || 'there');
+    return { r, body, cost: messageCost(body, !!campaign.media_url), optedOut: isOptedOut(USER, r.phone) };
+  });
+  const reserve = work.reduce((sum, w) => sum + (w.optedOut ? 0 : w.cost), 0);
 
-  // Fire-and-forget send loop with light throttling
+  // Atomically reserve the WHOLE campaign cost before sending. Either it all
+  // fits (campaign runs to completion) or it doesn't start — no half-sent
+  // campaign that aborts mid-loop on a transient balance dip. The campaign
+  // stays 'draft' so it can be re-sent after a top-up.
+  if (reserve > 0 && !spendCredits(USER, reserve)) {
+    return res.status(402).json({
+      error: `Not enough credits for this campaign. Needs ${reserve}, balance ${getCredits(USER)}.`,
+      needed: reserve,
+    });
+  }
+
+  db.prepare(`UPDATE campaigns SET status = 'sending' WHERE id = ?`).run(id);
+  res.json({ ok: true, started: work.filter((w) => !w.optedOut).length, reserved: reserve });
+
+  // Fire-and-forget send loop with light throttling. Cost is already reserved;
+  // every recipient we DON'T send (opt-out or hard Twilio failure) refunds its
+  // own portion so the ledger reconciles to exactly what was sent.
   (async () => {
     let sent = 0;
-    for (const r of recipients) {
-      if (isOptedOut(USER, r.phone)) {
+    for (const { r, body, cost, optedOut } of work) {
+      if (optedOut) {
         db.prepare(`UPDATE campaign_recipients SET status = 'failed', error = 'opted out (STOP)' WHERE id = ?`).run(r.id);
         continue;
-      }
-      const body = String(campaign.template).replace(/\{\{\s*name\s*\}\}/g, r.name || 'there');
-      const cost = messageCost(body, !!campaign.media_url);
-      if (!spendCredits(USER, cost)) {
-        db.prepare(`UPDATE campaign_recipients SET status = 'failed', error = 'out of credits' WHERE id = ?`).run(r.id);
-        db.prepare(`UPDATE campaigns SET status = 'failed' WHERE id = ?`).run(id);
-        break;
       }
       try {
         const params: any = { to: r.phone, body };
@@ -98,13 +113,14 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
         ).run(msg.sid, r.id);
         sent++;
       } catch (err: any) {
+        addCredits(USER, cost); // refund — this one never went out
         db.prepare(
           `UPDATE campaign_recipients SET status = 'failed', error = ? WHERE id = ?`
         ).run(err.message?.slice(0, 500) || 'error', r.id);
       }
       db.prepare(`UPDATE campaigns SET sent_count = ? WHERE id = ?`).run(sent, id);
       // throttle ~1 per 100ms = 10/s, well under default Twilio limits
-      await new Promise((r) => setTimeout(r, 100));
+      await new Promise((res) => setTimeout(res, 100));
     }
     db.prepare(`UPDATE campaigns SET status = 'done' WHERE id = ?`).run(id);
   })().catch((e) => {

@@ -3,6 +3,7 @@ import { api } from './api';
 
 let device: Device | null = null;
 let activeCall: Call | null = null;
+let incomingCb: ((call: Call) => void) | null = null;
 
 function logErr(scope: string, msg: string, extra?: unknown) {
   // eslint-disable-next-line no-console
@@ -22,6 +23,13 @@ export async function ensureDevice(identity = 'demo'): Promise<Device> {
       logErr('device', `Twilio device error ${e?.code ?? ''} — ${e?.message ?? e}`, e));
     device.on('registered', () => logInfo('device', 'registered'));
     device.on('unregistered', () => logInfo('device', 'unregistered'));
+    // Registered exactly once for the device's lifetime. onIncoming() only
+    // swaps the stored callback, so repeat effect runs (React StrictMode)
+    // can't stack listeners and double-accept the same call.
+    device.on('incoming', (call: Call) => {
+      wireCall(call, 'incoming');
+      incomingCb?.(call);
+    });
     device.on('tokenWillExpire', async () => {
       try {
         const fresh = await api.getVoiceToken(identity);
@@ -79,7 +87,6 @@ export function getActive(): Call | null {
 }
 
 export function onIncoming(cb: (call: Call) => void) {
-  ensureDevice()
-    .then((dev) => dev.on('incoming', (call: Call) => { wireCall(call, 'incoming'); cb(call); }))
-    .catch((e) => logErr('onIncoming', 'device unavailable', e));
+  incomingCb = cb;
+  ensureDevice().catch((e) => logErr('onIncoming', 'device unavailable', e));
 }

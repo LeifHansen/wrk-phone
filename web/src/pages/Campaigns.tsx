@@ -1,5 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../lib/api';
+import { usePolling } from '../lib/usePolling';
 import { toast } from '../components/Toast';
 import { SmsAiTools } from '../components/SmsAiTools';
 
@@ -36,7 +37,7 @@ export function Campaigns() {
     api.listCampaigns().then((r) => setList(r as Campaign[])).catch(() => {});
     api.listSegments().then(setSegments).catch(() => {});
   };
-  useEffect(() => { load(); const t = setInterval(load, 4000); return () => clearInterval(t); }, []);
+  usePolling(load, 4000);
 
   const genImage = async () => {
     if (!imgPrompt.trim()) return;
