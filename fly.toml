@@ -27,7 +27,7 @@ primary_region = "ams"
   DEMO_USER_ID = "demo"
   # Public https origin Twilio reaches for webhooks (= this Fly app's URL).
   # Required: webhook signature validation fails closed without it in prod.
-  PUBLIC_BASE_URL = "https://wrk-phone.fly.dev"
+  PUBLIC_BASE_URL = "https://wrkphn.com"
 
 [[mounts]]
   source = "wrk_data"
