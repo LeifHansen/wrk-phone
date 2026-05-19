@@ -1,59 +1,47 @@
-# fly.toml — Wrk Phone server (API + web SPA in one container)
-# Bring up:
-#   fly launch --no-deploy --copy-config            # claims app name, generates secrets prompts
-#   fly volumes create wrk_data --region iad --size 1
-#   fly secrets set TWILIO_ACCOUNT_SID=... TWILIO_AUTH_TOKEN=... \
-#     TWILIO_API_KEY_SID=... TWILIO_API_KEY_SECRET=... \
-#     TWILIO_TWIML_APP_SID=... TWILIO_DEFAULT_FROM_NUMBER=+15551234567 \
-#     OPENAI_API_KEY=...
-#   fly deploy
-# After deploy, point your Twilio number's webhooks at:
-#   Voice    POST  https://<app>.fly.dev/api/voice/inbound
-#   SMS      POST  https://<app>.fly.dev/api/sms/inbound
-#   Status   POST  https://<app>.fly.dev/api/voice/status   (optional)
-#   Status   POST  https://<app>.fly.dev/api/sms/status     (optional)
+# fly.toml app configuration file generated for wrk-phone on 2026-05-19T07:07:48Z
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
 
-app = "wrk-phone-8ebcfd"
-primary_region = "iad"
+app = 'wrk-phone'
+primary_region = 'ams'
 
 [build]
-  dockerfile = "Dockerfile"
+  dockerfile = 'Dockerfile'
 
 [env]
-  PORT = "8080"
-  NODE_ENV = "production"
-  DATA_DIR = "/data"
-  OPENAI_MODEL = "gpt-4o-mini"
-  DEMO_USER_ID = "demo"
-  # Public https origin Twilio reaches for webhooks (= this Fly app's URL).
-  # Required: webhook signature validation fails closed without it in prod.
-  PUBLIC_BASE_URL = "https://wrk-phone-8ebcfd.fly.dev"
+  DATA_DIR = '/data'
+  DEMO_USER_ID = 'demo'
+  NODE_ENV = 'production'
+  OPENAI_MODEL = 'gpt-4o-mini'
+  PORT = '8080'
+  PUBLIC_BASE_URL = 'https://wrk-phone-8ebcfd.fly.dev'
 
 [[mounts]]
-  source = "wrk_data"
-  destination = "/data"
+  source = 'wrk_data'
+  destination = '/data'
 
 [http_service]
   internal_port = 8080
   force_https = true
-  auto_stop_machines = "stop"
+  auto_stop_machines = 'stop'
   auto_start_machines = true
-  min_machines_running = 1     # keep one warm so Twilio webhooks aren't cold-started
-  processes = ["app"]
+  min_machines_running = 1
+  processes = ['app']
 
   [http_service.concurrency]
-    type = "requests"
-    soft_limit = 200
+    type = 'requests'
     hard_limit = 250
+    soft_limit = 200
 
   [[http_service.checks]]
-    grace_period = "10s"
-    interval = "30s"
-    method = "GET"
-    path = "/health"
-    protocol = "http"
-    timeout = "5s"
+    interval = '30s'
+    timeout = '5s'
+    grace_period = '10s'
+    method = 'GET'
+    path = '/health'
+    protocol = 'http'
 
 [[vm]]
-  size = "shared-cpu-1x"
-  memory = "512mb"
+  size = 'shared-cpu-1x'
+  memory = '512mb'
