@@ -12,6 +12,16 @@ const KEYS = [
   ['*', ''], ['0', '+'], ['#', ''],
 ];
 
+// Decorative-but-functional on-screen keyboard shown on the TEXT tab so the
+// area mirrors the CALL keypad instead of sitting empty. Taps type into the
+// recipient field.
+const KB_ROWS = [
+  '1234567890'.split(''),
+  'qwertyuiop'.split(''),
+  'asdfghjkl'.split(''),
+  'zxcvbnm'.split(''),
+];
+
 function fmt(raw: string) {
   const d = raw.replace(/[^\d+*#]/g, '');
   if (d.startsWith('+')) return d;
@@ -133,6 +143,22 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
             )}
           </div>
           <p className="text-entry-hint">Enter who to text, then tap ✉</p>
+          <div className="text-kb" aria-hidden="true">
+            {KB_ROWS.map((row, ri) => (
+              <div className="text-kb-row" key={ri}>
+                {row.map((k) => (
+                  <button key={k} className="kb-key" tabIndex={-1}
+                    onClick={() => { setNum((n) => n + k); textRef.current?.focus(); }}>
+                    {k}
+                  </button>
+                ))}
+                {ri === KB_ROWS.length - 1 && (
+                  <button className="kb-key kb-back" tabIndex={-1}
+                    onClick={() => { setNum((n) => n.slice(0, -1)); textRef.current?.focus(); }}>⌫</button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
