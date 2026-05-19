@@ -6,6 +6,7 @@ import { Toaster } from './components/Toast';
 import { Avatar } from './components/Avatar';
 import { IconPhone, IconMessage, IconContacts, IconBlast, IconAgent, IconStats, IconGear } from './components/Icons';
 import { CallOverlay } from './components/CallOverlay';
+import { ServiceBars } from './components/ServiceBars';
 import { onIncoming } from './lib/voice';
 
 // Pages are route-split: each becomes its own chunk so the initial load
@@ -109,7 +110,7 @@ export function App() {
         </NavLink>
         <div className="spacer" />
         <NavLink to="/setup" className="wrkline-card" style={{ textDecoration: 'none', color: 'inherit' }} aria-label="Work line">
-          <div className="bars"><i /><i /><i /><i /></div>
+          <ServiceBars />
         </NavLink>
         <NavLink to="/admin" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Account / Admin">
           <span className="glyph">
