@@ -285,13 +285,20 @@ code, pre { font-family: var(--mono); font-size: 12px; }
   border: var(--border); border-radius: var(--r); background: var(--surface);
   padding: 22px 18px; margin-bottom: 20px;
 }
-.phone-num-row { display: flex; align-items: center; justify-content: center; }
+.phone-num-row { position: relative; display: flex; align-items: center; justify-content: center; }
 .phone-num {
   flex: 1;
   font-family: var(--pixel); font-size: 22px; text-align: center;
   min-height: 30px; word-break: break-all; letter-spacing: 1px;
 }
 .phone-num .ph { color: var(--muted); font-size: 11px; }
+/* Contacts button sits INSIDE the number field, right side; it's only
+   rendered while the field is empty (disappears once the user types). */
+.contacts-ico.in-field {
+  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 40px; box-shadow: none;
+}
+.contacts-ico.in-field:active { transform: translateY(-50%) translate(2px, 2px); }
 
 /* Mode toggle + contacts: above and OUTSIDE the number pane */
 .dialer-bar {

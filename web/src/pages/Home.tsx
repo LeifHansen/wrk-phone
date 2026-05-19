@@ -79,20 +79,23 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
 
   return (
     <div className="phone">
-      {/* Mode toggle + contacts live ABOVE / OUTSIDE the number pane */}
+      {/* Mode toggle lives ABOVE / OUTSIDE the number pane */}
       <div className="dialer-bar">
         <div className="phone-toggle">
           <button className={'pt-btn' + (mode === 'call' ? ' on' : '')} onClick={() => switchMode('call')}>CALL</button>
           <button className={'pt-btn' + (mode === 'text' ? ' on' : '')} onClick={() => switchMode('text')}>TEXT</button>
         </div>
-        <button className="contacts-ico" onClick={openPicker} title="Select from contacts" aria-label="Select from contacts">
-          <IconContacts size={20} />
-        </button>
       </div>
 
       <div className="phone-screen">
         <div className="phone-num-row">
           <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
+          {!num && (
+            <button className="contacts-ico in-field" onClick={openPicker}
+              title="Select from contacts" aria-label="Select from contacts">
+              <IconContacts size={20} />
+            </button>
+          )}
         </div>
       </div>
 
