@@ -87,40 +87,49 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
         </div>
       </div>
 
-      <div className="phone-screen">
-        <div className="phone-num-row">
-          <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
-          {!num && (
-            <button className="contacts-ico in-field" onClick={openPicker}
-              title="Select from contacts" aria-label="Select from contacts">
-              <IconContacts size={20} />
-            </button>
-          )}
-        </div>
-      </div>
-
       {mode === 'call' ? (
-        <div className="phone-pad">
-          {KEYS.map(([d, l]) => (
-            <button key={d} className="phone-key" onClick={() => press(d)}>
-              <span className="kd">{d}</span>
-              {l && <span className="kl">{l}</span>}
-            </button>
-          ))}
-        </div>
+        <>
+          <div className="phone-screen">
+            <div className="phone-num-row">
+              <div className="phone-num">{fmt(num) || <span className="ph">enter a number</span>}</div>
+              {!num && (
+                <button className="contacts-ico in-field" onClick={openPicker}
+                  title="Select from contacts" aria-label="Select from contacts">
+                  <IconContacts size={20} />
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="phone-pad">
+            {KEYS.map(([d, l]) => (
+              <button key={d} className="phone-key" onClick={() => press(d)}>
+                <span className="kd">{d}</span>
+                {l && <span className="kl">{l}</span>}
+              </button>
+            ))}
+          </div>
+        </>
       ) : (
         <div className="text-entry">
-          <input
-            ref={textRef}
-            className="input"
-            type="tel"
-            inputMode="tel"
-            autoFocus
-            placeholder="Type a number, or pick a contact"
-            value={num}
-            onChange={(e) => setNum(e.target.value)}
-            onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
-          />
+          <div className="text-entry-field">
+            <input
+              ref={textRef}
+              className="input"
+              type="tel"
+              inputMode="tel"
+              autoFocus
+              placeholder="Type a number, or pick a contact"
+              value={num}
+              onChange={(e) => setNum(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
+            />
+            {!num && (
+              <button className="contacts-ico in-field" onClick={openPicker}
+                title="Select from contacts" aria-label="Select from contacts">
+                <IconContacts size={20} />
+              </button>
+            )}
+          </div>
           <p className="text-entry-hint">Enter who to text, then tap ✉</p>
         </div>
       )}

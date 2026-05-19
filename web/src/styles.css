@@ -295,10 +295,10 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 /* Contacts button sits INSIDE the number field, right side; it's only
    rendered while the field is empty (disappears once the user types). */
 .contacts-ico.in-field {
-  position: absolute; right: 0; top: 50%; transform: translateY(-50%);
-  width: 40px; height: 40px; box-shadow: none;
+  position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+  width: 40px; height: 40px;
 }
-.contacts-ico.in-field:active { transform: translateY(-50%) translate(2px, 2px); }
+.contacts-ico.in-field:active { transform: translateY(-50%) translate(1px, 1px); }
 
 /* Mode toggle + contacts: above and OUTSIDE the number pane */
 .dialer-bar {
@@ -307,19 +307,20 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .dialer-bar .phone-toggle { flex: 1; margin-top: 0; }
 .contacts-ico {
   flex-shrink: 0; width: 52px;
-  border: var(--border); border-radius: var(--r);
-  background: var(--surface); color: var(--ink);
+  border: none; border-radius: var(--r);
+  background: transparent; color: var(--ink);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
-  box-shadow: var(--shadow-sm);
 }
-.contacts-ico:hover { background: var(--surface-2); }
-.contacts-ico:active { transform: translate(2px, 2px); box-shadow: none; }
+.contacts-ico:hover { color: var(--muted); }
+.contacts-ico:active { transform: translate(1px, 1px); }
 
 .text-entry {
   flex: 1; display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 12px; padding: 0 4px;
 }
-.text-entry .input { font-size: 18px; text-align: center; }
+.text-entry-field { position: relative; width: 100%; }
+/* room so typed text never runs under the in-field contacts button */
+.text-entry-field .input { font-size: 18px; text-align: center; padding-right: 48px; }
 .text-entry-hint { color: var(--muted); font-size: 12px; font-weight: 700; margin: 0; }
 
 .phone-toggle { display: flex; border: var(--border); }
