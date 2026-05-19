@@ -13,8 +13,8 @@
 #   Status   POST  https://<app>.fly.dev/api/voice/status   (optional)
 #   Status   POST  https://<app>.fly.dev/api/sms/status     (optional)
 
-app = "wrk-phone-8ebcfd"
-primary_region = "iad"
+app = "wrk-phone"
+primary_region = "ams"
 
 [build]
   dockerfile = "Dockerfile"
@@ -27,7 +27,7 @@ primary_region = "iad"
   DEMO_USER_ID = "demo"
   # Public https origin Twilio reaches for webhooks (= this Fly app's URL).
   # Required: webhook signature validation fails closed without it in prod.
-  PUBLIC_BASE_URL = "https://wrk-phone-8ebcfd.fly.dev"
+  PUBLIC_BASE_URL = "https://wrk-phone.fly.dev"
 
 [[mounts]]
   source = "wrk_data"
