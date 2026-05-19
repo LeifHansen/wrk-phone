@@ -1,8 +1,35 @@
 import { Router } from 'express';
 import { log } from '../lib/log.js';
 import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
+import { db } from '../lib/db.js';
+import { generateReply } from '../lib/agent.js';
+import { OWNER_ID } from '../lib/auth.js';
 
 export const aiRouter = Router();
+
+// POST /api/ai/draft-reply { conversationId } → an AI-suggested reply to the
+// LAST inbound message in the thread. Manual assist: nothing is sent or
+// stored — the user reviews (send/edit) in the UI before anything goes out.
+aiRouter.post('/ai/draft-reply', async (req, res) => {
+  const conversationId = Number(req.body?.conversationId);
+  if (!conversationId) return res.status(400).json({ error: 'conversationId required' });
+  const conv = db.prepare(`SELECT id FROM conversations WHERE id = ? AND user_id = ?`)
+    .get(conversationId, OWNER_ID);
+  if (!conv) return res.status(404).json({ error: 'conversation not found' });
+  const lastIn = db.prepare(
+    `SELECT body FROM messages WHERE conversation_id = ? AND direction = 'in'
+     ORDER BY created_at DESC LIMIT 1`
+  ).get(conversationId) as { body: string } | undefined;
+  if (!lastIn?.body) return res.status(400).json({ error: 'no inbound message to reply to' });
+  try {
+    const { reply, agent } = await generateReply(OWNER_ID, conversationId, lastIn.body);
+    if (!reply) return res.status(502).json({ error: 'no draft produced' });
+    res.json({ draft: reply, agent: (agent as any)?.name || 'AI' });
+  } catch (e: any) {
+    log.error('ai.draft-reply', 'draft generation failed', e);
+    res.status(500).json({ error: e.message });
+  }
+});
 
 // Fast local heuristics so the feature still adds value if OpenAI is down
 // or slow. Carrier filtering (T-Mobile/AT&T/Verizon + The Campaign Registry)

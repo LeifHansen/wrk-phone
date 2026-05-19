@@ -173,6 +173,9 @@ export const api = {
   smsOptimize: (text: string, goal?: string) =>
     req<{ optimized: string; changes: string[]; notes: string }>(
       '/api/ai/sms-optimize', { method: 'POST', body: JSON.stringify({ text, goal }) }),
+  draftReply: (conversationId: number) =>
+    req<{ draft: string; agent: string }>(
+      '/api/ai/draft-reply', { method: 'POST', body: JSON.stringify({ conversationId }) }),
   // number provisioning
   searchNumbers: (params: { country?: string; areaCode?: string; contains?: string }) => {
     const q = new URLSearchParams();

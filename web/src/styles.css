@@ -914,3 +914,15 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .tour-dot.on { background: var(--lime); }
 .tour-nav { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 .tour-nav .btn { min-width: 110px; }
+
+/* ---------- manual AI reply (1:1 assist) ---------- */
+.ai-reply-btn { font-size: 10px; }
+.ai-reply-panel {
+  margin: 8px 12px 0; padding: 12px 14px;
+  border: var(--border); border-radius: var(--r);
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.ai-reply-head { font-family: var(--pixel); font-size: 9px; color: var(--muted); margin-bottom: 8px; }
+.ai-reply-body { font-size: 14px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; }
+.ai-reply-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
+.ai-reply-actions .btn { font-size: 9px; }

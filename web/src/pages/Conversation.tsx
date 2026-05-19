@@ -25,6 +25,8 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
   const [sheetOpen, setSheetOpen] = useState(false);
   const [allAgents, setAllAgents] = useState<Agent[]>([]);
   const [apPick, setApPick] = useState(false);
+  const [aiDraft, setAiDraft] = useState<string | null>(null);
+  const [aiBusy, setAiBusy] = useState(false);
   const threadRef = useRef<HTMLDivElement>(null);
 
   const load = async () => {
@@ -46,6 +48,26 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     catch (e: any) { toast(e.message, 'err'); setDraft(text); }
     finally { setSending(false); }
   };
+
+  // Manual AI assist: draft a reply to the last inbound message. Nothing is
+  // sent — the user confirms (Send) or tweaks (Edit) first.
+  const aiReply = async () => {
+    if (aiBusy) return;
+    setAiBusy(true);
+    try { const r = await api.draftReply(convId); setAiDraft(r.draft); }
+    catch (e: any) { toast(e.message, 'err'); }
+    finally { setAiBusy(false); }
+  };
+  const aiSend = async () => {
+    if (!aiDraft || !conv || sending) return;
+    setSending(true);
+    const text = aiDraft;
+    setAiDraft(null);
+    try { await api.sendSms(conv.peer_phone, text); await load(); }
+    catch (e: any) { toast(e.message, 'err'); setAiDraft(text); }
+    finally { setSending(false); }
+  };
+  const aiEdit = () => { if (aiDraft) { setDraft(aiDraft); setAiDraft(null); } };
 
   const callPeer = async () => {
     if (!conv) return;
@@ -125,6 +147,35 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
           );
         })}
       </div>
+      {(() => {
+        const lastReal = [...messages].reverse().find((m) => !m.is_suggestion);
+        const canAiReply = lastReal?.direction === 'in';
+        if (aiDraft) {
+          return (
+            <div className="ai-reply-panel">
+              <div className="ai-reply-head">✨ Suggested reply</div>
+              <div className="ai-reply-body">{aiDraft}</div>
+              <div className="ai-reply-actions">
+                <button className="btn ghost" onClick={() => setAiDraft(null)}>Discard</button>
+                <button className="btn ghost" onClick={aiEdit}>Edit</button>
+                <button className="btn lime" onClick={aiSend} disabled={sending}>
+                  {sending ? 'Sending…' : 'Send'}
+                </button>
+              </div>
+            </div>
+          );
+        }
+        if (canAiReply && !draft.trim()) {
+          return (
+            <div style={{ padding: '8px 12px 0' }}>
+              <button className="btn lime ai-reply-btn" onClick={aiReply} disabled={aiBusy}>
+                {aiBusy ? 'Thinking…' : '✨ AI reply'}
+              </button>
+            </div>
+          );
+        }
+        return null;
+      })()}
       {draft.trim() && (
         <div style={{ padding: '8px 12px 0' }}>
           <SmsAiTools text={draft} goal="1:1 customer text reply" onApply={setDraft} compact />
