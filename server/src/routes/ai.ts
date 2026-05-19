@@ -1,10 +1,8 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
 import { log } from '../lib/log.js';
+import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
 
 export const aiRouter = Router();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 // Fast local heuristics so the feature still adds value if OpenAI is down
 // or slow. Carrier filtering (T-Mobile/AT&T/Verizon + The Campaign Registry)

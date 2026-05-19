@@ -4,7 +4,7 @@ import { PRESETS, getPreset } from '../lib/presets.js';
 import { draftAgentFromBrief, generateTrainingPrompts, optimizeAgent } from '../lib/agent.js';
 
 export const agentRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 const AGENT_COLORS = ['lime', 'pink', 'orange', 'neon', 'red', 'black'] as const;
 
 function nextColor(): typeof AGENT_COLORS[number] {

@@ -1,23 +1,10 @@
-import OpenAI from 'openai';
-import sanitizeHtml from 'sanitize-html';
 import { createBlogPost, getBlogSettings, saveBlogSettings, BlogPost } from './db.js';
 import { log } from './log.js';
+import { openai, OPENAI_MODEL as MODEL } from './openai.js';
 
-// Model output is untrusted (prompt instructions are not a security control).
-// Strict allowlist — exactly the tags the prompt is told to produce. Anything
-// else (script, iframe, event handlers, styles, javascript: URLs) is dropped.
-function sanitizeBodyHtml(html: string): string {
-  return sanitizeHtml(html, {
-    allowedTags: ['h2', 'h3', 'p', 'ul', 'ol', 'li', 'strong', 'em', 'a', 'br', 'blockquote'],
-    allowedAttributes: { a: ['href'] },
-    allowedSchemes: ['http', 'https', 'mailto'],
-    allowProtocolRelative: false,
-    disallowedTagsMode: 'discard',
-  });
-}
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+// NOTE: blog HTML is sanitized centrally in db.ts (createBlogPost /
+// updateBlogPost), so every write path — AI drafts and manual superadmin
+// posts alike — is covered. No per-call sanitize needed here.
 
 // Default SEO topic rotation if the admin hasn't set their own. These map to
 // the exact terms we want WrkPhn to rank for.
@@ -87,7 +74,7 @@ export async function generateBlogDraft(topic: string, tone: string): Promise<{
   return {
     title: String(j.title || topic).slice(0, 90),
     excerpt: String(j.excerpt || '').slice(0, 200),
-    body_html: sanitizeBodyHtml(String(j.body_html || '')),
+    body_html: String(j.body_html || ''),
     tags: String(j.tags || ''),
     keywords: String(j.keywords || KEYWORDS),
   };

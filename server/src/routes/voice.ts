@@ -7,7 +7,7 @@ import { log } from '../lib/log.js';
 
 export const voiceRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // Outbound (from softphone): TwiML App webhook
 // The mobile/web SDK passes the dialed number as `To` parameter.

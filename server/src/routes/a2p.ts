@@ -1,13 +1,11 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
 import { db } from '../lib/db.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
+import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 export const a2pRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 // 1) AI drafts the tedious A2P campaign package from one paragraph.
 a2pRouter.post('/a2p/draft', async (req, res) => {

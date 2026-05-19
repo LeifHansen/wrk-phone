@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 
 export const pushRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // POST /api/push/register  body: { platform, token }
 pushRouter.post('/push/register', (req, res) => {

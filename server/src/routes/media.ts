@@ -1,13 +1,12 @@
 import { Router } from 'express';
-import OpenAI from 'openai';
 import path from 'node:path';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 import { db } from '../lib/db.js';
+import { openai } from '../lib/openai.js';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 export const mediaRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
 const MEDIA_DIR = path.join(DATA_DIR, 'media');

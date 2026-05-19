@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 
 export const voicesRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // ── Provider seam ──────────────────────────────────────────────────────────
 // xAI Grok does NOT expose a public voice-creation/cloning API today. We model

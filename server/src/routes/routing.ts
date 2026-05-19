@@ -3,7 +3,7 @@ import { db } from '../lib/db.js';
 import { hydrateRule, RuleRow, dryRun, describeCondition, Condition } from '../lib/routing.js';
 
 export const routingRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 const VALID_TYPES = new Set(['keyword', 'sender', 'sender_phone', 'area_code', 'time', 'intent']);
 

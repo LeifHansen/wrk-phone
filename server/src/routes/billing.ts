@@ -4,7 +4,7 @@ import { recordSubscription, listSubscriptions } from '../lib/db.js';
 import { log } from '../lib/log.js';
 
 export const billingRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
 
 // Recurring plans. Prices are created inline (price_data) so there's no

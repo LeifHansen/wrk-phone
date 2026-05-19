@@ -5,7 +5,7 @@ import { spendCredits, addCredits, getCredits, messageCost, isOptedOut } from '.
 import { log } from '../lib/log.js';
 
 export const campaignsRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // GET /api/campaigns
 campaignsRouter.get('/campaigns', (_req, res) => {

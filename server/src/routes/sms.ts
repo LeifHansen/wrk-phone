@@ -9,7 +9,7 @@ import { getUserId } from '../lib/auth.js';
 
 export const smsRouter = Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // Inbound SMS webhook from Twilio
 smsRouter.post('/sms/inbound', async (req, res) => {

@@ -1,6 +1,6 @@
-import OpenAI from 'openai';
 import { db } from './db.js';
 import { log } from './log.js';
+import { openai, OPENAI_MODEL as MODEL } from './openai.js';
 
 // ─────────────────── Condition types ───────────────────
 //
@@ -94,9 +94,6 @@ function checkTime(c: Extract<Condition, { type: 'time' }>): boolean {
 }
 
 // ─────────────────── AI intent batch classifier ───────────────────
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
 
 async function classifyIntents(
   body: string,

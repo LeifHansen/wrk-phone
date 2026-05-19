@@ -25,6 +25,7 @@ import { analyticsRouter } from './routes/analytics.js';
 import { blogRouter } from './routes/blog.js';
 import { aiRouter } from './routes/ai.js';
 import { prankRouter } from './routes/prank.js';
+import { rateLimit } from './lib/ratelimit.js';
 import { startBlogScheduler } from './lib/blog.js';
 import { listBlogPosts } from './lib/db.js';
 import { log } from './lib/log.js';
@@ -94,6 +95,14 @@ app.use('/api', conversationsRouter);
 app.use('/api', agentRouter);
 app.use('/api', campaignsRouter);
 app.use('/api', pushRouter);
+// Cost/abuse guards on the OpenAI- and Twilio-billed surfaces. NOTE: the
+// Twilio-driven prank voice loop (/api/voice/prank*) is intentionally NOT
+// limited here — Twilio hits it repeatedly during a legitimate prank call.
+app.use('/api/ai', rateLimit({ windowMs: 60_000, max: 20, name: 'ai' }));
+app.use('/api/prank', rateLimit({ windowMs: 60_000, max: 10, name: 'prank' }));
+app.use('/api/_diag', rateLimit({ windowMs: 60_000, max: 10, name: 'diag' }));
+app.use('/api/analytics', rateLimit({ windowMs: 60_000, max: 30, name: 'analytics' }));
+
 app.use('/api', routingRouter);
 app.use('/api', diagRouter);
 app.use('/api', numbersRouter);

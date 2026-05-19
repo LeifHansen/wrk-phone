@@ -2,9 +2,10 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 import { twilioClient } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
+import { cached } from '../lib/cache.js';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 export const analyticsRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
 
 // GET /api/analytics — message/delivery stats from Twilio (bounded to last 30d,
 // sampled) + campaign + call stats from our DB.
@@ -19,7 +20,10 @@ analyticsRouter.get('/analytics', async (_req, res) => {
   };
 
   try {
-    const msgs = await twilioClient.messages.list({ dateSentAfter: since, limit: 500 });
+    // Cached 60s: this endpoint is polled and the Twilio round-trip is the
+    // slow part. Concurrent pollers share one in-flight request.
+    const msgs = await cached('analytics:messages', 60_000,
+      () => twilioClient.messages.list({ dateSentAfter: since, limit: 500 }));
     stats.messages.sampled = msgs.length;
     for (const m of msgs) {
       if (m.direction?.startsWith('outbound')) stats.messages.outbound++;

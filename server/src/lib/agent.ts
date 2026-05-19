@@ -1,8 +1,5 @@
-import OpenAI from 'openai';
 import { db, AgentRow, hydrateAgent, getAgentForConversation } from './db.js';
-
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
+import { openai, OPENAI_MODEL as MODEL } from './openai.js';
 
 export type AgentMode = 'off' | 'suggest' | 'auto';
 

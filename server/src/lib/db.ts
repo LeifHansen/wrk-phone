@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import fs from 'node:fs';
 import { log } from './log.js';
+import { sanitizeBodyHtml } from './sanitize.js';
 
 const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -513,7 +514,7 @@ export function createBlogPost(p: {
     `INSERT INTO blog_posts (slug, title, excerpt, body_html, tags, keywords, status, author, ai, created_at, updated_at, published_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
   ).run(
-    slug, p.title, p.excerpt || '', p.body_html || '', p.tags || '', p.keywords || '',
+    slug, p.title, p.excerpt || '', sanitizeBodyHtml(p.body_html || ''), p.tags || '', p.keywords || '',
     status, p.author || 'WrkPhn AI', p.ai ? 1 : 0, now, now,
     status === 'published' ? now : null,
   );
@@ -525,7 +526,7 @@ export function updateBlogPost(id: number, patch: Partial<BlogPost>): BlogPost |
   const next = {
     title: patch.title ?? cur.title,
     excerpt: patch.excerpt ?? cur.excerpt,
-    body_html: patch.body_html ?? cur.body_html,
+    body_html: patch.body_html !== undefined ? sanitizeBodyHtml(patch.body_html) : cur.body_html,
     tags: patch.tags ?? cur.tags,
     keywords: patch.keywords ?? cur.keywords,
     status: (patch.status as string) ?? cur.status,

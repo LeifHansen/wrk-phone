@@ -1,17 +1,14 @@
 import { Router } from 'express';
 import twilio from 'twilio';
-import OpenAI from 'openai';
 import { ensurePrankAgent } from '../lib/prank.js';
 import { twilioClient } from '../lib/twilio.js';
 import { hydrateAgent } from '../lib/db.js';
 import { log } from '../lib/log.js';
 import { getUserId } from '../lib/auth.js';
+import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
 
 export const prankRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-const MODEL = process.env.OPENAI_MODEL || 'gpt-4o-mini';
-const USER = process.env.DEMO_USER_ID || 'demo';
 
 function base() {
   return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');

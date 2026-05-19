@@ -3,7 +3,7 @@ import Stripe from 'stripe';
 import { getCredits, addCredits, recordSubscription, setSubscriptionStatusByStripeId } from '../lib/db.js';
 
 export const creditsRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // Free for now. Future: $0.99/mo covers the phone line; credits are à la carte.
 export const PACKAGES = [
@@ -85,10 +85,11 @@ export function stripeWebhookHandler(req: Request, res: Response) {
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   let event: Stripe.Event;
   if (!secret) {
-    // No signature secret = cannot prove the request is really Stripe. The
-    // unsigned fallback would let anyone forge a "payment completed" and
-    // credit themselves, so it is dev-only and fails closed in production.
-    if (process.env.NODE_ENV === 'production') {
+    // No signature secret = cannot prove the request is really Stripe. An
+    // unsigned fallback lets anyone forge "payment completed" and self-
+    // credit, so we fail CLOSED regardless of NODE_ENV. Local testing must
+    // explicitly opt in via STRIPE_WEBHOOK_INSECURE=1 (never set in prod).
+    if (process.env.STRIPE_WEBHOOK_INSECURE !== '1') {
       return res.status(503).send('stripe webhook secret not configured');
     }
   }

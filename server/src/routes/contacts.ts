@@ -4,7 +4,7 @@ import { isIP } from 'net';
 import { db } from '../lib/db.js';
 
 export const contactsRouter = Router();
-const USER = process.env.DEMO_USER_ID || 'demo';
+import { OWNER_ID as USER } from '../lib/auth.js';
 
 // SSRF guard for user-supplied import URLs: https only, and the resolved IP
 // must be publicly routable (blocks cloud metadata, localhost, LAN, etc.).
