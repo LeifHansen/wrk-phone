@@ -1,8 +1,62 @@
 import { Router } from 'express';
+import { lookup } from 'dns/promises';
+import { isIP } from 'net';
 import { db } from '../lib/db.js';
 
 export const contactsRouter = Router();
 const USER = process.env.DEMO_USER_ID || 'demo';
+
+// SSRF guard for user-supplied import URLs: https only, and the resolved IP
+// must be publicly routable (blocks cloud metadata, localhost, LAN, etc.).
+function isPrivateIp(ip: string): boolean {
+  if (isIP(ip) === 6) {
+    const v6 = ip.toLowerCase();
+    if (v6 === '::1' || v6 === '::') return true;
+    if (v6.startsWith('fe80') || v6.startsWith('fc') || v6.startsWith('fd')) return true;
+    const m = v6.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    return m ? isPrivateIp(m[1]) : false;
+  }
+  const p = ip.split('.').map(Number);
+  if (p.length !== 4 || p.some((n) => Number.isNaN(n) || n < 0 || n > 255)) return true;
+  const [a, b] = p;
+  if (a === 10 || a === 127 || a === 0) return true;
+  if (a === 169 && b === 254) return true; // link-local + cloud metadata 169.254.169.254
+  if (a === 172 && b >= 16 && b <= 31) return true;
+  if (a === 192 && b === 168) return true;
+  if (a >= 224) return true; // multicast / reserved
+  return false;
+}
+
+async function assertSafeFetchUrl(raw: string): Promise<URL> {
+  let u: URL;
+  try { u = new URL(raw); } catch { throw new Error('invalid url'); }
+  if (u.protocol !== 'https:') throw new Error('only https URLs are allowed');
+  const host = u.hostname;
+  const addrs = isIP(host) ? [{ address: host }] : await lookup(host, { all: true });
+  for (const { address } of addrs) {
+    if (isPrivateIp(address)) throw new Error('url resolves to a non-public address');
+  }
+  return u;
+}
+
+// Fetch text while validating every hop against the SSRF guard. Manual
+// redirect following so a public host can't 30x us into the internal network
+// (Google Sheets export legitimately 307s to googleusercontent.com).
+async function safeFetchText(start: string, maxHops = 5): Promise<Response> {
+  let url = start;
+  for (let i = 0; i <= maxHops; i++) {
+    await assertSafeFetchUrl(url);
+    const r = await fetch(url, { redirect: 'manual' });
+    if (r.status >= 300 && r.status < 400) {
+      const loc = r.headers.get('location');
+      if (!loc) return r;
+      url = new URL(loc, url).toString();
+      continue;
+    }
+    return r;
+  }
+  throw new Error('too many redirects');
+}
 
 export function normalizePhone(raw: string): string | null {
   if (!raw) return null;
@@ -215,8 +269,13 @@ contactsRouter.post('/contacts/import-url', async (req, res) => {
     const gid = (url.match(/[#&]gid=(\d+)/) || [])[1] || '0';
     url = `https://docs.google.com/spreadsheets/d/${gs[1]}/export?format=csv&gid=${gid}`;
   }
+  let r: Response;
   try {
-    const r = await fetch(url);
+    r = await safeFetchText(url);
+  } catch (e: any) {
+    return res.status(400).json({ error: e.message || 'url not allowed' });
+  }
+  try {
     if (!r.ok) return res.status(400).json({ error: `fetch failed (${r.status}). For Google Sheets: Share → Anyone with the link → Viewer.` });
     const rows = parseCsv(await r.text());
     if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed — is the sheet shared publicly?' });

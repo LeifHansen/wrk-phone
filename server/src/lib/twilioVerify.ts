@@ -14,11 +14,20 @@ export function twilioWebhook(req: Request, res: Response, next: NextFunction) {
   const token = process.env.TWILIO_AUTH_TOKEN;
   const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
   const skip = process.env.TWILIO_SKIP_VALIDATION === '1';
+  const isProd = process.env.NODE_ENV === 'production';
+  const canValidate = token && !/x{4,}|placeholder/i.test(token) && base;
 
-  if (skip || !token || /x{4,}|placeholder/i.test(token) || !base) {
+  if (skip || !canValidate) {
+    // Fail CLOSED in production: an unvalidatable webhook there means anyone
+    // can forge inbound SMS/voice and spend credits. Only the explicit
+    // operator escape hatch (TWILIO_SKIP_VALIDATION=1) is honored in prod.
+    if (isProd && !skip) {
+      log.error('twilioVerify', 'REJECTED webhook — cannot validate signature in production (missing TWILIO_AUTH_TOKEN or PUBLIC_BASE_URL)', { path: req.originalUrl });
+      return res.status(503).type('text/plain').send('webhook validation unavailable');
+    }
     if (!warnedOnce) {
       warnedOnce = true;
-      log.warn('twilioVerify', 'signature validation DISABLED (skip flag, missing token, or no PUBLIC_BASE_URL). Webhooks are unauthenticated.');
+      log.warn('twilioVerify', 'signature validation DISABLED (skip flag, missing token, or no PUBLIC_BASE_URL). Webhooks are unauthenticated — dev only.');
     }
     return next();
   }

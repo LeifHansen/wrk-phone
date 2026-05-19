@@ -91,3 +91,17 @@ export function requireSuperadmin(req: Request, res: Response, next: NextFunctio
   if (!isSuperadmin(req)) return res.status(403).json({ error: 'superadmin only' });
   next();
 }
+
+// Closes the IDOR on the shared-line surface. ALL telephony/inbox/campaign
+// data is bound to OWNER_ID (per-user Twilio numbers are a separate, larger
+// build), so when real auth is on, a logged-in NON-owner must not be able to
+// read/delete the owner's conversations, approve their AI suggestions, or
+// send from the shared number. Unauthenticated requests resolve to OWNER_ID
+// (so signature-verified Twilio/Stripe webhooks still pass), and when
+// AUTH_REQUIRED is off this is a no-op — the default prototype is unchanged.
+export function requireOwner(req: Request, res: Response, next: NextFunction) {
+  if (AUTH_REQUIRED && !isSuperadmin(req)) {
+    return res.status(403).json({ error: 'this account does not have access to the shared work line' });
+  }
+  next();
+}
