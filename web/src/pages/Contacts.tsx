@@ -202,35 +202,36 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
 
         <div className="contact-list">
           {contacts.length === 0 && <p style={{ color: 'var(--muted)', textAlign: 'center', padding: 24 }}>No contacts. Add one above ↑</p>}
-          {contacts.map((c) => (
-            <div key={c.id} className="contact-row"
-              onClick={() => (editSeg ? toggleMember(c) : setPicked(c))}>
-              {editSeg && (
-                <input type="checkbox" readOnly checked={inEditSeg(c)}
-                  style={{ width: 20, height: 20, accentColor: 'var(--ink)' }} />
-              )}
-              <div className="c-av">{(c.name || c.phone).replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#'}</div>
-              <div className="c-body">
-                <div className="c-name">{c.name || pretty(c.phone)}</div>
-                <div className="c-sub">{c.name ? pretty(c.phone) : ''}{c.segments.map((s) => ` · ${s.name}`).join('')}</div>
-              </div>
-              {!editSeg && (
-                <div className="c-quick" onClick={(e) => e.stopPropagation()}>
-                  <button className="c-quick-btn c-quick-call" title={`Call ${c.name || pretty(c.phone)}`}
-                    aria-label={`Call ${c.name || pretty(c.phone)}`}
-                    onClick={(e) => { e.stopPropagation(); call(c); }}>
-                    <IconPhone size={18} />
-                  </button>
-                  <button className="c-quick-btn c-quick-text" title={`Text ${c.name || pretty(c.phone)}`}
-                    aria-label={`Text ${c.name || pretty(c.phone)}`}
-                    onClick={(e) => { e.stopPropagation(); text(c); }}>
-                    <IconMessage size={18} />
-                  </button>
-                  <span className="c-chev" aria-hidden="true">›</span>
+          {contacts.map((c) => {
+            const display = c.name || pretty(c.phone);
+            return (
+              <div key={c.id} className="contact-row"
+                onClick={() => (editSeg ? toggleMember(c) : setPicked(c))}>
+                {editSeg && (
+                  <input type="checkbox" readOnly checked={inEditSeg(c)}
+                    style={{ width: 20, height: 20, accentColor: 'var(--ink)' }} />
+                )}
+                <div className="c-av">{(c.name || c.phone).replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#'}</div>
+                <div className="c-body">
+                  <div className="c-name">{display}</div>
+                  <div className="c-sub">{c.name ? pretty(c.phone) : ''}{c.segments.map((s) => ` · ${s.name}`).join('')}</div>
                 </div>
-              )}
-            </div>
-          ))}
+                {!editSeg && (
+                  <div className="c-quick">
+                    <button className="btn lime btn-icon" aria-label={`Call ${display}`}
+                      onClick={(e) => { e.stopPropagation(); call(c); }}>
+                      <IconPhone size={18} />
+                    </button>
+                    <button className="btn blue btn-icon" aria-label={`Text ${display}`}
+                      onClick={(e) => { e.stopPropagation(); text(c); }}>
+                      <IconMessage size={18} />
+                    </button>
+                    <span className="c-chev" aria-hidden="true">›</span>
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
       </div>
 
