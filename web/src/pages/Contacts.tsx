@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
 import { toast } from '../components/Toast';
+import { IconPhone, IconMessage } from '../components/Icons';
 
 interface Contact { id: number; phone: string; name: string; segments: { id: number; name: string }[] }
 interface Segment { id: number; name: string; count: number }
@@ -213,7 +214,21 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
                 <div className="c-name">{c.name || pretty(c.phone)}</div>
                 <div className="c-sub">{c.name ? pretty(c.phone) : ''}{c.segments.map((s) => ` · ${s.name}`).join('')}</div>
               </div>
-              {!editSeg && <span className="c-chev">›</span>}
+              {!editSeg && (
+                <div className="c-quick" onClick={(e) => e.stopPropagation()}>
+                  <button className="c-quick-btn c-quick-call" title={`Call ${c.name || pretty(c.phone)}`}
+                    aria-label={`Call ${c.name || pretty(c.phone)}`}
+                    onClick={(e) => { e.stopPropagation(); call(c); }}>
+                    <IconPhone size={18} />
+                  </button>
+                  <button className="c-quick-btn c-quick-text" title={`Text ${c.name || pretty(c.phone)}`}
+                    aria-label={`Text ${c.name || pretty(c.phone)}`}
+                    onClick={(e) => { e.stopPropagation(); text(c); }}>
+                    <IconMessage size={18} />
+                  </button>
+                  <span className="c-chev" aria-hidden="true">›</span>
+                </div>
+              )}
             </div>
           ))}
         </div>

@@ -683,7 +683,20 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .c-name { font-weight: 700; font-size: 14px; }
 .c-sub { font-size: 12px; color: var(--muted); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-chev { font-family: var(--pixel); font-size: 12px; }
+.c-chev { font-family: var(--pixel); font-size: 12px; color: var(--muted); }
+/* One-click call/text buttons on each contact row — clicks don't bubble to the
+   row, so tapping a button calls/texts immediately without opening the sheet. */
+.c-quick { display: flex; align-items: center; gap: 6px; }
+.c-quick-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 34px; height: 34px; border: var(--border); border-radius: 8px;
+  background: var(--surface); cursor: pointer; color: var(--ink);
+  box-shadow: var(--shadow-sm); transition: transform .06s, box-shadow .06s;
+}
+.c-quick-btn:hover { transform: translate(-1px,-1px); box-shadow: var(--shadow); }
+.c-quick-btn:active { transform: translate(1px,1px); box-shadow: none; }
+.c-quick-call { background: var(--lime); }
+.c-quick-text { background: var(--blue); color: #fff; }
 .contact-actions { display: flex; gap: 14px; }
 .ca-btn { flex: 1; border: var(--border); border-radius: var(--r); cursor: pointer;
   padding: 22px 0; font-size: 30px; display: flex; flex-direction: column;
