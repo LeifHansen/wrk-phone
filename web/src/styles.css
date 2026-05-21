@@ -345,21 +345,6 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .text-entry-field .input { font-size: 18px; text-align: center; padding-right: 48px; }
 .text-entry-hint { color: var(--muted); font-size: 12px; font-weight: 700; margin: 0; }
 
-/* On-screen keyboard on the TEXT tab — mirrors the CALL keypad's look so
-   the area is populated the moment you switch tabs. */
-.text-kb { display: flex; flex-direction: column; gap: 7px; width: 100%; margin-top: 4px; }
-.text-kb-row { display: flex; gap: 6px; justify-content: center; }
-.kb-key {
-  flex: 1; min-width: 0; height: 42px;
-  border: var(--border); border-radius: var(--r); background: var(--surface);
-  font-family: var(--pixel); font-size: 15px; text-transform: uppercase;
-  cursor: pointer; box-shadow: var(--shadow-sm);
-  transition: transform .06s, box-shadow .06s;
-}
-.kb-key:hover { transform: translate(-1px,-1px); box-shadow: var(--shadow); }
-.kb-key:active { transform: translate(2px,2px); box-shadow: none; background: var(--lime); }
-.kb-key.kb-back { flex: 0 0 48px; }
-
 /* CALL tab number field — same look as the TEXT tab field */
 .call-field { margin-bottom: 20px; }
 .num-display {
