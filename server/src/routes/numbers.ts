@@ -4,6 +4,7 @@ import { getAppSettings, setActiveNumber } from '../lib/db.js';
 import { getUserId, OWNER_ID, requireSuperadmin } from '../lib/auth.js';
 import { importToPool, poolStats, isTollFree } from '../lib/numbers-store.js';
 import { refreshTfvStatuses } from '../lib/tollfree.js';
+import { log } from '../lib/log.js';
 
 export const numbersRouter = Router();
 
@@ -176,6 +177,29 @@ numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
   }
 });
 
+// POST /api/numbers/repair-all-webhooks — (re)configure voice + SMS webhooks
+// for EVERY phone number on the Twilio account, not just the active one.
+// Idempotent. Use after a PUBLIC_BASE_URL change, an account migration, or to
+// fix numbers provisioned before auto-config existed.
+numbersRouter.post('/numbers/repair-all-webhooks', async (_req, res) => {
+  try {
+    const all = await twilioClient.incomingPhoneNumbers.list({ limit: 1000 });
+    const numbers: any[] = [];
+    for (const n of all) {
+      try {
+        const { warnings } = await configureWebhooks(n.sid);
+        numbers.push({ number: n.phoneNumber, sid: n.sid, ok: true, warnings });
+      } catch (e: any) {
+        numbers.push({ number: n.phoneNumber, sid: n.sid, ok: false, error: e.message });
+      }
+    }
+    const configured = numbers.filter((n) => n.ok).length;
+    res.json({ ok: configured === numbers.length, configured, total: numbers.length, numbers });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
+
 // GET /api/numbers/webhook-status — what Twilio currently has vs what we expect
 numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
   try {
@@ -245,6 +269,15 @@ async function claimPoolNumber(userId: string) {
   const usable = pool.filter((n) => n.capabilities?.sms !== false);
   const chosen = (usable.length ? usable : pool)[Math.floor(Math.random() * (usable.length ? usable.length : pool.length))];
   setActiveNumber(userId, chosen.phoneNumber, chosen.sid);
+  // Ensure the assigned number actually routes to this server. Pool numbers
+  // are SUPPOSED to be pre-wired, but that assumption has bitten us before
+  // (numbers left sitting on Twilio's demo webhooks). configureWebhooks is
+  // idempotent; run it best-effort so a webhook hiccup never blocks signup.
+  try {
+    await configureWebhooks(chosen.sid);
+  } catch (e) {
+    log.warn('claimPoolNumber', `webhook auto-config failed for ${chosen.phoneNumber}`, e);
+  }
   return { phoneNumber: chosen.phoneNumber, sid: chosen.sid, alreadyHad: false };
 }
 
@@ -358,7 +391,14 @@ numbersRouter.post('/numbers/pool/import', requireSuperadmin, async (_req, res) 
       .filter((n) => isTollFree(n.phoneNumber))
       .map((n) => ({ phone: n.phoneNumber, twilioSid: n.sid, type: 'tollfree' as const }));
     const { added, skipped } = importToPool(tollfree);
-    res.json({ ok: true, discovered: tollfree.length, added, skipped, stats: poolStats() });
+    // Wire webhooks the moment a number joins the pool, so it's never handed
+    // to a user still pointing at Twilio's default/demo webhooks.
+    let configured = 0;
+    for (const n of tollfree) {
+      try { await configureWebhooks(n.twilioSid); configured++; }
+      catch (e) { log.warn('pool/import', `webhook config failed for ${n.phone}`, e); }
+    }
+    res.json({ ok: true, discovered: tollfree.length, added, skipped, webhooksConfigured: configured, stats: poolStats() });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
   }
