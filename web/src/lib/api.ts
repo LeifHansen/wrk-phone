@@ -239,6 +239,18 @@ export const api = {
   // avatars
   genAvatar: (kind: 'account' | 'agent', agentId?: number, prompt?: string) =>
     req<{ url: string }>('/api/media/avatar', { method: 'POST', body: JSON.stringify({ kind, agentId, prompt }) }),
+  // Upload a custom image and assign it as the avatar in one call. `dataUrl`
+  // is the result of FileReader.readAsDataURL(file).
+  uploadAvatar: async (kind: 'account' | 'agent', dataUrl: string, agentId?: number) => {
+    const uploaded = await req<{ url: string }>('/api/media/upload', {
+      method: 'POST',
+      body: JSON.stringify({ dataUrl, name: `${kind}-avatar` }),
+    });
+    return req<{ url: string }>('/api/media/avatar', {
+      method: 'POST',
+      body: JSON.stringify({ kind, agentId, url: uploaded.url }),
+    });
+  },
   account: () => req<{ avatarUrl: string | null }>('/api/account'),
   // contacts sync (Sheets/Excel)
   importContactsCsv: (csv: string, segmentId?: number) =>

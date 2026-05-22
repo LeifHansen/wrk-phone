@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
 import { usePolling } from '../lib/usePolling';
+import { subscribeEvents } from '../lib/events';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
 import { SmsAiTools } from '../components/SmsAiTools';
@@ -34,7 +35,17 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     setConv(res.conversation); setMessages(res.messages); setAgent(res.agent);
   };
   useEffect(() => { api.markRead(convId).catch(() => {}); }, [convId]);
-  usePolling(() => { load().catch(() => {}); }, 3500, [convId]);
+  // SSE refresh for this conversation; polling is a fallback for dropped
+  // streams. The previous 3.5s tick was hammering the API while sitting on
+  // an open thread doing nothing.
+  usePolling(() => { load().catch(() => {}); }, 30000, [convId]);
+  useEffect(() => subscribeEvents((e) => {
+    const matches =
+      (e.kind === 'message:new' && e.conversationId === convId) ||
+      (e.kind === 'voicemail:new' && e.conversationId === convId) ||
+      e.kind === 'message:status'; // status can match a message we don't yet know the convId of
+    if (matches) load().catch(() => {});
+  }), [convId]);
   useEffect(() => {
     if (threadRef.current) threadRef.current.scrollTop = threadRef.current.scrollHeight;
   }, [messages.length]);

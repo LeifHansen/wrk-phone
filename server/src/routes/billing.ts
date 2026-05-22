@@ -33,7 +33,7 @@ billingRouter.post('/billing/subscribe', async (req, res) => {
   }
 
   recordSubscription(USER, planId, ref, 'pending');
-  const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'subscription',

@@ -18,7 +18,10 @@ const purchaseLocked = (_req: any, res: any) =>
 // (per-user, app_settings keyed by req.userId). Webhook/infra stays OWNER.
 
 function publicBase(): string {
-  return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  // .trim() guards against trailing whitespace in the env value (a stray
+  // space turns "https://x.com" into "https://x.com /api/..." which Twilio
+  // rejects as an invalid URL).
+  return (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
 }
 function baseLooksReal(): boolean {
   const b = publicBase();
@@ -149,21 +152,25 @@ numbersRouter.post('/numbers/buy', async (req, res) => {
 
 // POST /api/numbers/repair-webhooks — fix inbound for the CURRENT active number
 // (use this when a number was set up before auto-config, or PUBLIC_BASE_URL changed).
+//
+// We always re-resolve the SID via Twilio rather than trusting the DB: the
+// stored active_number_sid can drift (e.g. a number released + repurchased
+// gets a fresh SID) and the only failure mode of trusting it is the whole
+// repair endpoint blowing up with a Twilio 400, which is exactly what this
+// function exists to PREVENT.
 numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
   try {
     const s = getAppSettings(OWNER_ID);
-    let sid = s.active_number_sid;
     const num = s.active_number || twilioConfig.defaultFrom;
-    if (!sid && num) {
-      const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
-      if (found.length) {
-        sid = found[0].sid;
-        setActiveNumber(OWNER_ID, num, sid);
-      }
+    if (!num) return res.status(400).json({ error: 'No active number found to repair. Buy/select a number first.' });
+    const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
+    if (!found.length) {
+      return res.status(404).json({ error: `Twilio doesn't have ${num} on this account — buy it first or pick a different active number.` });
     }
-    if (!sid) return res.status(400).json({ error: 'No active number found to repair. Buy/select a number first.' });
+    const sid = found[0].sid;
+    if (sid !== s.active_number_sid) setActiveNumber(OWNER_ID, num, sid);
     const { urls, warnings } = await configureWebhooks(sid);
-    res.json({ ok: true, number: num, webhooks: urls, warnings });
+    res.json({ ok: true, number: num, sid, webhooks: urls, warnings });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
   }
@@ -174,10 +181,13 @@ numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
   try {
     const s = getAppSettings(OWNER_ID);
     const num = s.active_number || twilioConfig.defaultFrom;
-    let sid = s.active_number_sid;
-    if (!sid && num) {
+    // Always re-resolve via Twilio so a stale DB SID doesn't 500 this status
+    // probe (which is the one tool the operator uses to diagnose drift).
+    let sid: string | null = null;
+    if (num) {
       const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
       sid = found[0]?.sid || null;
+      if (sid && sid !== s.active_number_sid) setActiveNumber(OWNER_ID, num, sid);
     }
     const base = publicBase();
     const expected = { voiceUrl: `${base}/api/voice/inbound`, smsInbound: `${base}/api/sms/inbound` };

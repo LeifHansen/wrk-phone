@@ -13,7 +13,7 @@ const MEDIA_DIR = path.join(DATA_DIR, 'media');
 fs.mkdirSync(MEDIA_DIR, { recursive: true });
 
 function publicBase(): string {
-  return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  return (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
 }
 
 function saveBytes(buf: Buffer, ext = 'png'): { file: string; url: string } {
@@ -66,10 +66,41 @@ async function genImageUrl(prompt: string): Promise<string> {
   throw new Error('no image returned');
 }
 
-// Auto-avatar generation. body: { kind:'account'|'agent', agentId?, prompt? }
+// Only allow assigning avatars that we hosted — prevents pointing the avatar
+// at an arbitrary external URL (which would let users hotlink anything from
+// here, or worse, attempt SSRF via the avatar field).
+function isOwnedMediaUrl(url: string): boolean {
+  if (!url) return false;
+  try {
+    const u = new URL(url);
+    return u.pathname.startsWith('/media/') && /\.(png|jpe?g|gif|bmp|webp)$/i.test(u.pathname);
+  } catch {
+    return false;
+  }
+}
+
+// Avatar set OR generate. body: { kind:'account'|'agent', agentId?, prompt?, url? }
+// When `url` is provided (typically the result of a prior /media/upload),
+// that image is assigned as-is and no OpenAI call is made. Otherwise an
+// avatar is generated from the prompt (or a default prompt for the kind).
 mediaRouter.post('/media/avatar', async (req, res) => {
   const kind = req.body?.kind === 'agent' ? 'agent' : 'account';
+  const providedUrl = req.body?.url ? String(req.body.url) : '';
   try {
+    if (providedUrl) {
+      if (!isOwnedMediaUrl(providedUrl)) {
+        return res.status(400).json({ error: 'avatar url must be a /media/ image we hosted (upload it first via /api/media/upload)' });
+      }
+      if (kind === 'agent') {
+        const a = db.prepare(`SELECT id FROM agents WHERE id=? AND user_id=?`)
+          .get(Number(req.body?.agentId), USER) as any;
+        if (!a) return res.status(404).json({ error: 'agent not found' });
+        db.prepare(`UPDATE agents SET avatar_url=? WHERE id=? AND user_id=?`).run(providedUrl, Number(req.body.agentId), USER);
+      } else {
+        db.prepare(`UPDATE app_settings SET avatar_url=?, updated_at=? WHERE user_id=?`).run(providedUrl, Date.now(), USER);
+      }
+      return res.json({ url: providedUrl });
+    }
     let prompt = String(req.body?.prompt || '').trim();
     if (kind === 'agent') {
       const a = db.prepare(`SELECT name, persona, role FROM agents WHERE id=? AND user_id=?`)

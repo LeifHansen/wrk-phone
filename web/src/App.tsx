@@ -28,7 +28,6 @@ const A2P = page(() => import('./pages/A2P'), 'A2P');
 const Analytics = page(() => import('./pages/Analytics'), 'Analytics');
 const Inbox = page(() => import('./pages/Inbox'), 'Inbox');
 const Conversation = page(() => import('./pages/Conversation'), 'Conversation');
-const Keypad = page(() => import('./pages/Keypad'), 'Keypad');
 const Agents = page(() => import('./pages/Agents'), 'Agents');
 const AgentNew = page(() => import('./pages/AgentNew'), 'AgentNew');
 const AgentDetail = page(() => import('./pages/AgentDetail'), 'AgentDetail');
@@ -137,7 +136,6 @@ export function App() {
           <Route path="/messages" element={<Inbox />} />
           <Route path="/contacts" element={<Contacts onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/conversation/:id" element={<Conversation onCall={(p) => { setPeer(p); setInCall(true); }} />} />
-          <Route path="/keypad" element={<Keypad onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/agents" element={<Agents />} />
           <Route path="/agents/new" element={<AgentNew />} />
           <Route path="/agents/:id" element={<AgentDetail />} />

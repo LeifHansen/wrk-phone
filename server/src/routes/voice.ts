@@ -4,6 +4,7 @@ import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation, 
 import { generateVoiceGreeting } from '../lib/agent.js';
 import { twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
+import { emit } from '../lib/events.js';
 
 export const voiceRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -114,6 +115,7 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
   ).run(convId, `[Voicemail] ${text}`, sid, Date.now());
   db.prepare('UPDATE conversations SET last_message_at = ?, unread_count = unread_count + 1 WHERE id = ?')
     .run(Date.now(), convId);
+  emit({ kind: 'voicemail:new', conversationId: convId });
   res.sendStatus(204);
 });
 

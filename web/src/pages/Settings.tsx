@@ -17,6 +17,7 @@ export function Settings() {
   const [line, setLine] = useState<{ activeNumber: string | null } | null>(null);
   const [avatar, setAvatar] = useState<string | null>(null);
   const [genning, setGenning] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [subs, setSubs] = useState<any[]>([]);
   const [me, setMe] = useState<{ email: string | null; authenticated: boolean } | null>(null);
   const nav = useNavigate();
@@ -37,6 +38,24 @@ export function Settings() {
     setGenning(true);
     try { const r = await api.genAvatar('account'); setAvatar(r.url); }
     catch (e: any) { toast(e.message, 'err'); } finally { setGenning(false); }
+  };
+
+  const uploadAvatar = async (file: File | null | undefined) => {
+    if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { toast('Image must be under 5MB.', 'err'); return; }
+    setUploading(true);
+    try {
+      const dataUrl: string = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(String(fr.result || ''));
+        fr.onerror = () => reject(fr.error);
+        fr.readAsDataURL(file);
+      });
+      const r = await api.uploadAvatar('account', dataUrl);
+      setAvatar(`${r.url}?t=${Date.now()}`);
+      toast('Avatar updated.', 'info');
+    } catch (e: any) { toast(e.message || 'Upload failed', 'err'); }
+    finally { setUploading(false); }
   };
 
   const reRegister = async () => {
@@ -78,13 +97,25 @@ export function Settings() {
                   nav('/login');
                 }}>Log out</button>
             )}
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', flexWrap: 'wrap' }}>
               {avatar
                 ? <img src={avatar} alt="" style={{ width: 64, height: 64, borderRadius: '50%', border: 'var(--border)', objectFit: 'cover' }} />
                 : <div style={{ width: 64, height: 64, borderRadius: '50%', border: 'var(--border)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>👤</div>}
-              <button className="btn pink" onClick={genAvatar} disabled={genning}>
-                {genning ? 'Generating…' : '✨ Generate AI avatar'}
-              </button>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button className="btn pink" onClick={genAvatar} disabled={genning || uploading}>
+                  {genning ? 'Generating…' : '✨ Generate AI avatar'}
+                </button>
+                <label className="btn" style={{ cursor: 'pointer', opacity: uploading || genning ? 0.6 : 1 }}>
+                  {uploading ? 'Uploading…' : '📤 Upload your own'}
+                  <input
+                    type="file"
+                    accept="image/png,image/jpeg,image/gif,image/webp"
+                    style={{ display: 'none' }}
+                    disabled={uploading || genning}
+                    onChange={(e) => { uploadAvatar(e.target.files?.[0]); e.target.value = ''; }}
+                  />
+                </label>
+              </div>
             </div>
           </div>
         </div>

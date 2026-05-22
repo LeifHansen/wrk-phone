@@ -25,6 +25,7 @@ import { analyticsRouter } from './routes/analytics.js';
 import { blogRouter } from './routes/blog.js';
 import { aiRouter } from './routes/ai.js';
 import { prankRouter } from './routes/prank.js';
+import { eventsRouter } from './routes/events.js';
 import { rateLimit } from './lib/ratelimit.js';
 import { startBlogScheduler } from './lib/blog.js';
 import { listBlogPosts } from './lib/db.js';
@@ -82,6 +83,12 @@ app.use('/api/voice', twilioWebhook);
 app.use('/api/sms/inbound', twilioWebhook);
 app.use('/api/sms/status', twilioWebhook);
 
+// Server-Sent Events push stream. Mounted before `requireOwner` so the
+// EventSource API (no custom headers) works whether AUTH_REQUIRED is on or
+// off. Payload carries only conversation IDs — content is refetched through
+// the auth-gated endpoints, so this can't leak.
+app.use('/api', eventsRouter);
+
 // Shared-line authorization. Runs after /api/auth (login/register/me) and the
 // Twilio/Stripe signature checks. No-op unless AUTH_REQUIRED=1; webhooks have
 // no bearer so they resolve to OWNER and pass. Blocks logged-in non-owners
@@ -126,7 +133,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'not found' }));
 // new AI-written posts get indexed without redeploying. Registered before
 // the SPA fallback so it wins over a stale static file.
 app.get('/sitemap.xml', (_req, res) => {
-  const base = (process.env.PUBLIC_BASE_URL || 'https://wrkphn.com').replace(/\/$/, '');
+  const base = (process.env.PUBLIC_BASE_URL || 'https://wrkphn.com').trim().replace(/\/$/, '');
   const core = [
     { loc: '/', pri: '1.0', f: 'weekly' },
     { loc: '/lp', pri: '0.9', f: 'weekly' },
@@ -158,10 +165,23 @@ const webDistCandidates = [
 const webDist = webDistCandidates.find((p) => p && fs.existsSync(path.join(p, 'index.html')));
 if (webDist) {
   console.log(`Serving SPA from ${webDist}`);
-  app.use(express.static(webDist));
+  // Aggressive caching for content-hashed assets (Vite emits hashed filenames
+  // so they're immutable once built), but ALWAYS revalidate index.html so the
+  // browser picks up new bundle hashes on next visit. Prevents "ghost UI"
+  // reports where a stale shell points at deleted asset chunks.
+  app.use(express.static(webDist, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('index.html')) {
+        res.setHeader('Cache-Control', 'no-cache, must-revalidate');
+      } else if (/\/assets\//.test(filePath)) {
+        res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      }
+    },
+  }));
   // SPA fallback — anything that didn't match an /api route returns index.html
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path === '/health') return next();
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     res.sendFile(path.join(webDist, 'index.html'));
   });
 } else {

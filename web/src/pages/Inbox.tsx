@@ -1,7 +1,8 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, COLOR_BG, COLOR_FG } from '../lib/api';
 import { usePolling } from '../lib/usePolling';
+import { subscribeEvents } from '../lib/events';
 import { IconTrash } from '../components/Icons';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
@@ -43,7 +44,13 @@ export function Inbox() {
     try { await api.deleteConversation(id); setRows((s) => s.filter((x) => x.id !== id)); toast('Conversation deleted'); }
     catch (err: any) { toast(`Delete failed: ${err.message}`, 'err'); }
   };
-  usePolling(load, 4000);
+  // SSE pushes a refresh on every new inbound, outbound, or status change;
+  // polling is now just a safety net for when the event stream is closed
+  // (sleeping tab, proxy timeout, deploy bounce).
+  usePolling(load, 30000);
+  useEffect(() => subscribeEvents((e) => {
+    if (e.kind === 'message:new' || e.kind === 'message:status' || e.kind === 'voicemail:new') load();
+  }), []);
 
   const compose = async () => {
     if (!phone.trim() || !body.trim()) return;

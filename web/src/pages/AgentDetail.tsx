@@ -89,22 +89,52 @@ export function AgentDetail() {
       <div className="page-body" style={{ paddingTop: 16 }}>
         <div className="agent-section">
           <h3>Avatar</h3>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             {(merged as any).avatar_url
               ? <img src={(merged as any).avatar_url} alt="" style={{ width: 64, height: 64, border: 'var(--border)', borderRadius: 8, objectFit: 'cover' }} />
               : <div className="swatch" style={{ width: 64, height: 64, background: COLOR_BG[merged.color], border: 'var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{merged.emoji}</div>}
-            <button className="btn pink" disabled={avatarBusy} onClick={async () => {
-              setAvatarBusy(true);
-              toast('Generating avatar… (~10s)', 'info');
-              try {
-                const r = await api.genAvatar('agent', aid);
-                if (!r?.url) throw new Error('no image returned');
-                setAgent((p) => p ? ({ ...p, avatar_url: `${r.url}?t=${Date.now()}` } as any) : p);
-                toast('Avatar generated ✓');
-              } catch (e: any) {
-                toast(`Avatar failed: ${String(e.message || e).replace(/^\d+\s*/, '')}`, 'err');
-              } finally { setAvatarBusy(false); }
-            }}>{avatarBusy ? 'Generating…' : '✨ Generate AI avatar'}</button>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <button className="btn pink" disabled={avatarBusy} onClick={async () => {
+                setAvatarBusy(true);
+                toast('Generating avatar… (~10s)', 'info');
+                try {
+                  const r = await api.genAvatar('agent', aid);
+                  if (!r?.url) throw new Error('no image returned');
+                  setAgent((p) => p ? ({ ...p, avatar_url: `${r.url}?t=${Date.now()}` } as any) : p);
+                  toast('Avatar generated ✓');
+                } catch (e: any) {
+                  toast(`Avatar failed: ${String(e.message || e).replace(/^\d+\s*/, '')}`, 'err');
+                } finally { setAvatarBusy(false); }
+              }}>{avatarBusy ? 'Generating…' : '✨ Generate AI avatar'}</button>
+              <label className="btn" style={{ cursor: 'pointer', opacity: avatarBusy ? 0.6 : 1 }}>
+                {avatarBusy ? '…' : '📤 Upload your own'}
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/gif,image/webp"
+                  style={{ display: 'none' }}
+                  disabled={avatarBusy}
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0]; e.target.value = '';
+                    if (!file) return;
+                    if (file.size > 5 * 1024 * 1024) { toast('Image must be under 5MB.', 'err'); return; }
+                    setAvatarBusy(true);
+                    try {
+                      const dataUrl: string = await new Promise((resolve, reject) => {
+                        const fr = new FileReader();
+                        fr.onload = () => resolve(String(fr.result || ''));
+                        fr.onerror = () => reject(fr.error);
+                        fr.readAsDataURL(file);
+                      });
+                      const r = await api.uploadAvatar('agent', dataUrl, aid);
+                      setAgent((p) => p ? ({ ...p, avatar_url: `${r.url}?t=${Date.now()}` } as any) : p);
+                      toast('Avatar updated ✓');
+                    } catch (err: any) {
+                      toast(`Upload failed: ${err.message || err}`, 'err');
+                    } finally { setAvatarBusy(false); }
+                  }}
+                />
+              </label>
+            </div>
           </div>
         </div>
         <div className="agent-section">

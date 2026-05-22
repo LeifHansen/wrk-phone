@@ -56,7 +56,7 @@ creditsRouter.post('/credits/checkout', async (req, res) => {
     const balance = addCredits(USER, pkg.credits);
     return res.json({ url: null, stub: true, balance, note: 'STRIPE_SECRET_KEY not set — credited without charge.' });
   }
-  const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
   try {
     const session = await stripe.checkout.sessions.create({
       mode: 'payment',

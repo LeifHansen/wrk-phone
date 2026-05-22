@@ -11,7 +11,7 @@ export const prankRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
 function base() {
-  return (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  return (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
 }
 
 // Reveal/create the hidden agent (called when the easter-egg phrase is

@@ -5,6 +5,7 @@ import { generateReply, SAFETY_REGEX } from '../lib/agent.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { routeInbound } from '../lib/routing.js';
 import { log } from '../lib/log.js';
+import { emit } from '../lib/events.js';
 import { getUserId } from '../lib/auth.js';
 
 export const smsRouter = Router();
@@ -73,6 +74,9 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   ).run(convId, body, sid, Date.now());
   db.prepare('UPDATE conversations SET last_message_at = ?, unread_count = unread_count + 1 WHERE id = ?')
     .run(Date.now(), convId);
+  // Push the new inbound to any connected clients so the inbox lights up
+  // without waiting for the next 30s poll tick.
+  emit({ kind: 'message:new', conversationId: convId, direction: 'in' });
 
   const agent = getAgentForConversation(owner, convId);
   // Per-thread autopilot overrides the agent's global mode → 'auto' for THIS
@@ -101,12 +105,14 @@ smsRouter.post('/sms/inbound', async (req, res) => {
           `INSERT INTO messages (conversation_id, direction, body, status, created_at, is_ai, agent_id)
            VALUES (?, 'out', ?, 'queued', ?, 1, ?)`
         ).run(convId, reply, Date.now(), agent.id);
+        emit({ kind: 'message:new', conversationId: convId, direction: 'out' });
       } else if (reply) {
         // Suggestion (either suggest mode, or auto + sensitive)
         db.prepare(
           `INSERT INTO messages (conversation_id, direction, body, status, created_at, is_ai, is_suggestion, agent_id, safety_blocked)
            VALUES (?, 'out', ?, 'suggestion', ?, 1, 1, ?, ?)`
         ).run(convId, reply, Date.now(), agent.id, safetyBlocked);
+        emit({ kind: 'message:new', conversationId: convId, direction: 'out', isSuggestion: true });
       }
     } catch (err: any) {
       log.error('sms.inbound', 'agent reply generation failed', err);
@@ -167,6 +173,7 @@ smsRouter.post('/sms/send', async (req, res) => {
        VALUES (?, 'out', ?, ?, ?, ?, ?)`
     ).run(convId, body, msg.sid, msg.status, Date.now(), mediaUrl);
     db.prepare('UPDATE conversations SET last_message_at = ? WHERE id = ?').run(Date.now(), convId);
+    emit({ kind: 'message:new', conversationId: convId, direction: 'out' });
     res.json({ id: Number(result.lastInsertRowid), conversationId: convId, twilioSid: msg.sid, status: msg.status, creditsSpent: cost });
   } catch (dbErr: any) {
     log.error('sms.send', `sent (sid ${msg?.sid}) but failed to persist message`, dbErr);
@@ -177,7 +184,10 @@ smsRouter.post('/sms/send', async (req, res) => {
 smsRouter.post('/sms/status', (req, res) => {
   const sid = String(req.body.MessageSid || '');
   const status = String(req.body.MessageStatus || '');
-  if (sid) db.prepare('UPDATE messages SET status = ? WHERE twilio_sid = ?').run(status, sid);
+  if (sid) {
+    const r = db.prepare('UPDATE messages SET status = ? WHERE twilio_sid = ?').run(status, sid);
+    if (r.changes) emit({ kind: 'message:status', sid, status });
+  }
   res.sendStatus(204);
 });
 
