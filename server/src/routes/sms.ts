@@ -10,12 +10,16 @@ import { getUserId } from '../lib/auth.js';
 export const smsRouter = Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
 import { OWNER_ID as USER } from '../lib/auth.js';
+import { resolveInboundOwner } from '../lib/numbers-store.js';
 
 // Inbound SMS webhook from Twilio
 smsRouter.post('/sms/inbound', async (req, res) => {
   const from = String(req.body.From || '');
   const body = String(req.body.Body || '');
   const sid = String(req.body.MessageSid || '');
+  // The account that owns the texted number. Dark launch: with no numbers
+  // assigned yet this resolves to OWNER_ID, so routing is unchanged.
+  const owner = resolveInboundOwner(String(req.body.To || ''));
 
   // Idempotency: Twilio retries the webhook (up to ~15s, then again) when a
   // response is slow. Two OpenAI round-trips below routinely exceed that, so
@@ -26,7 +30,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
     if (dup) return res.type('text/xml').send(new MessagingResponse().toString());
   }
 
-  const convId = getOrCreateConversation(USER, from);
+  const convId = getOrCreateConversation(owner, from);
 
   // Carrier-required opt-out handling. Always recorded, runs before the agent.
   const compliance = classifyCompliance(body);
@@ -39,10 +43,10 @@ smsRouter.post('/sms/inbound', async (req, res) => {
       .run(Date.now(), convId);
     const twiml = new MessagingResponse();
     if (compliance === 'stop') {
-      setOptOut(USER, from, true);
+      setOptOut(owner, from, true);
       twiml.message('You are unsubscribed and will receive no more messages. Reply START to resubscribe.');
     } else if (compliance === 'start') {
-      setOptOut(USER, from, false);
+      setOptOut(owner, from, false);
       twiml.message('You are resubscribed. Reply HELP for help, STOP to unsubscribe.');
     } else { // help
       twiml.message('WrkPhn: reply STOP to unsubscribe. Msg & data rates may apply.');
@@ -56,7 +60,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   const conv = db.prepare(`SELECT agent_id FROM conversations WHERE id = ?`).get(convId) as { agent_id: number | null };
   if (!conv?.agent_id) {
     try {
-      const matchedRule = await routeInbound({ userId: USER, fromPhone: from, body });
+      const matchedRule = await routeInbound({ userId: owner, fromPhone: from, body });
       if (matchedRule) {
         db.prepare(`UPDATE conversations SET agent_id = ? WHERE id = ?`).run(matchedRule.agent_id, convId);
       }
@@ -70,7 +74,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   db.prepare('UPDATE conversations SET last_message_at = ?, unread_count = unread_count + 1 WHERE id = ?')
     .run(Date.now(), convId);
 
-  const agent = getAgentForConversation(USER, convId);
+  const agent = getAgentForConversation(owner, convId);
   // Per-thread autopilot overrides the agent's global mode → 'auto' for THIS
   // conversation, so a created agent works without changing it globally.
   const autopilot = !!(db.prepare(`SELECT autopilot FROM conversations WHERE id = ?`)
@@ -80,9 +84,9 @@ smsRouter.post('/sms/inbound', async (req, res) => {
 
   if (agent && effectiveMode !== 'off') {
     try {
-      const { reply, safeToAutoSend } = await generateReply(USER, convId, body);
+      const { reply, safeToAutoSend } = await generateReply(owner, convId, body);
       const safetyBlocked = SAFETY_REGEX.test(body) ? 1 : 0;
-      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(USER, messageCost(reply, false))) {
+      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(owner, messageCost(reply, false))) {
         const agentNum = (agent as any).send_number;
         if (agentNum) {
           // Reply FROM the agent's assigned number (out-of-band, not TwiML).

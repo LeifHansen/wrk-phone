@@ -229,10 +229,32 @@ db.exec(`
     updated_at INTEGER NOT NULL DEFAULT 0
   );
 
+  -- Per-account phone numbers (multi-tenant). A row with user_id = NULL is
+  -- unassigned pool inventory; assignment sets user_id + status = 'active'.
+  -- Each account gets one toll-free number free at signup; extra local
+  -- numbers are paid ($2 activation + $2/mo passthrough).
+  CREATE TABLE IF NOT EXISTS account_numbers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    phone TEXT NOT NULL UNIQUE,
+    twilio_sid TEXT,
+    type TEXT NOT NULL DEFAULT 'tollfree' CHECK(type IN ('tollfree','local')),
+    is_default INTEGER NOT NULL DEFAULT 0,
+    status TEXT NOT NULL DEFAULT 'pool' CHECK(status IN ('pool','active','pending','released')),
+    tfv_status TEXT,                          -- toll-free verification: null|pending|in_review|verified|rejected
+    monthly_cost_cents INTEGER NOT NULL DEFAULT 0,
+    activation_paid INTEGER NOT NULL DEFAULT 0,
+    stripe_sub_id TEXT,
+    created_at INTEGER NOT NULL,
+    assigned_at INTEGER,
+    released_at INTEGER
+  );
+
   -- Indexes for hot read paths (defined last; all tables exist by here).
   CREATE INDEX IF NOT EXISTS idx_conversations_user_recent ON conversations(user_id, last_message_at DESC);
   CREATE INDEX IF NOT EXISTS idx_campaign_recipients ON campaign_recipients(campaign_id, status);
   CREATE INDEX IF NOT EXISTS idx_contacts_user_name ON contacts(user_id, name);
+  CREATE INDEX IF NOT EXISTS idx_account_numbers_user ON account_numbers(user_id, status);
 `);
 
 // Lightweight migrations for upgrades from the v0.1 single-agent schema.

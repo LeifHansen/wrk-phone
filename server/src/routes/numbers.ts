@@ -1,7 +1,9 @@
 import { Router } from 'express';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { getAppSettings, setActiveNumber } from '../lib/db.js';
-import { getUserId, OWNER_ID } from '../lib/auth.js';
+import { getUserId, OWNER_ID, requireSuperadmin } from '../lib/auth.js';
+import { importToPool, poolStats, isTollFree } from '../lib/numbers-store.js';
+import { refreshTfvStatuses } from '../lib/tollfree.js';
 
 export const numbersRouter = Router();
 
@@ -329,5 +331,41 @@ numbersRouter.post('/numbers/buy-additional', async (req, res) => {
     res.json({ ok: true, number: purchased.phoneNumber, sid: purchased.sid, monthly: 2.0, warnings });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
+  }
+});
+
+// ── Toll-free pool administration (superadmin) ───────────────────────────────
+// The pool = toll-free numbers already on the Twilio account. New accounts are
+// each assigned one at random at signup (Phase 2). These endpoints sync and
+// inspect the pool; they are NOT gated by NUMBER_PURCHASE_ENABLED.
+
+// POST /api/numbers/pool/import — discover toll-free numbers on the Twilio
+// account and register any not yet tracked as unassigned pool inventory.
+numbersRouter.post('/numbers/pool/import', requireSuperadmin, async (_req, res) => {
+  try {
+    const all = await twilioClient.incomingPhoneNumbers.list({ limit: 1000 });
+    const tollfree = all
+      .filter((n) => isTollFree(n.phoneNumber))
+      .map((n) => ({ phone: n.phoneNumber, twilioSid: n.sid, type: 'tollfree' as const }));
+    const { added, skipped } = importToPool(tollfree);
+    res.json({ ok: true, discovered: tollfree.length, added, skipped, stats: poolStats() });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
+
+// GET /api/numbers/pool/stats — pool inventory summary.
+numbersRouter.get('/numbers/pool/stats', requireSuperadmin, (_req, res) => {
+  res.json(poolStats());
+});
+
+// POST /api/numbers/pool/refresh-tfv — pull the latest Toll-Free Verification
+// status from Twilio onto every tracked toll-free number.
+numbersRouter.post('/numbers/pool/refresh-tfv', requireSuperadmin, async (_req, res) => {
+  try {
+    const updated = await refreshTfvStatuses();
+    res.json({ ok: true, updated });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message });
   }
 });

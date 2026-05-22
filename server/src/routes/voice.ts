@@ -8,6 +8,7 @@ import { log } from '../lib/log.js';
 export const voiceRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
 import { OWNER_ID as USER } from '../lib/auth.js';
+import { resolveInboundOwner } from '../lib/numbers-store.js';
 
 // Outbound (from softphone): TwiML App webhook
 // The mobile/web SDK passes the dialed number as `To` parameter.
@@ -47,9 +48,12 @@ voiceRouter.post('/voice/outbound', (req, res) => {
 // Inbound: Twilio number's Voice webhook -> ring the softphone client
 voiceRouter.post('/voice/inbound', (req, res) => {
   const fromNumber = String(req.body.From || '');
+  // The account that owns the dialed number rings. Dark launch: resolves to
+  // OWNER_ID until numbers are assigned to accounts.
+  const owner = resolveInboundOwner(String(req.body.To || ''));
   const twiml = new VoiceResponse();
   const dial = twiml.dial({ timeout: 25, answerOnBridge: true, callerId: fromNumber });
-  dial.client(USER);
+  dial.client(owner);
   // If client doesn't answer, fall through to voicemail
   twiml.redirect({ method: 'POST' }, '/api/voice/voicemail-greeting');
   res.type('text/xml').send(twiml.toString());
@@ -59,14 +63,15 @@ voiceRouter.post('/voice/voicemail-greeting', async (req, res) => {
   const twiml = new VoiceResponse();
   try {
     const fromNumber = String(req.body.From || '');
+    const owner = resolveInboundOwner(String(req.body.To || ''));
     let agent = null as any;
     if (fromNumber) {
       const conv = db.prepare(
         'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
-      ).get(USER, fromNumber) as { id: number } | undefined;
-      if (conv) agent = getAgentForConversation(USER, conv.id);
+      ).get(owner, fromNumber) as { id: number } | undefined;
+      if (conv) agent = getAgentForConversation(owner, conv.id);
     }
-    if (!agent) agent = getDefaultAgent(USER);
+    if (!agent) agent = getDefaultAgent(owner);
     const greeting = agent ? await generateVoiceGreeting(agent) : "Please leave a message after the tone.";
     const voice = (agent && (agent as any).tts_voice) || 'Polly.Joanna-Neural';
     twiml.say({ voice }, greeting);
@@ -95,12 +100,13 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
   const from = String(req.body.From || 'unknown');
   const text = String(req.body.TranscriptionText || '');
   const sid = String(req.body.RecordingSid || '');
+  const owner = resolveInboundOwner(String(req.body.To || ''));
   const conv = db.prepare(
     'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
-  ).get(USER, from) as { id: number } | undefined;
+  ).get(owner, from) as { id: number } | undefined;
   const convId = conv?.id || Number(
     db.prepare('INSERT INTO conversations (user_id, peer_phone, last_message_at) VALUES (?, ?, ?)')
-      .run(USER, from, Date.now()).lastInsertRowid
+      .run(owner, from, Date.now()).lastInsertRowid
   );
   db.prepare(
     `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at)
@@ -122,9 +128,11 @@ voiceRouter.post('/voice/status', (req, res) => {
   }
   if (CallStatus === 'completed') {
     const peer = Direction === 'inbound' ? String(From) : String(To);
+    // Our number is the dialed number on inbound, the caller ID on outbound.
+    const owner = resolveInboundOwner(String(Direction === 'inbound' ? To : From));
     db.prepare(
       'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(USER, peer, Direction === 'inbound' ? 'in' : 'out', Number(CallDuration || 0), CallSid, Date.now());
+    ).run(owner, peer, Direction === 'inbound' ? 'in' : 'out', Number(CallDuration || 0), CallSid, Date.now());
   }
   res.sendStatus(204);
 });
