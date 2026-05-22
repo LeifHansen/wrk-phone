@@ -49,9 +49,9 @@ voiceRouter.post('/voice/outbound', (req, res) => {
 // Inbound: Twilio number's Voice webhook -> ring the softphone client
 voiceRouter.post('/voice/inbound', (req, res) => {
   const fromNumber = String(req.body.From || '');
-  // The account that owns the dialed number rings. Dark launch: resolves to
-  // OWNER_ID until numbers are assigned to accounts.
-  const owner = resolveInboundOwner(String(req.body.To || ''));
+  // The account that owns the dialed number rings. For a shared toll-free,
+  // disambiguated by the caller's prior thread; cold calls fall back to OWNER.
+  const owner = resolveInboundOwner(String(req.body.To || ''), fromNumber);
   const twiml = new VoiceResponse();
   const dial = twiml.dial({ timeout: 25, answerOnBridge: true, callerId: fromNumber });
   dial.client(owner);
@@ -64,7 +64,7 @@ voiceRouter.post('/voice/voicemail-greeting', async (req, res) => {
   const twiml = new VoiceResponse();
   try {
     const fromNumber = String(req.body.From || '');
-    const owner = resolveInboundOwner(String(req.body.To || ''));
+    const owner = resolveInboundOwner(String(req.body.To || ''), fromNumber);
     let agent = null as any;
     if (fromNumber) {
       const conv = db.prepare(
@@ -101,7 +101,7 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
   const from = String(req.body.From || 'unknown');
   const text = String(req.body.TranscriptionText || '');
   const sid = String(req.body.RecordingSid || '');
-  const owner = resolveInboundOwner(String(req.body.To || ''));
+  const owner = resolveInboundOwner(String(req.body.To || ''), from);
   const conv = db.prepare(
     'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
   ).get(owner, from) as { id: number } | undefined;
@@ -131,7 +131,10 @@ voiceRouter.post('/voice/status', (req, res) => {
   if (CallStatus === 'completed') {
     const peer = Direction === 'inbound' ? String(From) : String(To);
     // Our number is the dialed number on inbound, the caller ID on outbound.
-    const owner = resolveInboundOwner(String(Direction === 'inbound' ? To : From));
+    const owner = resolveInboundOwner(
+      String(Direction === 'inbound' ? To : From),
+      String(Direction === 'inbound' ? From : To),
+    );
     db.prepare(
       'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'
     ).run(owner, peer, Direction === 'inbound' ? 'in' : 'out', Number(CallDuration || 0), CallSid, Date.now());

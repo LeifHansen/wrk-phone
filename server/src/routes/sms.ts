@@ -27,9 +27,11 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   const from = String(req.body.From || '');
   const body = String(req.body.Body || '');
   const sid = String(req.body.MessageSid || '');
-  // The account that owns the texted number. Dark launch: with no numbers
-  // assigned yet this resolves to OWNER_ID, so routing is unchanged.
-  const owner = resolveInboundOwner(String(req.body.To || ''));
+  const toNumber = String(req.body.To || '');
+  // The account that owns the texted number. For a shared toll-free this is
+  // disambiguated by the contact (a reply to an existing thread); cold or
+  // ambiguous inbound falls back to OWNER_ID.
+  const owner = resolveInboundOwner(toNumber, from);
 
   // Idempotency: Twilio retries the webhook (up to ~15s, then again) when a
   // response is slow. Two OpenAI round-trips below routinely exceed that, so
@@ -40,7 +42,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
     if (dup) return res.type('text/xml').send(new MessagingResponse().toString());
   }
 
-  const convId = getOrCreateConversation(owner, from);
+  const convId = getOrCreateConversation(owner, from, toNumber || null);
 
   // Carrier-required opt-out handling. Always recorded, runs before the agent.
   const compliance = classifyCompliance(body);
@@ -150,10 +152,12 @@ smsRouter.post('/sms/send', async (req, res) => {
   if (!spendCredits(USER, cost)) {
     return res.status(402).json({ error: `Not enough credits. This message costs ${cost} (balance ${getCredits(USER)}).`, cost });
   }
-  const convId = getOrCreateConversation(USER, to);
   // Send FROM the sending user's selected shared-pool number (keeps their
   // chosen local area code). Explicit `from` so Twilio honors that number.
   const fromNum = getActiveNumber(getUserId(req)) || twilioConfig.defaultFrom;
+  // Stamp the thread with WHICH number it's on, so when the contact replies
+  // resolveInboundOwner() can route the (our_number, peer) pair back here.
+  const convId = getOrCreateConversation(USER, to, fromNum || null);
   let msg: any;
   try {
     const params: any = { to, body, from: fromNum };

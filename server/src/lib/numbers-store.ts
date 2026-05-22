@@ -88,6 +88,24 @@ export function assignFromPool(userId: string): AccountNumber | null {
   })(userId);
 }
 
+/**
+ * Pick a random toll-free number from the shared pool WITHOUT consuming it.
+ *
+ * Sharing model: many accounts may be assigned the same toll-free number
+ * (the pool is small and intentionally recycled), so assignment must never
+ * remove a number from availability — unlike assignFromPool(), which is the
+ * exclusive-ownership path. Returns null if the account has no toll-free
+ * numbers at all.
+ */
+export function pickSharedTollfree(): { phone: string; twilioSid: string | null } | null {
+  const row = db.prepare(
+    `SELECT phone, twilio_sid FROM account_numbers
+     WHERE type = 'tollfree' AND status IN ('pool', 'active')
+     ORDER BY RANDOM() LIMIT 1`
+  ).get() as { phone: string; twilio_sid: string | null } | undefined;
+  return row ? { phone: row.phone, twilioSid: row.twilio_sid } : null;
+}
+
 /** All of an account's live numbers, default first. */
 export function listAccountNumbers(userId: string): AccountNumber[] {
   return db.prepare(
@@ -185,15 +203,38 @@ export function ownerForNumber(e164: string): string | null {
 }
 
 /**
- * Resolve the owning account for an inbound webhook, falling back to OWNER_ID.
+ * Resolve the owning account for an inbound webhook.
  *
- * DARK LAUNCH: until numbers are assigned to accounts (Phase 2), no row
- * matches and this always returns OWNER_ID — i.e. production routing is
- * unchanged. Wiring it in now means per-account inbox routing "just works"
- * the moment the pool is populated and accounts exist.
+ * Routing order:
+ *  1. EXCLUSIVE owner — a purchased (10DLC) number belongs to exactly one
+ *     account; that account always wins.
+ *  2. SHARED toll-free — many accounts may share the number, so the dialed
+ *     number alone is ambiguous. Disambiguate by the contact: if exactly one
+ *     account already has a conversation with this peer ON THIS number, the
+ *     inbound is a reply to that thread → route there.
+ *  3. FALLBACK — cold inbound (no prior thread) or a collision (two accounts
+ *     both have a thread with this peer on this number) → OWNER_ID.
+ *
+ * Safe by construction: with no account_numbers rows and no populated
+ * our_number column, steps 1–2 match nothing and this returns OWNER_ID —
+ * identical to the original single-line behavior.
  */
-export function resolveInboundOwner(e164: string): string {
-  return ownerForNumber(e164) ?? OWNER_ID;
+export function resolveInboundOwner(toNumber: string, fromPeer?: string): string {
+  const dialed = (toNumber || '').trim();
+  // 1. Exclusive owner (purchased number).
+  const exclusive = ownerForNumber(dialed);
+  if (exclusive) return exclusive;
+  // 2. Shared toll-free — disambiguate by the contact.
+  const peer = (fromPeer || '').trim();
+  if (dialed && peer) {
+    const matches = db.prepare(
+      `SELECT DISTINCT user_id FROM conversations
+       WHERE our_number = ? AND peer_phone = ? AND user_id IS NOT NULL`
+    ).all(dialed, peer) as { user_id: string }[];
+    if (matches.length === 1) return matches[0].user_id;
+  }
+  // 3. Cold inbound or collision.
+  return OWNER_ID;
 }
 
 /** Pool inventory summary (toll-free), for the superadmin dashboard. */

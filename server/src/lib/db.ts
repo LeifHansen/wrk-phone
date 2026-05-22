@@ -274,6 +274,10 @@ tryAddColumn('agents', 'avatar_url TEXT');
 tryAddColumn('app_settings', 'avatar_url TEXT');
 tryAddColumn('contacts', 'opted_out INTEGER NOT NULL DEFAULT 0');
 tryAddColumn('conversations', 'autopilot INTEGER NOT NULL DEFAULT 0');
+// WHICH of our numbers this conversation is on. Needed once toll-free numbers
+// are shared across accounts: inbound is routed by the (our_number, peer) pair,
+// not the dialed number alone. NULL on rows that predate multi-number support.
+tryAddColumn('conversations', 'our_number TEXT');
 tryAddColumn('agents', 'send_number TEXT');
 tryAddColumn('agents', 'hidden INTEGER NOT NULL DEFAULT 0');
 
@@ -310,14 +314,25 @@ try {
   log.warn('db.migrate', 'legacy agent_settings migration failed', e);
 }
 
-export function getOrCreateConversation(userId: string, peerPhone: string): number {
+export function getOrCreateConversation(
+  userId: string,
+  peerPhone: string,
+  ourNumber?: string | null,
+): number {
   const existing = db.prepare(
-    'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
-  ).get(userId, peerPhone) as { id: number } | undefined;
-  if (existing) return existing.id;
+    'SELECT id, our_number FROM conversations WHERE user_id = ? AND peer_phone = ?'
+  ).get(userId, peerPhone) as { id: number; our_number: string | null } | undefined;
+  if (existing) {
+    // Backfill our_number on rows created before multi-number support, the
+    // first time we learn which line the thread is on.
+    if (ourNumber && !existing.our_number) {
+      db.prepare('UPDATE conversations SET our_number = ? WHERE id = ?').run(ourNumber, existing.id);
+    }
+    return existing.id;
+  }
   const result = db.prepare(
-    'INSERT INTO conversations (user_id, peer_phone, last_message_at) VALUES (?, ?, ?)'
-  ).run(userId, peerPhone, Date.now());
+    'INSERT INTO conversations (user_id, peer_phone, our_number, last_message_at) VALUES (?, ?, ?, ?)'
+  ).run(userId, peerPhone, ourNumber ?? null, Date.now());
   return Number(result.lastInsertRowid);
 }
 

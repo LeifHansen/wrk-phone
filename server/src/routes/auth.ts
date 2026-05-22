@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { createUser, findUser, verifyPassword, newSession, dropSession, getUserId } from '../lib/auth.js';
-import { db } from '../lib/db.js';
+import { db, setActiveNumber } from '../lib/db.js';
+import { pickSharedTollfree } from '../lib/numbers-store.js';
 import { log } from '../lib/log.js';
 
 export const authRouter = Router();
@@ -15,6 +16,15 @@ authRouter.post('/auth/signup', (req, res) => {
   if (findUser(email)) return res.status(409).json({ error: 'an account with that email already exists' });
   try {
     const u = createUser(email, password);
+    // Assign a shared toll-free number from the pool so the account can send
+    // immediately. Best-effort — number assignment must never fail signup;
+    // /numbers/claim is the safety net if the pool is empty at this moment.
+    try {
+      const tf = pickSharedTollfree();
+      if (tf) setActiveNumber(u.id, tf.phone, tf.twilioSid || '');
+    } catch (e) {
+      log.warn('auth', 'toll-free auto-assign at signup failed', e);
+    }
     const token = newSession(u.id);
     log.info('auth', 'signup', { email });
     res.json({ token, email });

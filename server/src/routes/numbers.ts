@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { getAppSettings, setActiveNumber } from '../lib/db.js';
 import { getUserId, OWNER_ID, requireSuperadmin } from '../lib/auth.js';
-import { importToPool, poolStats, isTollFree } from '../lib/numbers-store.js';
+import { importToPool, poolStats, isTollFree, pickSharedTollfree } from '../lib/numbers-store.js';
 import { refreshTfvStatuses } from '../lib/tollfree.js';
 import { log } from '../lib/log.js';
 
@@ -263,6 +263,18 @@ async function claimPoolNumber(userId: string) {
   if (s.active_number) {
     return { phoneNumber: s.active_number, sid: s.active_number_sid, alreadyHad: true };
   }
+  // Preferred path: a shared toll-free from the account_numbers pool — the
+  // intended model (every account gets a random toll-free, sharing allowed).
+  const shared = pickSharedTollfree();
+  if (shared) {
+    setActiveNumber(userId, shared.phone, shared.twilioSid || '');
+    if (shared.twilioSid) {
+      try { await configureWebhooks(shared.twilioSid); }
+      catch (e) { log.warn('claimPoolNumber', `webhook auto-config failed for ${shared.phone}`, e); }
+    }
+    return { phoneNumber: shared.phone, sid: shared.twilioSid, alreadyHad: false };
+  }
+  // Fallback: account_numbers pool not populated yet — scan Twilio directly.
   const pool = await twilioClient.incomingPhoneNumbers.list({ limit: 50 });
   if (!pool.length) throw new Error('No numbers in the shared pool yet. An admin must add one to the Twilio account.');
   // Prefer SMS-capable numbers; spread users across the pool with a random pick.
