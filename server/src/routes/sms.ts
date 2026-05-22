@@ -13,6 +13,15 @@ const MessagingResponse = twilio.twiml.MessagingResponse;
 import { OWNER_ID as USER } from '../lib/auth.js';
 import { resolveInboundOwner } from '../lib/numbers-store.js';
 
+// Twilio posts per-message delivery receipts (queued → sent → delivered, or
+// → undelivered/failed) to this URL. WITHOUT it, an accepted-but-undeliverable
+// message — e.g. an unverified toll-free sender whose traffic carriers drop —
+// is stuck at 'queued' forever and the UI cannot tell success from failure.
+function smsStatusCallback(): string | undefined {
+  const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+  return base ? `${base}/api/sms/status` : undefined;
+}
+
 // Inbound SMS webhook from Twilio
 smsRouter.post('/sms/inbound', async (req, res) => {
   const from = String(req.body.From || '');
@@ -96,6 +105,8 @@ smsRouter.post('/sms/inbound', async (req, res) => {
           // Reply FROM the agent's assigned number (out-of-band, not TwiML).
           try {
             const p: any = { to: from, body: reply, from: agentNum };
+            const cb = smsStatusCallback();
+            if (cb) p.statusCallback = cb;
             await twilioClient.messages.create(p);
           } catch (e) { twiml.message(reply); /* fallback to reply on same number */ }
         } else {
@@ -147,6 +158,8 @@ smsRouter.post('/sms/send', async (req, res) => {
   try {
     const params: any = { to, body, from: fromNum };
     if (mediaUrl) params.mediaUrl = [mediaUrl];        // MMS
+    const cb = smsStatusCallback();
+    if (cb) params.statusCallback = cb;
     msg = await twilioClient.messages.create(params);
   } catch (err: any) {
     addCredits(USER, cost); // refund — the send itself failed, nothing went out
@@ -201,6 +214,8 @@ smsRouter.post('/sms/suggestion/:id/approve', async (req, res) => {
     const params: any = { to: row.peer_phone, body: row.body };
     if (twilioConfig.messagingServiceSid) params.messagingServiceSid = twilioConfig.messagingServiceSid;
     else params.from = twilioConfig.defaultFrom;
+    const cb = smsStatusCallback();
+    if (cb) params.statusCallback = cb;
     const msg = await twilioClient.messages.create(params);
     db.prepare('UPDATE messages SET is_suggestion = 0, twilio_sid = ?, status = ? WHERE id = ?')
       .run(msg.sid, msg.status, id);
