@@ -1,9 +1,9 @@
 import { Router } from 'express';
-import { db } from '../lib/db.js';
+import { db, hasActiveSubscription } from '../lib/db.js';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { OWNER_ID as USER, getUserId } from '../lib/auth.js';
 
 export const a2pRouter = Router();
 
@@ -32,6 +32,15 @@ a2pRouter.post('/a2p/draft', async (req, res) => {
 // 2) Submit. Attempts the real Twilio A2P brand registration; always stores
 //    the package so nothing is lost if the account isn't ISV-enabled.
 a2pRouter.post('/a2p/submit', async (req, res) => {
+  // Submitting a 10DLC brand/campaign registration is part of the paid
+  // Business Line add-on — it carries real Twilio vetting cost. Drafting
+  // (/a2p/draft) stays free as a preview.
+  if (!hasActiveSubscription(getUserId(req), 'a2p')) {
+    return res.status(402).json({
+      error: 'A2P 10DLC registration requires the Business Line add-on.',
+      upgrade: 'a2p',
+    });
+  }
   const profile = req.body?.profile || {};
   const pkg = req.body?.package || {};
   // Brand type drives validation. Sole proprietor is the low-friction path

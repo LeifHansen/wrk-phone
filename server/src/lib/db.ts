@@ -512,6 +512,13 @@ export function recordSubscription(userId: string, plan: string, ref: string | n
 export function listSubscriptions(userId: string) {
   return db.prepare(`SELECT plan, ref, status, created_at FROM subscriptions WHERE user_id=? ORDER BY created_at DESC`).all(userId);
 }
+/** True if the account holds a usable subscription to `plan`. 'dev' counts so
+ *  the no-Stripe local flow still unlocks gated features. */
+export function hasActiveSubscription(userId: string, plan: string): boolean {
+  return !!db.prepare(
+    `SELECT 1 FROM subscriptions WHERE user_id=? AND plan=? AND status IN ('active','dev') LIMIT 1`
+  ).get(userId, plan);
+}
 export function setSubscriptionStatusByStripeId(stripeSubId: string, status: string) {
   db.prepare(`UPDATE subscriptions SET status=?, updated_at=? WHERE stripe_sub_id=?`).run(status, Date.now(), stripeSubId);
 }
