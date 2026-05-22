@@ -281,6 +281,24 @@ tryAddColumn('conversations', 'our_number TEXT');
 tryAddColumn('agents', 'send_number TEXT');
 tryAddColumn('agents', 'hidden INTEGER NOT NULL DEFAULT 0');
 
+// One-time backfill: stamp our_number on conversations created before the
+// column existed, using each account's current sending number. Without it a
+// reply to an established thread would look "cold" to resolveInboundOwner and
+// be dropped. Idempotent — only touches rows still NULL.
+db.prepare(
+  `UPDATE conversations
+   SET our_number = (
+     SELECT active_number FROM app_settings
+     WHERE app_settings.user_id = conversations.user_id
+   )
+   WHERE our_number IS NULL
+     AND EXISTS (
+       SELECT 1 FROM app_settings
+       WHERE app_settings.user_id = conversations.user_id
+         AND active_number IS NOT NULL AND active_number != ''
+     )`
+).run();
+
 // Migrate legacy agent_settings (single row per user) into agents.
 try {
   const legacy = db.prepare(

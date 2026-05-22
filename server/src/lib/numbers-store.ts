@@ -212,14 +212,16 @@ export function ownerForNumber(e164: string): string | null {
  *     number alone is ambiguous. Disambiguate by the contact: if exactly one
  *     account already has a conversation with this peer ON THIS number, the
  *     inbound is a reply to that thread → route there.
- *  3. FALLBACK — cold inbound (no prior thread) or a collision (two accounts
- *     both have a thread with this peer on this number) → OWNER_ID.
+ *  3. UNATTRIBUTABLE → null. Cold inbound (no prior thread) or a collision
+ *     (multiple accounts both have a thread with this contact on a shared
+ *     number) can't be assigned to anyone — per product decision the inbound
+ *     is dropped. Callers MUST treat null as "ignore this webhook."
  *
- * Safe by construction: with no account_numbers rows and no populated
- * our_number column, steps 1–2 match nothing and this returns OWNER_ID —
- * identical to the original single-line behavior.
+ * Existing conversations are backfilled with our_number at migration time, so
+ * a reply to an established thread always hits step 2 — only genuinely cold
+ * inbound returns null.
  */
-export function resolveInboundOwner(toNumber: string, fromPeer?: string): string {
+export function resolveInboundOwner(toNumber: string, fromPeer?: string): string | null {
   const dialed = (toNumber || '').trim();
   // 1. Exclusive owner (purchased number).
   const exclusive = ownerForNumber(dialed);
@@ -233,8 +235,8 @@ export function resolveInboundOwner(toNumber: string, fromPeer?: string): string
     ).all(dialed, peer) as { user_id: string }[];
     if (matches.length === 1) return matches[0].user_id;
   }
-  // 3. Cold inbound or collision.
-  return OWNER_ID;
+  // 3. Cold inbound or collision — unattributable, drop it.
+  return null;
 }
 
 /** Pool inventory summary (toll-free), for the superadmin dashboard. */

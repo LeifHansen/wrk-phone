@@ -50,9 +50,14 @@ voiceRouter.post('/voice/outbound', (req, res) => {
 voiceRouter.post('/voice/inbound', (req, res) => {
   const fromNumber = String(req.body.From || '');
   // The account that owns the dialed number rings. For a shared toll-free,
-  // disambiguated by the caller's prior thread; cold calls fall back to OWNER.
+  // disambiguated by the caller's prior thread. A cold call to a shared number
+  // is unattributable → reject it.
   const owner = resolveInboundOwner(String(req.body.To || ''), fromNumber);
   const twiml = new VoiceResponse();
+  if (!owner) {
+    twiml.reject();
+    return res.type('text/xml').send(twiml.toString());
+  }
   const dial = twiml.dial({ timeout: 25, answerOnBridge: true, callerId: fromNumber });
   dial.client(owner);
   // If client doesn't answer, fall through to voicemail
@@ -66,13 +71,13 @@ voiceRouter.post('/voice/voicemail-greeting', async (req, res) => {
     const fromNumber = String(req.body.From || '');
     const owner = resolveInboundOwner(String(req.body.To || ''), fromNumber);
     let agent = null as any;
-    if (fromNumber) {
+    if (owner && fromNumber) {
       const conv = db.prepare(
         'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
       ).get(owner, fromNumber) as { id: number } | undefined;
       if (conv) agent = getAgentForConversation(owner, conv.id);
     }
-    if (!agent) agent = getDefaultAgent(owner);
+    if (!agent && owner) agent = getDefaultAgent(owner);
     const greeting = agent ? await generateVoiceGreeting(agent) : "Please leave a message after the tone.";
     const voice = (agent && (agent as any).tts_voice) || 'Polly.Joanna-Neural';
     twiml.say({ voice }, greeting);
@@ -102,6 +107,10 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
   const text = String(req.body.TranscriptionText || '');
   const sid = String(req.body.RecordingSid || '');
   const owner = resolveInboundOwner(String(req.body.To || ''), from);
+  if (!owner) {
+    // Voicemail on a shared number we can't attribute — drop it.
+    return res.sendStatus(204);
+  }
   const conv = db.prepare(
     'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
   ).get(owner, from) as { id: number } | undefined;
@@ -135,9 +144,11 @@ voiceRouter.post('/voice/status', (req, res) => {
       String(Direction === 'inbound' ? To : From),
       String(Direction === 'inbound' ? From : To),
     );
-    db.prepare(
-      'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'
-    ).run(owner, peer, Direction === 'inbound' ? 'in' : 'out', Number(CallDuration || 0), CallSid, Date.now());
+    if (owner) {
+      db.prepare(
+        'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'
+      ).run(owner, peer, Direction === 'inbound' ? 'in' : 'out', Number(CallDuration || 0), CallSid, Date.now());
+    }
   }
   res.sendStatus(204);
 });

@@ -29,9 +29,14 @@ smsRouter.post('/sms/inbound', async (req, res) => {
   const sid = String(req.body.MessageSid || '');
   const toNumber = String(req.body.To || '');
   // The account that owns the texted number. For a shared toll-free this is
-  // disambiguated by the contact (a reply to an existing thread); cold or
-  // ambiguous inbound falls back to OWNER_ID.
+  // disambiguated by the contact (a reply to an existing thread). Cold or
+  // ambiguous inbound is unattributable → null → drop it (empty 200 so Twilio
+  // doesn't retry).
   const owner = resolveInboundOwner(toNumber, from);
+  if (!owner) {
+    log.info('sms.inbound', 'ignored unattributable inbound', { to: toNumber, from });
+    return res.type('text/xml').send(new MessagingResponse().toString());
+  }
 
   // Idempotency: Twilio retries the webhook (up to ~15s, then again) when a
   // response is slow. Two OpenAI round-trips below routinely exceed that, so
