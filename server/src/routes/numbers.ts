@@ -369,3 +369,86 @@ numbersRouter.post('/numbers/pool/refresh-tfv', requireSuperadmin, async (_req, 
     res.status(500).json({ error: e.message });
   }
 });
+
+// ── Twilio account migration (superadmin) ────────────────────────────────────
+
+// GET /api/numbers/account-info — confirm WHICH Twilio account + messaging
+// service the server is wired to. Read-only. Run this before any bulk webhook
+// or number change to verify the env points at the intended account.
+numbersRouter.get('/numbers/account-info', requireSuperadmin, async (_req, res) => {
+  try {
+    const acct = await twilioClient.api.v2010.accounts(twilioConfig.accountSid).fetch();
+    let messagingService: { sid: string; friendlyName?: string; error?: string } | null = null;
+    if (twilioConfig.messagingServiceSid) {
+      try {
+        const svc = await twilioClient.messaging.v1.services(twilioConfig.messagingServiceSid).fetch();
+        messagingService = { sid: svc.sid, friendlyName: svc.friendlyName };
+      } catch (e: any) {
+        messagingService = { sid: twilioConfig.messagingServiceSid, error: e.message };
+      }
+    }
+    const numbers = await twilioClient.incomingPhoneNumbers.list({ limit: 1000 });
+    res.json({
+      accountSid: acct.sid,
+      accountName: acct.friendlyName,
+      accountStatus: acct.status,
+      messagingService,
+      defaultFromNumber: twilioConfig.defaultFrom,
+      publicBaseUrl: publicBase(),
+      incomingNumberCount: numbers.length,
+      numbers: numbers.map((n) => ({ phoneNumber: n.phoneNumber, sid: n.sid })),
+    });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
+
+// POST /api/numbers/configure-all-webhooks — set voice/SMS/status webhooks on
+// EVERY number on the account (and, per number, the TwiML app + Messaging
+// Service inbound URL). Use after moving to a new Twilio account or changing
+// PUBLIC_BASE_URL. Idempotent; safe to re-run.
+numbersRouter.post('/numbers/configure-all-webhooks', requireSuperadmin, async (_req, res) => {
+  try {
+    const all = await twilioClient.incomingPhoneNumbers.list({ limit: 1000 });
+    const results: Array<{ number: string; sid: string; ok: boolean; warnings?: string[]; error?: string }> = [];
+    for (const n of all) {
+      try {
+        const { warnings } = await configureWebhooks(n.sid);
+        results.push({ number: n.phoneNumber, sid: n.sid, ok: true, warnings });
+      } catch (e: any) {
+        results.push({ number: n.phoneNumber, sid: n.sid, ok: false, error: e.message });
+      }
+    }
+    const configured = results.filter((r) => r.ok).length;
+    res.json({ ok: true, total: all.length, configured, failed: all.length - configured, results });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
+
+// POST /api/numbers/attach-to-service { sid? , phoneNumber? } — add a number
+// that already lives on THIS account to the configured Messaging Service.
+// It cannot move a number that belongs to a different Twilio account — that
+// transfer must happen first (Twilio Console / port process).
+numbersRouter.post('/numbers/attach-to-service', requireSuperadmin, async (req, res) => {
+  if (!twilioConfig.messagingServiceSid) {
+    return res.status(400).json({ error: 'No TWILIO_MESSAGING_SERVICE_SID is configured.' });
+  }
+  try {
+    let sid = String(req.body?.sid || '').trim();
+    const phoneNumber = String(req.body?.phoneNumber || '').trim();
+    if (!sid && phoneNumber) {
+      const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber, limit: 1 });
+      sid = found[0]?.sid || '';
+    }
+    if (!sid) {
+      return res.status(400).json({ error: 'Provide an sid, or a phoneNumber that exists on this account.' });
+    }
+    const attached = await twilioClient.messaging.v1
+      .services(twilioConfig.messagingServiceSid)
+      .phoneNumbers.create({ phoneNumberSid: sid });
+    res.json({ ok: true, sid: attached.sid, messagingServiceSid: twilioConfig.messagingServiceSid });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
