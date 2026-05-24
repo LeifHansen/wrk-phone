@@ -7,15 +7,28 @@ import { OWNER_ID } from '../lib/auth.js';
 export const conversationsRouter = Router();
 
 // GET /api/conversations  -> inbox list (with assigned agent meta)
+//
+// Hot path: polled every 30s and refetched on every SSE event. The previous
+// version issued THREE correlated subqueries PER conversation row (last body,
+// last direction, contact name) — N+3 queries on a growing inbox. This now
+// uses two preaggregated joins (latest message + contact name), one pass each.
 conversationsRouter.get('/conversations', (req, res) => {
   const USER = OWNER_ID;
   const rows = db.prepare(`
     SELECT c.id, c.peer_phone, c.last_message_at, c.unread_count, c.agent_id,
-           (SELECT body FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_body,
-           (SELECT direction FROM messages m WHERE m.conversation_id = c.id ORDER BY m.created_at DESC LIMIT 1) AS last_direction,
-           (SELECT name FROM contacts WHERE user_id = c.user_id AND phone = c.peer_phone LIMIT 1) AS name,
+           lm.body AS last_body, lm.direction AS last_direction,
+           ct.name AS name,
            a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color, a.mode AS agent_mode, a.avatar_url AS agent_avatar
     FROM conversations c
+    LEFT JOIN (
+      SELECT m.conversation_id, m.body, m.direction
+      FROM messages m
+      JOIN (
+        SELECT conversation_id, MAX(created_at) AS max_at
+        FROM messages GROUP BY conversation_id
+      ) lx ON lx.conversation_id = m.conversation_id AND lx.max_at = m.created_at
+    ) lm ON lm.conversation_id = c.id
+    LEFT JOIN contacts ct ON ct.user_id = c.user_id AND ct.phone = c.peer_phone
     LEFT JOIN agents a ON a.id = COALESCE(c.agent_id,
                                           (SELECT id FROM agents WHERE user_id = c.user_id AND is_default = 1 LIMIT 1))
     WHERE c.user_id = ?
@@ -59,9 +72,16 @@ conversationsRouter.patch('/conversations/:id/autopilot', (req, res) => {
 });
 
 // Delete a whole conversation + its messages.
+// Order matters: scope the messages delete THROUGH the conversation row's
+// ownership. The previous version blindly deleted by conversation_id with no
+// user scoping, so without the FK cascade in place (or with mis-scoped auth)
+// you could wipe any conversation's messages by guessing its id.
 conversationsRouter.delete('/conversations/:id', (req, res) => {
   const id = Number(req.params.id);
-  db.prepare('DELETE FROM messages WHERE conversation_id = ?').run(id);
+  db.prepare(
+    `DELETE FROM messages
+       WHERE conversation_id IN (SELECT id FROM conversations WHERE id = ? AND user_id = ?)`
+  ).run(id, OWNER_ID);
   const r = db.prepare('DELETE FROM conversations WHERE id = ? AND user_id = ?').run(id, OWNER_ID);
   res.json({ ok: true, deleted: r.changes });
 });

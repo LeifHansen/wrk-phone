@@ -43,7 +43,11 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
     const matches =
       (e.kind === 'message:new' && e.conversationId === convId) ||
       (e.kind === 'voicemail:new' && e.conversationId === convId) ||
-      e.kind === 'message:status'; // status can match a message we don't yet know the convId of
+      // Server now stamps message:status with its conversationId so other
+      // open threads can ignore the event. Fall back to refetching if it's
+      // missing (older server / unknown thread) — better than missing a
+      // delivery update on the user's current screen.
+      (e.kind === 'message:status' && (e.conversationId == null || e.conversationId === convId));
     if (matches) load().catch(() => {});
   }), [convId]);
   useEffect(() => {

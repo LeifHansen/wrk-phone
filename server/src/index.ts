@@ -10,7 +10,7 @@ import { voiceRouter } from './routes/voice.js';
 import { smsRouter } from './routes/sms.js';
 import { conversationsRouter } from './routes/conversations.js';
 import { agentRouter } from './routes/agent.js';
-import { campaignsRouter } from './routes/campaigns.js';
+import { campaignsRouter, recoverInterruptedCampaigns } from './routes/campaigns.js';
 import { pushRouter } from './routes/push.js';
 import { routingRouter } from './routes/routing.js';
 import { diagRouter } from './routes/diag.js';
@@ -202,5 +202,9 @@ app.listen(port, '0.0.0.0', () => {
   if (!process.env.PUBLIC_BASE_URL) {
     console.warn('Warning: PUBLIC_BASE_URL not set. Twilio webhooks need a public URL.');
   }
+  // Recover any campaigns mid-send when this process started (Fly deploy /
+  // crash). Runs before scheduler so a half-sent blast that fell off the
+  // previous boot reconciles its credit reservation immediately.
+  recoverInterruptedCampaigns();
   startBlogScheduler();
 });

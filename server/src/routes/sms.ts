@@ -106,24 +106,41 @@ smsRouter.post('/sms/inbound', async (req, res) => {
     try {
       const { reply, safeToAutoSend } = await generateReply(owner, convId, body);
       const safetyBlocked = SAFETY_REGEX.test(body) ? 1 : 0;
-      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(owner, messageCost(reply, false))) {
+      const cost = messageCost(reply, false);
+      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(owner, cost)) {
         const agentNum = (agent as any).send_number;
+        // Track what was actually delivered so we (a) don't queue a row that
+        // wasn't sent, (b) don't double-send (out-of-band + TwiML), and
+        // (c) refund credits if every send path failed.
+        let actuallySent: { sid: string | null; status: string } | null = null;
         if (agentNum) {
-          // Reply FROM the agent's assigned number (out-of-band, not TwiML).
           try {
             const p: any = { to: from, body: reply, from: agentNum };
             const cb = smsStatusCallback();
             if (cb) p.statusCallback = cb;
-            await twilioClient.messages.create(p);
-          } catch (e) { twiml.message(reply); /* fallback to reply on same number */ }
+            const m = await twilioClient.messages.create(p);
+            actuallySent = { sid: m.sid, status: m.status };
+          } catch (e) {
+            // Out-of-band send failed → fall back to the inbound's same-line
+            // TwiML reply instead (one path or the other, never both).
+            log.warn('sms.inbound', `agent send_number ${agentNum} failed; falling back to same-line TwiML reply`, e);
+            twiml.message(reply);
+            actuallySent = { sid: null, status: 'queued' };
+          }
         } else {
           twiml.message(reply);
+          actuallySent = { sid: null, status: 'queued' };
         }
-        db.prepare(
-          `INSERT INTO messages (conversation_id, direction, body, status, created_at, is_ai, agent_id)
-           VALUES (?, 'out', ?, 'queued', ?, 1, ?)`
-        ).run(convId, reply, Date.now(), agent.id);
-        emit({ kind: 'message:new', conversationId: convId, direction: 'out' });
+        if (actuallySent) {
+          db.prepare(
+            `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, is_ai, agent_id)
+             VALUES (?, 'out', ?, ?, ?, ?, 1, ?)`
+          ).run(convId, reply, actuallySent.sid, actuallySent.status, Date.now(), agent.id);
+          emit({ kind: 'message:new', conversationId: convId, direction: 'out' });
+        } else {
+          // Truly nothing went out — refund the credit we just spent.
+          addCredits(owner, cost);
+        }
       } else if (reply) {
         // Suggestion (either suggest mode, or auto + sensitive)
         db.prepare(
@@ -208,7 +225,15 @@ smsRouter.post('/sms/status', (req, res) => {
   const status = String(req.body.MessageStatus || '');
   if (sid) {
     const r = db.prepare('UPDATE messages SET status = ? WHERE twilio_sid = ?').run(status, sid);
-    if (r.changes) emit({ kind: 'message:status', sid, status });
+    if (r.changes) {
+      // Include conversationId so clients viewing other threads can ignore
+      // this event — without it every open thread re-fetches on every Twilio
+      // delivery callback.
+      const conv = db.prepare(
+        'SELECT conversation_id FROM messages WHERE twilio_sid = ? LIMIT 1'
+      ).get(sid) as { conversation_id: number } | undefined;
+      emit({ kind: 'message:status', sid, status, conversationId: conv?.conversation_id });
+    }
   }
   res.sendStatus(204);
 });
@@ -216,12 +241,17 @@ smsRouter.post('/sms/status', (req, res) => {
 smsRouter.post('/sms/suggestion/:id/approve', async (req, res) => {
   const id = Number(req.params.id);
   const row = db.prepare(
-    `SELECT m.*, c.peer_phone FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.id = ?`
+    `SELECT m.*, c.peer_phone, c.our_number FROM messages m JOIN conversations c ON c.id = m.conversation_id WHERE m.id = ?`
   ).get(id) as any;
   if (!row || !row.is_suggestion) return res.status(404).json({ error: 'not found' });
   try {
     const params: any = { to: row.peer_phone, body: row.body };
-    if (twilioConfig.messagingServiceSid) params.messagingServiceSid = twilioConfig.messagingServiceSid;
+    // Stay on the SAME line the thread is on. Falling back to a Messaging
+    // Service or the global defaultFrom would silently send the approved
+    // reply from a different number, breaking the contact's threading and
+    // making it look like a new sender.
+    if (row.our_number) params.from = row.our_number;
+    else if (twilioConfig.messagingServiceSid) params.messagingServiceSid = twilioConfig.messagingServiceSid;
     else params.from = twilioConfig.defaultFrom;
     const cb = smsStatusCallback();
     if (cb) params.statusCallback = cb;

@@ -23,25 +23,40 @@ agentRouter.get('/agent-presets', (_req, res) => {
 });
 
 // ---- List ----
+// Previously ran 2 subqueries PER agent (conv count + 7d sent count). With 30
+// agents that was 60 queries per inbox tick. Now collapsed to TWO grouped
+// queries total — counts keyed by agent_id, with NULL bucketed onto the
+// default agent so the "(agent_id = ?) OR (agent_id IS NULL AND is_default)"
+// fallback behavior is preserved.
 agentRouter.get('/agents', (_req, res) => {
   const rows = db.prepare(
     `SELECT * FROM agents WHERE user_id = ? ORDER BY is_default DESC, created_at DESC`
   ).all(USER) as AgentRow[];
-  // Annotate with usage counts (conversations + recent AI messages)
-  const annotated = rows.map((a) => {
-    const convs = (db.prepare(
-      `SELECT COUNT(*) AS n FROM conversations WHERE user_id = ? AND ((agent_id = ?) OR (agent_id IS NULL AND ? = 1))`
-    ).get(USER, a.id, a.is_default) as any).n;
-    const sent7d = (db.prepare(
-      `SELECT COUNT(*) AS n FROM messages m
-       JOIN conversations c ON c.id = m.conversation_id
-       WHERE c.user_id = ? AND m.is_ai = 1 AND m.is_suggestion = 0
-         AND ((c.agent_id = ?) OR (c.agent_id IS NULL AND ? = 1))
-         AND m.created_at > ?`
-    ).get(USER, a.id, a.is_default, Date.now() - 7 * 86400000) as any).n;
-    return { ...hydrateAgent(a), conversations: convs, ai_sent_7d: sent7d };
-  });
-  res.json(annotated);
+  if (rows.length === 0) return res.json([]);
+  const defaultId = rows.find((r) => r.is_default)?.id ?? null;
+  const convCounts = new Map<number, number>();
+  for (const r of db.prepare(
+    `SELECT COALESCE(agent_id, ?) AS aid, COUNT(*) AS n
+       FROM conversations WHERE user_id = ?
+       GROUP BY COALESCE(agent_id, ?)`
+  ).all(defaultId, USER, defaultId) as { aid: number | null; n: number }[]) {
+    if (r.aid != null) convCounts.set(Number(r.aid), Number(r.n));
+  }
+  const cutoff = Date.now() - 7 * 86400000;
+  const sentCounts = new Map<number, number>();
+  for (const r of db.prepare(
+    `SELECT COALESCE(c.agent_id, ?) AS aid, COUNT(*) AS n
+       FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.user_id = ? AND m.is_ai = 1 AND m.is_suggestion = 0 AND m.created_at > ?
+       GROUP BY COALESCE(c.agent_id, ?)`
+  ).all(defaultId, USER, cutoff, defaultId) as { aid: number | null; n: number }[]) {
+    if (r.aid != null) sentCounts.set(Number(r.aid), Number(r.n));
+  }
+  res.json(rows.map((a) => ({
+    ...hydrateAgent(a),
+    conversations: convCounts.get(a.id) ?? 0,
+    ai_sent_7d: sentCounts.get(a.id) ?? 0,
+  })));
 });
 
 // ---- Get one ----

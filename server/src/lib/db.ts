@@ -44,6 +44,9 @@ db.exec(`
     safety_blocked INTEGER NOT NULL DEFAULT 0
   );
   CREATE INDEX IF NOT EXISTS idx_messages_conv ON messages(conversation_id, created_at);
+  -- Hot path: every inbound Twilio webhook checks idempotency by twilio_sid.
+  -- Without this index a growing messages table forces a full scan per webhook.
+  CREATE INDEX IF NOT EXISTS idx_messages_twilio_sid ON messages(twilio_sid) WHERE twilio_sid IS NOT NULL;
 
   CREATE TABLE IF NOT EXISTS calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -299,38 +302,9 @@ db.prepare(
      )`
 ).run();
 
-// Migrate legacy agent_settings (single row per user) into agents.
-try {
-  const legacy = db.prepare(
-    `SELECT name FROM sqlite_master WHERE type='table' AND name='agent_settings'`
-  ).get();
-  if (legacy) {
-    const rows = db.prepare(`SELECT * FROM agent_settings`).all() as any[];
-    for (const r of rows) {
-      const exists = db.prepare(
-        `SELECT id FROM agents WHERE user_id = ? AND name = ?`
-      ).get(r.user_id, 'Default') as { id: number } | undefined;
-      if (exists) continue;
-      const now = Date.now();
-      db.prepare(
-        `INSERT INTO agents (user_id, name, emoji, color, role, persona, instructions, examples_json,
-                             mode, voice_mode, is_default, created_at, updated_at)
-         VALUES (?, 'Default', '🤖', 'lime', 'personal', ?, ?, ?, ?, ?, 1, ?, ?)`
-      ).run(
-        r.user_id,
-        r.persona || '',
-        r.instructions || '',
-        r.examples_json || '[]',
-        r.mode || 'off',
-        r.voice_mode || 'off',
-        now,
-        now
-      );
-    }
-  }
-} catch (e) {
-  log.warn('db.migrate', 'legacy agent_settings migration failed', e);
-}
+// Legacy `agent_settings` -> `agents` migration was a one-shot for the v0.1
+// schema. Prod has been on the multi-agent schema for months; the table no
+// longer exists. Code removed to avoid a sqlite_master poll on every boot.
 
 export function getOrCreateConversation(
   userId: string,

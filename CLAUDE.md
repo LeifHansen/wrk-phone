@@ -38,7 +38,7 @@ Build checks: `cd server && npm run build` (tsc), `cd web && npm run build`
   guard is a no-op. Unauthenticated requests resolve to `OWNER_ID` so
   signature-verified Twilio/Stripe webhooks still pass.
 - **PUBLIC_BASE_URL** must be the public https origin Twilio reaches.
-  Production: set in `fly.toml` (`https://wrk-phone-8ebcfd.fly.dev`).
+  Production: set in `fly.toml` (currently `https://wrkphn.com`).
   Local: your tunnel URL (`ngrok http 4000`) in `server/.env`, also pasted
   into the Twilio number's webhook fields. Webhook signature validation
   fails closed in production if this is missing.
@@ -51,15 +51,18 @@ sanitization, atomic campaign credit reservation + correct refund logic,
 route-level code splitting, visibility-aware polling, single Twilio incoming
 handler.
 
-## Known remaining gaps (from audit, not yet done)
+## Known remaining gaps (the real ones)
 
-- Stripe webhook signature verification (`/api/credits/webhook`).
-- `area_code` routing condition mis-matches non-US (`+44…`) numbers
-  (`server/src/lib/routing.ts`) — country code not stripped.
-- Frontend Twilio `Device` is never destroyed on logout / identity change
-  (`web/src/lib/voice.ts`) — stale registration after re-login.
-- Plus the README "Production checklist": per-user auth/numbers, A2P 10DLC,
-  WebSockets instead of 4s polling, OpenAI cost guardrails, Postgres for
+- **Single-user demo mode** is still in effect (`OWNER_ID`/`DEMO_USER_ID`).
+  Per-user telephony/inbox is a separate, larger build — see the comments in
+  `routes/conversations.ts` and `lib/numbers-store.ts`. The schema already
+  keys most rows on `user_id`, but the routes hardcode `USER = OWNER_ID`.
+- **Campaign send loop** has retry-on-restart now (see
+  `recoverInterruptedCampaigns()` in `routes/campaigns.ts`) but still no
+  per-recipient retry inside a single run — a transient Twilio failure
+  marks the recipient `failed` immediately, no backoff.
+- Per the README "Production checklist": A2P 10DLC, WebSockets (currently
+  SSE + 30s polling fallback), OpenAI cost guardrails, Postgres for
   multi-instance, structured logging.
 
 See `README.md` for the full product/feature/deploy detail.

@@ -37,7 +37,11 @@ export function Campaigns() {
     api.listCampaigns().then((r) => setList(r as Campaign[])).catch(() => {});
     api.listSegments().then(setSegments).catch(() => {});
   };
-  usePolling(load, 4000);
+  // Tight 4s poll only while a campaign is actively sending — once everything
+  // is draft/done/failed, drop to 15s. Saves ~75% of requests on a typical
+  // page that's just being watched.
+  const anySending = list.some((c) => c.status === 'sending');
+  usePolling(load, anySending ? 4000 : 15000);
 
   const genImage = async () => {
     if (!imgPrompt.trim()) return;

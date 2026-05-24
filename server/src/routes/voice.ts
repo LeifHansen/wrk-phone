@@ -36,9 +36,9 @@ voiceRouter.post('/voice/outbound', (req, res) => {
       if (/^\+?\d+$/.test(to)) dial.number(to);
       else dial.client(to);
     }
-    const xml = twiml.toString();
-    log.info('voice/outbound', 'twiml returned', { xml });
-    res.type('text/xml').send(xml);
+    // Don't log the full TwiML on every connect — the dialed E.164 lands in
+    // the call-request line above; this just adds noise + PII to every outbound.
+    res.type('text/xml').send(twiml.toString());
   } catch (e: any) {
     log.error('voice/outbound', 'handler threw', e);
     res.type('text/xml').send(new VoiceResponse().toString());
@@ -106,18 +106,16 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
   const from = String(req.body.From || 'unknown');
   const text = String(req.body.TranscriptionText || '');
   const sid = String(req.body.RecordingSid || '');
-  const owner = resolveInboundOwner(String(req.body.To || ''), from);
+  const toNumber = String(req.body.To || '');
+  const owner = resolveInboundOwner(toNumber, from);
   if (!owner) {
     // Voicemail on a shared number we can't attribute — drop it.
     return res.sendStatus(204);
   }
-  const conv = db.prepare(
-    'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
-  ).get(owner, from) as { id: number } | undefined;
-  const convId = conv?.id || Number(
-    db.prepare('INSERT INTO conversations (user_id, peer_phone, last_message_at) VALUES (?, ?, ?)')
-      .run(owner, from, Date.now()).lastInsertRowid
-  );
+  // Use the shared helper so the conversation row is stamped with our_number
+  // — a raw INSERT here would leave it NULL and the next inbound from this
+  // peer would fail resolveInboundOwner (no thread on this line yet) and drop.
+  const convId = getOrCreateConversation(owner, from, toNumber || null);
   db.prepare(
     `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at)
      VALUES (?, 'in', ?, ?, 'voicemail', ?)`

@@ -7,6 +7,35 @@ import { log } from '../lib/log.js';
 export const campaignsRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
 
+// Recover campaigns left in 'sending' from a previous process (Fly deploy /
+// OOM / crash mid-loop). Without this, the in-memory send loop is gone but
+// the row is stuck at 'sending' forever and the reserved-but-unsent credits
+// silently float. Refund every still-pending recipient and flip the campaign
+// back to 'draft' so it can be re-sent. Idempotent — safe to call at every boot.
+export function recoverInterruptedCampaigns(): void {
+  try {
+    const stuck = db.prepare(
+      `SELECT * FROM campaigns WHERE status = 'sending'`
+    ).all() as any[];
+    for (const c of stuck) {
+      const pending = db.prepare(
+        `SELECT phone FROM campaign_recipients WHERE campaign_id = ? AND status = 'pending'`
+      ).all(c.id) as { phone: string }[];
+      let refunded = 0;
+      for (const p of pending) {
+        const cost = messageCost(String(c.template), !!c.media_url);
+        addCredits(c.user_id, cost);
+        refunded += cost;
+      }
+      db.prepare(`UPDATE campaigns SET status = 'draft' WHERE id = ?`).run(c.id);
+      log.warn('campaigns.recover',
+        `campaign ${c.id} ("${c.name}") was 'sending' at boot — refunded ${refunded} credits for ${pending.length} unsent recipients and reset to draft`);
+    }
+  } catch (e) {
+    log.error('campaigns.recover', 'recovery sweep failed', e);
+  }
+}
+
 // GET /api/campaigns
 campaignsRouter.get('/campaigns', (_req, res) => {
   const rows = db.prepare(

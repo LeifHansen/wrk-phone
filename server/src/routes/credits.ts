@@ -83,6 +83,13 @@ creditsRouter.post('/credits/checkout', async (req, res) => {
 export function stripeWebhookHandler(req: Request, res: Response) {
   if (!stripe) return res.status(503).send('stripe not configured');
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
+  // STRIPE_WEBHOOK_INSECURE is a DEV-ONLY escape hatch. Hard-refuse it in
+  // production: if it's ever set with NODE_ENV=production, the only safe
+  // behavior is to reject the webhook outright (anything else lets an attacker
+  // forge a 'checkout.session.completed' and credit themselves).
+  if (process.env.NODE_ENV === 'production' && process.env.STRIPE_WEBHOOK_INSECURE === '1') {
+    return res.status(500).send('refusing STRIPE_WEBHOOK_INSECURE in production');
+  }
   let event: Stripe.Event;
   if (!secret) {
     // No signature secret = cannot prove the request is really Stripe. An

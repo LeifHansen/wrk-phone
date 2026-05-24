@@ -73,10 +73,19 @@ export function normalizePhone(raw: string): string | null {
 }
 
 function withSegments(rows: any[]): any[] {
+  if (rows.length === 0) return rows;
+  // Scope the segment-link scan to the contacts we're actually returning
+  // (rows is capped at 500–1000). The previous version pulled EVERY
+  // contact_segments row for the user on every /contacts call — for a user
+  // with 10k contacts × N segments that was a full-table read each request.
+  const ids = rows.map((r) => Number(r.id)).filter((n) => Number.isFinite(n));
+  const placeholders = ids.map(() => '?').join(',');
   const segByContact = new Map<number, { id: number; name: string }[]>();
   const links = db.prepare(
-    `SELECT cs.contact_id, s.id, s.name FROM contact_segments cs JOIN segments s ON s.id = cs.segment_id WHERE s.user_id = ?`
-  ).all(USER) as any[];
+    `SELECT cs.contact_id, s.id, s.name
+       FROM contact_segments cs JOIN segments s ON s.id = cs.segment_id
+       WHERE s.user_id = ? AND cs.contact_id IN (${placeholders})`
+  ).all(USER, ...ids) as any[];
   for (const l of links) {
     if (!segByContact.has(l.contact_id)) segByContact.set(l.contact_id, []);
     segByContact.get(l.contact_id)!.push({ id: l.id, name: l.name });
