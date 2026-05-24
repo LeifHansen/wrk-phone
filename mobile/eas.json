@@ -26,10 +26,9 @@
   "submit": {
     "production": {
       "ios": {
-        "_comment": "Fill these from App Store Connect, then run: eas submit -p ios --profile production",
-        "appleId": "REPLACE_WITH_APPLE_ID_EMAIL",
-        "ascAppId": "REPLACE_WITH_APP_STORE_CONNECT_APP_ID",
-        "appleTeamId": "REPLACE_WITH_APPLE_TEAM_ID"
+        "appleId": "layfansun@gmail.com",
+        "ascAppId": "PENDING_CREATE_IN_APP_STORE_CONNECT",
+        "appleTeamId": "637678XV8Y"
       },
       "android": {
         "_comment": "Place the Play service-account JSON at mobile/play-service-account.json (gitignored), then run: eas submit -p android --profile production",
