@@ -1,8 +1,9 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
 import { IconContacts } from '../components/Icons';
+import { SmsAiTools } from '../components/SmsAiTools';
 import { toast } from '../components/Toast';
 
 const KEYS = [
@@ -35,6 +36,18 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
   const [contacts, setContacts] = useState<any[]>([]);
   const [q, setQ] = useState('');
   const textRef = useRef<HTMLInputElement>(null);
+  // TEXT-mode composer: lets the user write the message right here on the
+  // Phone tab instead of being bounced into a conversation thread first.
+  const [msg, setMsg] = useState('');
+  // Templates picker — lets the user pick a saved template and (when there's
+  // a recipient) renders {{first_name}} / {{name}} / {{phone}} against the
+  // contact row before dropping the body into the textarea.
+  const [templates, setTemplates] = useState<{ id: number; name: string; body: string; media_url: string | null }[]>([]);
+  const [tplOpen, setTplOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  useEffect(() => {
+    api.listTemplates().then((t) => setTemplates(t)).catch(() => {});
+  }, []);
 
   const press = (k: string) => setNum((n) => n + k);
   const back = () => setNum((n) => n.slice(0, -1));
@@ -60,16 +73,58 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
     setPick(false);
   };
 
-  const go = async () => {
+  // Call path stays the same: tap → place the call.
+  const goCall = async () => {
     const target = e164(num);
     if (!target) return;
-    if (mode === 'call') {
-      onCall(target);
-      try { await placeCall(target); } catch (e: any) { toast(`Call failed: ${e.message}`, 'err'); }
-    } else {
+    onCall(target);
+    try { await placeCall(target); } catch (e: any) { toast(`Call failed: ${e.message}`, 'err'); }
+  };
+
+  // Send the typed message right away. Creates / reuses the conversation
+  // server-side (phone is normalized) and jumps the user into the thread.
+  const sendText = async () => {
+    const target = e164(num);
+    if (!target || !msg.trim() || sending) return;
+    setSending(true);
+    try {
       const { id } = await api.startConversation(target);
+      await api.sendSms(target, msg.trim());
+      setNum(''); setMsg('');
       nav(`/conversation/${id}`);
+    } catch (e: any) {
+      toast(`Send failed: ${e.message}`, 'err');
+    } finally { setSending(false); }
+  };
+
+  // Save as draft — the conversation row is created so the draft has a home
+  // (and shows up in Messages → Drafts), but nothing goes out to Twilio.
+  const saveDraftText = async () => {
+    const target = e164(num);
+    if (!target || (!msg.trim())) {
+      toast('Need a number and a message to save a draft.', 'err');
+      return;
     }
+    try {
+      await api.saveDraft({ peer_phone: target, body: msg.trim() });
+      setNum(''); setMsg('');
+      toast('Draft saved — find it in Messages → Drafts');
+    } catch (e: any) {
+      toast(`Save failed: ${e.message}`, 'err');
+    }
+  };
+
+  // Pick a template + render its tokens against the current recipient (if
+  // one is set). Falls back to the raw body when there's no contact yet.
+  const useTemplate = async (id: number) => {
+    setTplOpen(false);
+    try {
+      const target = e164(num);
+      const rendered = target
+        ? await api.renderTemplate(id, { phone: target })
+        : await api.getTemplate(id);
+      setMsg((cur) => (cur ? `${cur}\n${rendered.body}` : rendered.body));
+    } catch (e: any) { toast(`Template failed: ${e.message}`, 'err'); }
   };
 
   const filtered = contacts.filter((c) => {
@@ -112,7 +167,8 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
           </div>
         </>
       ) : (
-        <div className="text-entry">
+        <div className="text-entry" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {/* Recipient row */}
           <div className="text-entry-field">
             <input
               ref={textRef}
@@ -123,33 +179,86 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
               placeholder="Type a number, or pick a contact"
               value={num}
               onChange={(e) => setNum(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') go(); }}
             />
-            {!num && (
-              <button className="contacts-ico in-field" onClick={openPicker}
-                title="Select from contacts" aria-label="Select from contacts">
-                <IconContacts size={20} />
-              </button>
-            )}
+            <button className="contacts-ico in-field" onClick={openPicker}
+              title="Select from contacts" aria-label="Select from contacts">
+              <IconContacts size={20} />
+            </button>
           </div>
-          <p className="text-entry-hint">Enter who to text, then tap ✉</p>
+
+          {/* Composer */}
+          <textarea
+            className="textarea"
+            placeholder="Type your message…"
+            value={msg}
+            onChange={(e) => setMsg(e.target.value)}
+            rows={5}
+            style={{ minHeight: 110 }}
+          />
+
+          {/* Template picker — useful for one-off sends with token substitution */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+            <button className="btn ghost" onClick={() => setTplOpen((s) => !s)}
+              disabled={templates.length === 0}
+              title={templates.length === 0 ? 'No templates yet — create one in Messages → Templates' : 'Insert a saved template'}>
+              📝 Template
+            </button>
+            <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+              Tip: <code>{'{{first_name}}'}</code> pulls from the contact when there's a recipient.
+            </span>
+          </div>
+          {tplOpen && (
+            <div className="cond-card" style={{ display: 'grid', gap: 6, maxHeight: 200, overflowY: 'auto' }}>
+              {templates.map((t) => (
+                <button key={t.id} className="btn ghost" style={{ textAlign: 'left', justifyContent: 'flex-start' }}
+                  onClick={() => useTemplate(t.id)}>
+                  <b>{t.name}</b> — <span style={{ color: 'var(--muted)' }}>{t.body.slice(0, 60)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Optimize with AI for the composer */}
+          {msg.trim() && (
+            <SmsAiTools text={msg} goal="1:1 customer text" onApply={setMsg} compact />
+          )}
+
+          {/* Send / Save as Draft */}
+          <div style={{ display: 'flex', gap: 8 }}>
+            <button className="btn lime lg" style={{ flex: 1 }}
+              onClick={sendText}
+              disabled={!e164(num) || !msg.trim() || sending}
+              title="Send the message now">
+              {sending ? 'Sending…' : '✉ Send'}
+            </button>
+            <button className="btn ghost lg" style={{ flex: 1 }}
+              onClick={saveDraftText}
+              disabled={!e164(num) || !msg.trim() || sending}
+              title="Save without sending — find it later in Messages → Drafts">
+              💾 Save as Draft
+            </button>
+          </div>
         </div>
       )}
 
-      <div className="phone-actions">
-        <span className="pa-side" aria-hidden="true" />
-        <button
-          className={'pa-go ' + (mode === 'call' ? 'go-call' : 'go-text')}
-          onClick={go}
-          disabled={!num}
-        >
-          {mode === 'call' ? '✆' : '✉'}
-        </button>
-        <button className="pa-side" onClick={back} title="Delete" aria-label="Delete">
-          <span className="pa-glyph">⌫</span>
-          <span className="pa-cap">{num ? 'DEL' : ''}</span>
-        </button>
-      </div>
+      {/* CALL-mode dial pad action row — only render when on call mode so
+          the action row doesn't fight the new TEXT-mode composer's buttons. */}
+      {mode === 'call' && (
+        <div className="phone-actions">
+          <span className="pa-side" aria-hidden="true" />
+          <button
+            className="pa-go go-call"
+            onClick={goCall}
+            disabled={!num}
+          >
+            ✆
+          </button>
+          <button className="pa-side" onClick={back} title="Delete" aria-label="Delete">
+            <span className="pa-glyph">⌫</span>
+            <span className="pa-cap">{num ? 'DEL' : ''}</span>
+          </button>
+        </div>
+      )}
 
       {pick && (
         <>

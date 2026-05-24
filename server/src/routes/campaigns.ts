@@ -4,6 +4,8 @@ import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { spendCredits, addCredits, getCredits, messageCost, isOptedOut, getActiveNumber } from '../lib/db.js';
 import { listSenderNumbers, isTollFree } from '../lib/numbers-store.js';
 import { processBatch } from '../lib/messagingProcessor.js';
+import { renderTemplate } from './templates.js';
+import { firstNameFrom } from '../lib/phone.js';
 import { log } from '../lib/log.js';
 
 export const campaignsRouter = Router();
@@ -105,7 +107,13 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
   // Opted-out recipients are excluded from the reservation (we never send to
   // them) and marked failed without a charge.
   const work = recipients.map((r) => {
-    const body = String(campaign.template).replace(/\{\{\s*name\s*\}\}/g, r.name || 'there');
+    // Shared template renderer — supports {{first_name}}, {{name}}, {{phone}}.
+    // Defaults the first-name to "there" so blasts don't ship "Hi ,".
+    const body = renderTemplate(String(campaign.template), {
+      firstName: firstNameFrom(r.name) || 'there',
+      name: r.name || r.phone,
+      phone: r.phone,
+    });
     return { r, body, cost: messageCost(body, !!campaign.media_url), optedOut: isOptedOut(USER, r.phone) };
   });
   const reserve = work.reduce((sum, w) => sum + (w.optedOut ? 0 : w.cost), 0);

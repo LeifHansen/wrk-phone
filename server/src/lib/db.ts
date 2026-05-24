@@ -253,6 +253,20 @@ db.exec(`
     released_at INTEGER
   );
 
+  -- Reusable message templates. Selectable from the conversation composer
+  -- (one-off sends) and the campaigns form. {{first_name}} (and any future
+  -- {{token}}) is resolved at send time from the recipient's contact row.
+  CREATE TABLE IF NOT EXISTS templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    name TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    media_url TEXT,                     -- optional MMS image
+    created_at INTEGER NOT NULL,
+    updated_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_templates_user ON templates(user_id, updated_at DESC);
+
   -- Outbound AI voice calls. The "Call with Agent" feature: pick an agent,
   -- write a script, pick recipients, dial them automatically and have the
   -- agent deliver the message in its voice. Mirrors the campaigns flow.
@@ -344,6 +358,126 @@ tryAddColumn('voices', 'cloned INTEGER NOT NULL DEFAULT 0');
 // human, the call apologizes briefly and hangs up; if voicemail, the
 // agent leaves the script as the voicemail message.
 tryAddColumn('agent_calls', 'voicemail_only INTEGER NOT NULL DEFAULT 0');
+// `status='draft'` lets the messages table double as the drafts store —
+// avoids a parallel `drafts` table that would drift on conversation delete.
+// Existing CHECK on status is a free-form TEXT; no constraint to alter.
+
+// ---------- Phone-normalization + dedupe sweep ----------
+// Pre-fix, contacts.phone and conversations.peer_phone were stored
+// byte-literal — so "2068173472" and "+12068173472" were different rows
+// even though they're the same person. This sweep:
+//   1. Normalizes every existing row to E.164 (best-effort via the same
+//      regex the API uses — see lib/phone.ts).
+//   2. Merges duplicates: keeps the row with a NAME (or oldest), redirects
+//      contact_segments + messages + campaigns_recipients references to
+//      the kept row, deletes the loser.
+// Idempotent — safe to re-run; rows that are already canonical pass through.
+import { normalizePhone as _normPhone } from './phone.js';
+function dedupePhoneRows() {
+  try {
+    // ---- Contacts ----
+    const contactRows = db.prepare(
+      `SELECT id, user_id, phone, name FROM contacts`
+    ).all() as { id: number; user_id: string; phone: string; name: string | null }[];
+    type ContactGroup = { keepId: number; mergeIds: number[]; canonicalPhone: string; canonicalName: string | null };
+    const contactGroups = new Map<string, ContactGroup>(); // key = user_id|canonicalPhone
+    for (const r of contactRows) {
+      const canonical = _normPhone(r.phone) || r.phone; // keep as-is if unparseable
+      const key = `${r.user_id}|${canonical}`;
+      const g = contactGroups.get(key);
+      if (!g) {
+        contactGroups.set(key, { keepId: r.id, mergeIds: [], canonicalPhone: canonical, canonicalName: r.name });
+      } else {
+        // Prefer the row that has a name; ties → keep the older (lower id).
+        if (!g.canonicalName && r.name) {
+          g.mergeIds.push(g.keepId);
+          g.keepId = r.id;
+          g.canonicalName = r.name;
+        } else {
+          g.mergeIds.push(r.id);
+        }
+      }
+    }
+    let mergedContacts = 0, renormalized = 0;
+    db.transaction(() => {
+      for (const g of contactGroups.values()) {
+        if (g.mergeIds.length > 0) {
+          // Redirect contact_segments to the kept contact, then drop dupes.
+          const inList = g.mergeIds.map(() => '?').join(',');
+          db.prepare(
+            `INSERT OR IGNORE INTO contact_segments (contact_id, segment_id)
+             SELECT ?, segment_id FROM contact_segments WHERE contact_id IN (${inList})`
+          ).run(g.keepId, ...g.mergeIds);
+          db.prepare(`DELETE FROM contact_segments WHERE contact_id IN (${inList})`).run(...g.mergeIds);
+          db.prepare(`DELETE FROM contacts WHERE id IN (${inList})`).run(...g.mergeIds);
+          mergedContacts += g.mergeIds.length;
+        }
+        // Snap the kept row to canonical phone form + ensure the best name wins.
+        const cur = db.prepare(`SELECT phone, name FROM contacts WHERE id = ?`).get(g.keepId) as { phone: string; name: string | null } | undefined;
+        if (cur && (cur.phone !== g.canonicalPhone || (!cur.name && g.canonicalName))) {
+          db.prepare(`UPDATE contacts SET phone = ?, name = COALESCE(NULLIF(name,''), ?) WHERE id = ?`)
+            .run(g.canonicalPhone, g.canonicalName, g.keepId);
+          renormalized++;
+        }
+      }
+    })();
+
+    // ---- Conversations ----
+    const convRows = db.prepare(
+      `SELECT id, user_id, peer_phone, last_message_at FROM conversations`
+    ).all() as { id: number; user_id: string; peer_phone: string; last_message_at: number }[];
+    type ConvGroup = { keepId: number; mergeIds: number[]; canonical: string };
+    const convGroups = new Map<string, ConvGroup>();
+    for (const r of convRows) {
+      const canonical = _normPhone(r.peer_phone) || r.peer_phone;
+      const key = `${r.user_id}|${canonical}`;
+      const g = convGroups.get(key);
+      if (!g) {
+        convGroups.set(key, { keepId: r.id, mergeIds: [], canonical });
+      } else {
+        // Prefer the one with the most recent activity as the keeper, since
+        // that's the thread the user actually engages with; otherwise oldest.
+        const keepRow = db.prepare(`SELECT last_message_at FROM conversations WHERE id = ?`).get(g.keepId) as { last_message_at: number };
+        if (r.last_message_at > (keepRow?.last_message_at || 0)) {
+          g.mergeIds.push(g.keepId);
+          g.keepId = r.id;
+        } else {
+          g.mergeIds.push(r.id);
+        }
+      }
+    }
+    let mergedConvs = 0;
+    db.transaction(() => {
+      for (const g of convGroups.values()) {
+        if (g.mergeIds.length > 0) {
+          const inList = g.mergeIds.map(() => '?').join(',');
+          // Re-point messages to the kept conversation (preserves history).
+          db.prepare(`UPDATE messages SET conversation_id = ? WHERE conversation_id IN (${inList})`)
+            .run(g.keepId, ...g.mergeIds);
+          // Sum unread counts; bump last_message_at to the latest across the group.
+          const agg = db.prepare(
+            `SELECT COALESCE(SUM(unread_count),0) AS unread, MAX(last_message_at) AS latest
+               FROM conversations WHERE id IN (${[g.keepId, ...g.mergeIds].map(()=>'?').join(',')})`
+          ).get(g.keepId, ...g.mergeIds) as { unread: number; latest: number };
+          db.prepare(`UPDATE conversations SET unread_count = ?, last_message_at = ? WHERE id = ?`)
+            .run(agg.unread, agg.latest, g.keepId);
+          db.prepare(`DELETE FROM conversations WHERE id IN (${inList})`).run(...g.mergeIds);
+          mergedConvs += g.mergeIds.length;
+        }
+        // Canonicalize the kept row's peer_phone.
+        db.prepare(`UPDATE conversations SET peer_phone = ? WHERE id = ?`).run(g.canonical, g.keepId);
+      }
+    })();
+
+    if (mergedContacts || mergedConvs || renormalized) {
+      log.warn('db.dedupe',
+        `phone dedupe sweep: merged ${mergedContacts} contacts + ${mergedConvs} conversations, renormalized ${renormalized} contact phones`);
+    }
+  } catch (e) {
+    log.error('db.dedupe', 'phone dedupe sweep failed', e);
+  }
+}
+dedupePhoneRows();
 
 // One-time backfill: stamp our_number on conversations created before the
 // column existed, using each account's current sending number. Without it a

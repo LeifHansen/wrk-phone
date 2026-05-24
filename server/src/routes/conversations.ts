@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { db, getAgentForConversation, hydrateAgent } from '../lib/db.js';
+import { normalizePhone } from '../lib/phone.js';
 import { OWNER_ID } from '../lib/auth.js';
 // Shared-line model: the inbox/conversations belong to the shared account
 // (OWNER), not the logged-in user. Per-user telephony is a future build.
@@ -88,9 +89,13 @@ conversationsRouter.delete('/conversations/:id', (req, res) => {
 
 conversationsRouter.post('/conversations', (req, res) => {
   const USER = OWNER_ID;
-  const peer = String(req.body.peer_phone || '').trim();
+  // ALWAYS normalize peer phone before lookup/insert — otherwise we end up
+  // with separate threads for "2068173472" and "+12068173472" even though
+  // they're the same person. See dedupePhoneRows() in lib/db.ts for the
+  // one-time cleanup of pre-fix duplicates.
+  const peer = normalizePhone(String(req.body.peer_phone || ''));
   const name = req.body.name ? String(req.body.name) : null;
-  if (!peer) return res.status(400).json({ error: 'peer_phone required' });
+  if (!peer) return res.status(400).json({ error: 'valid peer_phone required' });
   let convId: number;
   const existing = db.prepare(
     'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
@@ -110,6 +115,63 @@ conversationsRouter.post('/conversations', (req, res) => {
     ).run(USER, peer, name);
   }
   res.json({ id: convId });
+});
+
+// ---------- drafts ----------
+// A draft = a row in `messages` with status='draft', direction='out',
+// living on a conversation (the conversation row is created on first save
+// so the recipient context survives). The drafts subtab queries this set.
+conversationsRouter.get('/drafts', (req, res) => {
+  const USER = OWNER_ID;
+  const rows = db.prepare(`
+    SELECT m.id AS draft_id, m.body AS draft_body, m.created_at AS draft_at,
+           c.id AS conversation_id, c.peer_phone, c.our_number,
+           (SELECT name FROM contacts WHERE user_id = c.user_id AND phone = c.peer_phone LIMIT 1) AS name
+      FROM messages m
+      JOIN conversations c ON c.id = m.conversation_id
+     WHERE c.user_id = ? AND m.status = 'draft'
+     ORDER BY m.created_at DESC
+  `).all(USER);
+  res.json(rows);
+});
+
+// POST /api/drafts  body: { peer_phone, body, media_url? }
+// Save (or upsert the latest open draft to) a draft message bound to a
+// conversation. Returns the conversation id + draft id so the UI can either
+// stay on the draft form or navigate into the thread.
+conversationsRouter.post('/drafts', (req, res) => {
+  const USER = OWNER_ID;
+  const peer = normalizePhone(String(req.body.peer_phone || ''));
+  const body = String(req.body.body || '');
+  const media_url = req.body.media_url ? String(req.body.media_url) : null;
+  if (!peer) return res.status(400).json({ error: 'valid peer_phone required' });
+  if (!body && !media_url) return res.status(400).json({ error: 'body or media_url required' });
+  // Get-or-create the conversation so it shows up in the inbox too.
+  const existing = db.prepare(
+    'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
+  ).get(USER, peer) as { id: number } | undefined;
+  const convId = existing?.id || Number(
+    db.prepare('INSERT INTO conversations (user_id, peer_phone, last_message_at) VALUES (?, ?, ?)')
+      .run(USER, peer, Date.now()).lastInsertRowid
+  );
+  const draftId = Number(
+    db.prepare(
+      `INSERT INTO messages (conversation_id, direction, body, status, created_at, media_url)
+       VALUES (?, 'out', ?, 'draft', ?, ?)`
+    ).run(convId, body, Date.now(), media_url).lastInsertRowid
+  );
+  res.json({ id: draftId, conversation_id: convId });
+});
+
+// DELETE /api/drafts/:id — discard a draft
+conversationsRouter.delete('/drafts/:id', (req, res) => {
+  const USER = OWNER_ID;
+  // Scope through the conversation so a forged id can't wipe someone else's row.
+  db.prepare(
+    `DELETE FROM messages WHERE id = ? AND status = 'draft'
+       AND conversation_id IN (SELECT id FROM conversations WHERE user_id = ?)`
+  ).run(Number(req.params.id), USER);
+  res.json({ ok: true });
 });
 
 conversationsRouter.get('/calls', (req, res) => {

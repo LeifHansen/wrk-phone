@@ -16,8 +16,36 @@ export const IconMessage = ({ size }: P) => (
 export const IconContacts = ({ size }: P) => (
   <svg {...base(size)}><circle cx="9" cy="8.5" r="3.2"/><path d="M3.5 19a5.5 5.5 0 0 1 11 0"/><path d="M16 6.5a3 3 0 0 1 0 6M16.5 19a5.5 5.5 0 0 0-2.2-4.4"/></svg>
 );
-export const IconBlast = ({ size }: P) => (
-  <svg {...base(size)}><path d="M3.5 10.5 20 4l-3 16-5.5-5.5z"/><path d="M11.5 14.5 9 21"/></svg>
+// Renamed Blast → Campaigns; new icon is a megaphone (marketing/announcement
+// vibe) instead of a paper-airplane arrow. Old export is kept as an alias so
+// any straggler imports keep compiling.
+export const IconCampaigns = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M3.5 10v4l9 4V6l-9 4z"/>
+    <path d="M12.5 6c2.5.4 4 2.5 4 6s-1.5 5.6-4 6"/>
+    <path d="M6 14l1 5h2.5l-.7-3.6"/>
+    <path d="M19 8.5v7"/>
+  </svg>
+);
+export const IconBlast = IconCampaigns;
+
+// Media library icon — image-stack (photo with corner peel = library/grid).
+export const IconMedia = ({ size }: P) => (
+  <svg {...base(size)}>
+    <rect x="4" y="5" width="13" height="13" rx="2"/>
+    <circle cx="9" cy="10" r="1.5"/>
+    <path d="m4 16 4-4 3.5 3.5L14 12l3 3"/>
+    <path d="M7 21h10a3 3 0 0 0 3-3V9"/>
+  </svg>
+);
+
+// Drafts icon — note with a pencil; used in subtab chips (not nav).
+export const IconDraft = ({ size }: P) => (
+  <svg {...base(size)}>
+    <path d="M6 4h7l5 5v11a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/>
+    <path d="M13 4v5h5"/>
+    <path d="m12 14.5 2 2L16.5 14"/>
+  </svg>
 );
 export const IconAgent = ({ size }: P) => (
   <svg {...base(size)}><rect x="5" y="8" width="14" height="11" rx="3"/><path d="M12 5v3M9 13h.01M15 13h.01M9.5 16.5h5"/><path d="M3.5 12v3M20.5 12v3"/></svg>

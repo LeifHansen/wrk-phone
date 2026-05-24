@@ -3,6 +3,15 @@ import { Link } from 'react-router-dom';
 import { api, Agent } from '../lib/api';
 import { usePolling } from '../lib/usePolling';
 import { toast } from '../components/Toast';
+import { SubNav } from '../components/SubNav';
+import { SmsAiTools } from '../components/SmsAiTools';
+
+// Subtabs are identical to the ones on the Agents page so switching between
+// "Agents" and "Calls" feels like one section, not two unrelated routes.
+const AGENTS_SUBTABS = [
+  { to: '/agents',       label: 'Agents', end: true },
+  { to: '/agents/calls', label: 'Calls' },
+];
 
 interface AgentCallRow {
   id: number;
@@ -123,6 +132,7 @@ export function AgentCalls() {
         </div>
         <button className="btn" onClick={() => setShowNew((s) => !s)}>{showNew ? 'Close' : '+ New'}</button>
       </div>
+      <SubNav tabs={AGENTS_SUBTABS} />
       <div className="page-body">
         <div className="routing-hero" style={{ background: 'var(--yellow)', color: 'var(--ink)' }}>
           <b>⚖️ TCPA notice</b>
@@ -161,6 +171,11 @@ export function AgentCalls() {
                 The agent will greet the recipient by first name automatically, then read this script.
                 Keep it under 30 seconds when spoken (~75 words).
               </div>
+              {script.trim() && (
+                <div style={{ marginTop: 8 }}>
+                  <SmsAiTools text={script} goal="short, natural script read aloud over the phone (≤30s, ≤75 words)" onApply={setScript} compact />
+                </div>
+              )}
             </div>
 
             <div>

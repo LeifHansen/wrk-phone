@@ -7,6 +7,7 @@ import { routeInbound } from '../lib/routing.js';
 import { log } from '../lib/log.js';
 import { emit } from '../lib/events.js';
 import { getUserId } from '../lib/auth.js';
+import { normalizePhone } from '../lib/phone.js';
 
 export const smsRouter = Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
@@ -160,7 +161,10 @@ smsRouter.post('/sms/inbound', async (req, res) => {
 // Outbound: client posts a message to send
 // POST /api/sms/send  body: { to, body, conversationId? }
 smsRouter.post('/sms/send', async (req, res) => {
-  const to = String(req.body.to || '').trim();
+  // Normalize before send so the conversation lookup hits the canonical
+  // (E.164) row, not creating a fresh thread for "2068173472" alongside
+  // an existing "+12068173472" thread.
+  const to = normalizePhone(String(req.body.to || '')) || '';
   const body = String(req.body.body || '').trim();
   const mediaUrl = req.body.mediaUrl ? String(req.body.mediaUrl) : null;
   if (!to || (!body && !mediaUrl)) return res.status(400).json({ error: 'to and body (or mediaUrl) required' });

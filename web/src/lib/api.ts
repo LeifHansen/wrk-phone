@@ -169,11 +169,58 @@ export const api = {
     req(`/api/segments/${segmentId}/members`, { method: 'POST', body: JSON.stringify({ contactId }) }),
   removeFromSegment: (segmentId: number, contactId: number) =>
     req(`/api/segments/${segmentId}/members/${contactId}`, { method: 'DELETE' }),
-  // media
-  listMedia: () => req<{ id: number; url: string; prompt: string | null; kind: string }[]>('/api/media'),
-  generateImage: (prompt: string) =>
-    req<{ id: number; url: string; prompt: string }>('/api/media/generate', { method: 'POST', body: JSON.stringify({ prompt }) }),
+  // media — library shows everything; backend flag tells UI whether files
+  // land in R2 or on the local data volume (informational, not a feature gate).
+  listMedia: (kind?: 'generated' | 'upload' | 'video') => {
+    const q = kind ? `?kind=${kind}` : '';
+    return req<{ items: { id: number; url: string; prompt: string | null; kind: string; created_at: number }[]; backend: 'local' | 'r2' }>(
+      `/api/media${q}`
+    );
+  },
+  generateImage: (prompt: string, saveToLibrary = true) =>
+    req<{ id: number | null; url: string; prompt: string; savedToLibrary: boolean }>(
+      '/api/media/generate',
+      { method: 'POST', body: JSON.stringify({ prompt, saveToLibrary }) }
+    ),
+  uploadImageDataUrl: (dataUrl: string, saveToLibrary = true) =>
+    req<{ id: number | null; url: string; savedToLibrary: boolean }>(
+      '/api/media/upload', { method: 'POST', body: JSON.stringify({ dataUrl, saveToLibrary }) }
+    ),
+  uploadMediaRaw: async (file: File, saveToLibrary = true) => {
+    const buf = await file.arrayBuffer();
+    const res = await fetch('/api/media/upload-raw', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'application/octet-stream',
+        'X-Save-To-Library': saveToLibrary ? '1' : '0',
+        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+      },
+      body: buf,
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return res.json() as Promise<{ id: number | null; url: string; savedToLibrary: boolean; kind: 'upload' | 'video' }>;
+  },
   deleteMedia: (id: number) => req(`/api/media/${id}`, { method: 'DELETE' }),
+
+  // ---- Templates (reusable message bodies + optional MMS image) ----
+  listTemplates: () => req<{ id: number; name: string; body: string; media_url: string | null; updated_at: number }[]>('/api/templates'),
+  getTemplate: (id: number) => req<{ id: number; name: string; body: string; media_url: string | null }>(`/api/templates/${id}`),
+  createTemplate: (payload: { name: string; body: string; media_url?: string | null }) =>
+    req<{ id: number }>('/api/templates', { method: 'POST', body: JSON.stringify(payload) }),
+  patchTemplate: (id: number, patch: Partial<{ name: string; body: string; media_url: string | null }>) =>
+    req(`/api/templates/${id}`, { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteTemplate: (id: number) => req(`/api/templates/${id}`, { method: 'DELETE' }),
+  renderTemplate: (id: number, ctx: { phone?: string; contactId?: number }) =>
+    req<{ body: string; media_url: string | null }>(`/api/templates/${id}/render`, { method: 'POST', body: JSON.stringify(ctx) }),
+
+  // ---- Drafts (messages with status='draft') ----
+  listDrafts: () => req<{
+    draft_id: number; draft_body: string; draft_at: number;
+    conversation_id: number; peer_phone: string; our_number: string | null; name: string | null;
+  }[]>('/api/drafts'),
+  saveDraft: (payload: { peer_phone: string; body: string; media_url?: string }) =>
+    req<{ id: number; conversation_id: number }>('/api/drafts', { method: 'POST', body: JSON.stringify(payload) }),
+  deleteDraft: (id: number) => req(`/api/drafts/${id}`, { method: 'DELETE' }),
   // AI deliverability tools
   smsLint: (text: string) =>
     req<{ risk: 'low' | 'medium' | 'high'; flags: { term: string; why: string; severity: string }[]; summary: string; degraded?: boolean }>(

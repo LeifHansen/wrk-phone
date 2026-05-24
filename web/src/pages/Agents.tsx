@@ -4,6 +4,14 @@ import { Agent, api } from '../lib/api';
 import { Avatar } from '../components/Avatar';
 import { IconAgent } from '../components/Icons';
 import { AgentsTour, shouldShowAgentsTour } from '../components/AgentsTour';
+import { SubNav } from '../components/SubNav';
+
+// Subtabs shared by every page inside the "Agents" section: text agents
+// (the grid) live at /agents, outbound voice campaigns at /agents/calls.
+const AGENTS_SUBTABS = [
+  { to: '/agents',       label: 'Agents', end: true },
+  { to: '/agents/calls', label: 'Calls' },
+];
 
 export function Agents() {
   const [agents, setAgents] = useState<Agent[]>([]);
@@ -23,6 +31,7 @@ export function Agents() {
         </div>
         <Link to="/agents/new" className="btn">+ New agent</Link>
       </div>
+      <SubNav tabs={AGENTS_SUBTABS} />
       <div className="page-body">
         <Link to="/routing" className="routing-link" style={{ textDecoration: 'none' }}>
           <div className="body">

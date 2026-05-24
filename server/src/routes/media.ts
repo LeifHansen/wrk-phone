@@ -1,34 +1,44 @@
-import { Router } from 'express';
-import path from 'node:path';
-import fs from 'node:fs';
-import crypto from 'node:crypto';
+import { Router, raw } from 'express';
 import { db } from '../lib/db.js';
 import { openai } from '../lib/openai.js';
 import { OWNER_ID as USER } from '../lib/auth.js';
+import { saveBytes, deleteByUrl, storageBackend, MEDIA_DIR } from '../lib/storage.js';
 
 export const mediaRouter = Router();
 
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
-const MEDIA_DIR = path.join(DATA_DIR, 'media');
-fs.mkdirSync(MEDIA_DIR, { recursive: true });
+// Re-export so index.ts can mount the static path it already serves.
+export { MEDIA_DIR };
 
-function publicBase(): string {
-  return (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+// Per-file caps. Images stay generous (10MB) since AI-generated PNGs can run
+// 1–3MB; videos get a higher (50MB) cap appropriate for short MMS clips.
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
+
+// `kind` semantics:
+//   'generated' = AI-generated image (from /media/generate)
+//   'upload'    = user-uploaded image
+//   'video'     = user-uploaded short video clip (e.g. MMS attachment)
+// Anything in the `media` table is "in the library" by definition. The
+// `saveToLibrary` flag on the upload/generate endpoints controls whether
+// the row is inserted at all — when false, the file is written to disk
+// (so Twilio can fetch it for the immediate send) but no library row is
+// created, so it won't appear on the Media Library page.
+
+function recordInLibrary(url: string, kind: 'generated' | 'upload' | 'video', prompt?: string): number {
+  const r = db.prepare(
+    `INSERT INTO media (user_id, url, prompt, kind, created_at) VALUES (?, ?, ?, ?, ?)`
+  ).run(USER, url, prompt ?? null, kind, Date.now());
+  return Number(r.lastInsertRowid);
 }
 
-function saveBytes(buf: Buffer, ext = 'png'): { file: string; url: string } {
-  const file = `${crypto.randomBytes(8).toString('hex')}.${ext}`;
-  fs.writeFileSync(path.join(MEDIA_DIR, file), buf);
-  return { file, url: `${publicBase()}/media/${file}` };
-}
-
-// POST /api/media/generate  body: { prompt, size? }
-// Novelty: AI image generation for MMS campaigns. Saves to disk so Twilio can
-// fetch it as MMS media (needs a public URL — set PUBLIC_BASE_URL).
+// POST /api/media/generate  body: { prompt, size?, saveToLibrary? }
+// AI image generation. Defaults saveToLibrary=true — toggle off when the
+// user just wants a one-shot MMS image without polluting their library.
 mediaRouter.post('/media/generate', async (req, res) => {
   const prompt = String(req.body?.prompt || '').trim();
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
   const size = ['1024x1024', '1024x1536', '1536x1024'].includes(req.body?.size) ? req.body.size : '1024x1024';
+  const saveToLibrary = req.body?.saveToLibrary !== false;
   try {
     const result = await openai.images.generate({
       model: 'gpt-image-1',
@@ -39,17 +49,15 @@ mediaRouter.post('/media/generate', async (req, res) => {
     const b64 = result.data?.[0]?.b64_json;
     let saved;
     if (b64) {
-      saved = saveBytes(Buffer.from(b64, 'base64'), 'png');
+      saved = await saveBytes(Buffer.from(b64, 'base64'), 'png', 'image/png');
     } else if (result.data?.[0]?.url) {
       const r = await fetch(result.data[0].url);
-      saved = saveBytes(Buffer.from(await r.arrayBuffer()), 'png');
+      saved = await saveBytes(Buffer.from(await r.arrayBuffer()), 'png', 'image/png');
     } else {
       return res.status(502).json({ error: 'no image returned' });
     }
-    const row = db.prepare(
-      `INSERT INTO media (user_id, url, prompt, kind, created_at) VALUES (?, ?, ?, 'generated', ?)`
-    ).run(USER, saved.url, prompt, Date.now());
-    res.json({ id: Number(row.lastInsertRowid), url: saved.url, prompt });
+    const id = saveToLibrary ? recordInLibrary(saved.url, 'generated', prompt) : null;
+    res.json({ id, url: saved.url, prompt, savedToLibrary: !!id });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -58,38 +66,44 @@ mediaRouter.post('/media/generate', async (req, res) => {
 async function genImageUrl(prompt: string): Promise<string> {
   const result = await openai.images.generate({ model: 'gpt-image-1', prompt, size: '1024x1024', n: 1 });
   const b64 = result.data?.[0]?.b64_json;
-  if (b64) return saveBytes(Buffer.from(b64, 'base64'), 'png').url;
+  if (b64) return (await saveBytes(Buffer.from(b64, 'base64'), 'png', 'image/png')).url;
   if (result.data?.[0]?.url) {
     const r = await fetch(result.data[0].url);
-    return saveBytes(Buffer.from(await r.arrayBuffer()), 'png').url;
+    return (await saveBytes(Buffer.from(await r.arrayBuffer()), 'png', 'image/png')).url;
   }
   throw new Error('no image returned');
 }
 
 // Only allow assigning avatars that we hosted — prevents pointing the avatar
 // at an arbitrary external URL (which would let users hotlink anything from
-// here, or worse, attempt SSRF via the avatar field).
+// here, or worse, attempt SSRF via the avatar field). Accepts both local
+// (/media/<file>) and R2 (custom-domain) URLs.
 function isOwnedMediaUrl(url: string): boolean {
   if (!url) return false;
   try {
     const u = new URL(url);
-    return u.pathname.startsWith('/media/') && /\.(png|jpe?g|gif|bmp|webp)$/i.test(u.pathname);
+    const looksLikeImage = /\.(png|jpe?g|gif|bmp|webp)$/i.test(u.pathname);
+    if (!looksLikeImage) return false;
+    if (u.pathname.startsWith('/media/')) return true;
+    // R2 public base = whole pathname; trust that the bucket is ours by
+    // matching the configured R2_PUBLIC_BASE host.
+    const r2Base = (process.env.R2_PUBLIC_BASE || '').trim().replace(/\/$/, '');
+    if (r2Base) {
+      try { const rb = new URL(r2Base); if (u.host === rb.host) return true; } catch {}
+    }
+    return false;
   } catch {
     return false;
   }
 }
 
-// Avatar set OR generate. body: { kind:'account'|'agent', agentId?, prompt?, url? }
-// When `url` is provided (typically the result of a prior /media/upload),
-// that image is assigned as-is and no OpenAI call is made. Otherwise an
-// avatar is generated from the prompt (or a default prompt for the kind).
 mediaRouter.post('/media/avatar', async (req, res) => {
   const kind = req.body?.kind === 'agent' ? 'agent' : 'account';
   const providedUrl = req.body?.url ? String(req.body.url) : '';
   try {
     if (providedUrl) {
       if (!isOwnedMediaUrl(providedUrl)) {
-        return res.status(400).json({ error: 'avatar url must be a /media/ image we hosted (upload it first via /api/media/upload)' });
+        return res.status(400).json({ error: 'avatar url must be an image we hosted (upload it first via /api/media/upload)' });
       }
       if (kind === 'agent') {
         const a = db.prepare(`SELECT id FROM agents WHERE id=? AND user_id=?`)
@@ -122,37 +136,72 @@ mediaRouter.post('/media/avatar', async (req, res) => {
   }
 });
 
-// GET /api/account — lightweight account profile (avatar).
 mediaRouter.get('/account', (_req, res) => {
   const row = db.prepare(`SELECT avatar_url FROM app_settings WHERE user_id=?`).get(USER) as any;
   res.json({ avatarUrl: row?.avatar_url || null });
 });
 
-// POST /api/media/upload  body: { dataUrl }  (base64 data URL from device photos / picker)
-mediaRouter.post('/media/upload', (req, res) => {
+// POST /api/media/upload  body: { dataUrl, saveToLibrary? }
+// Image upload via base64 data URL — used by the device photo picker.
+// Keeps backward compatibility with the existing UI. For larger files OR
+// videos, callers should use /api/media/upload-raw which streams bytes.
+mediaRouter.post('/media/upload', async (req, res) => {
   const dataUrl = String(req.body?.dataUrl || '');
-  const m = dataUrl.match(/^data:image\/(png|jpe?g|webp);base64,(.+)$/);
+  const m = dataUrl.match(/^data:image\/(png|jpe?g|webp|gif);base64,(.+)$/);
   if (!m) return res.status(400).json({ error: 'expected an image data URL' });
   const ext = m[1].replace('jpeg', 'jpg');
-  const saved = saveBytes(Buffer.from(m[2], 'base64'), ext);
-  const row = db.prepare(
-    `INSERT INTO media (user_id, url, prompt, kind, created_at) VALUES (?, ?, NULL, 'upload', ?)`
-  ).run(USER, saved.url, Date.now());
-  res.json({ id: Number(row.lastInsertRowid), url: saved.url });
+  const buf = Buffer.from(m[2], 'base64');
+  if (buf.length > MAX_IMAGE_BYTES) return res.status(413).json({ error: 'image too large (max 10MB)' });
+  const saveToLibrary = req.body?.saveToLibrary !== false;
+  const saved = await saveBytes(buf, ext, `image/${ext === 'jpg' ? 'jpeg' : ext}`);
+  const id = saveToLibrary ? recordInLibrary(saved.url, 'upload') : null;
+  res.json({ id, url: saved.url, savedToLibrary: !!id });
 });
 
-mediaRouter.get('/media', (_req, res) => {
-  res.json(db.prepare(`SELECT id, url, prompt, kind, created_at FROM media WHERE user_id = ? ORDER BY created_at DESC LIMIT 200`).all(USER));
+// POST /api/media/upload-raw — bytes-in-body upload for images AND videos.
+// Headers:
+//   Content-Type: image/* | video/*
+//   X-Save-To-Library: '1' (default) or '0'
+mediaRouter.post(
+  '/media/upload-raw',
+  raw({ type: ['image/*', 'video/*'], limit: MAX_VIDEO_BYTES }),
+  async (req, res) => {
+    if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
+      return res.status(400).json({ error: 'image or video body required' });
+    }
+    const mime = String(req.header('content-type') || '').toLowerCase();
+    const isVideo = mime.startsWith('video/');
+    if (!isVideo && req.body.length > MAX_IMAGE_BYTES) {
+      return res.status(413).json({ error: 'image too large (max 10MB)' });
+    }
+    const extMap: Record<string, string> = {
+      'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
+      'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm',
+    };
+    const ext = extMap[mime] || (isVideo ? 'mp4' : 'png');
+    const saved = await saveBytes(req.body as Buffer, ext, mime);
+    const saveToLibrary = req.header('x-save-to-library') !== '0';
+    const kind = isVideo ? 'video' : 'upload';
+    const id = saveToLibrary ? recordInLibrary(saved.url, kind) : null;
+    res.json({ id, url: saved.url, savedToLibrary: !!id, kind });
+  },
+);
+
+mediaRouter.get('/media', (req, res) => {
+  const kind = req.query.kind ? String(req.query.kind) : null;
+  const sql = kind
+    ? `SELECT id, url, prompt, kind, created_at FROM media WHERE user_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 500`
+    : `SELECT id, url, prompt, kind, created_at FROM media WHERE user_id = ? ORDER BY created_at DESC LIMIT 500`;
+  const rows = kind
+    ? db.prepare(sql).all(USER, kind)
+    : db.prepare(sql).all(USER);
+  res.json({ items: rows, backend: storageBackend() });
 });
 
-mediaRouter.delete('/media/:id', (req, res) => {
-  const row = db.prepare(`SELECT url FROM media WHERE id = ? AND user_id = ?`).get(Number(req.params.id), USER) as any;
-  if (row?.url) {
-    const file = row.url.split('/media/')[1];
-    if (file) { try { fs.unlinkSync(path.join(MEDIA_DIR, file)); } catch {} }
-  }
+mediaRouter.delete('/media/:id', async (req, res) => {
+  const row = db.prepare(`SELECT url FROM media WHERE id = ? AND user_id = ?`)
+    .get(Number(req.params.id), USER) as any;
+  if (row?.url) await deleteByUrl(row.url);
   db.prepare(`DELETE FROM media WHERE id = ? AND user_id = ?`).run(Number(req.params.id), USER);
   res.json({ ok: true });
 });
-
-export { MEDIA_DIR };

@@ -4,7 +4,7 @@ import { api } from './lib/api';
 import { Logo } from './components/Logo';
 import { Toaster } from './components/Toast';
 import { Avatar } from './components/Avatar';
-import { IconPhone, IconMessage, IconContacts, IconBlast, IconAgent, IconStats, IconGear } from './components/Icons';
+import { IconPhone, IconMessage, IconContacts, IconCampaigns, IconAgent, IconStats, IconGear, IconMedia } from './components/Icons';
 import { CallOverlay } from './components/CallOverlay';
 import { ServiceBars } from './components/ServiceBars';
 import { onIncoming } from './lib/voice';
@@ -37,6 +37,8 @@ const Routing = page(() => import('./pages/Routing'), 'Routing');
 const RoutingEdit = page(() => import('./pages/RoutingEdit'), 'RoutingEdit');
 const Campaigns = page(() => import('./pages/Campaigns'), 'Campaigns');
 const AgentCalls = page(() => import('./pages/AgentCalls'), 'AgentCalls');
+const Templates = page(() => import('./pages/Templates'), 'Templates');
+const Media = page(() => import('./pages/Media'), 'Media');
 const Settings = page(() => import('./pages/Settings'), 'Settings');
 const Blog = page(() => import('./pages/Blog'), 'Blog');
 const BlogPost = page(() => import('./pages/BlogPost'), 'BlogPost');
@@ -123,12 +125,16 @@ export function App() {
           <span className="glyph"><IconContacts /></span><span className="nav-label">CONTACTS</span>
         </NavLink>
         <NavLink to="/campaigns" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Campaigns">
-          <span className="glyph"><IconBlast /></span><span className="nav-label">BLAST</span>
+          <span className="glyph"><IconCampaigns /></span><span className="nav-label">CAMPAIGNS</span>
         </NavLink>
-        <NavLink to="/agent-calls" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agent calls — outbound AI voice">
-          <span className="glyph"><IconPhone /></span><span className="nav-label">CALLS</span>
+        <NavLink to="/media" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Media Library">
+          <span className="glyph"><IconMedia /></span><span className="nav-label">MEDIA</span>
         </NavLink>
-        <NavLink to="/agents" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agents">
+        {/* Agents tab — Calls live nested inside this section via /agents/calls,
+            so we mark the top-level item active on any /agents* path. */}
+        <NavLink to="/agents"
+          className={() => 'nav-item' + (loc.pathname.startsWith('/agents') || loc.pathname === '/agent-calls' ? ' active' : '')}
+          title="Agents">
           <span className="glyph"><IconAgent /></span><span className="nav-label">AGENTS</span>
         </NavLink>
         <NavLink to="/analytics" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Analytics">
@@ -170,6 +176,8 @@ export function App() {
           <Route path="/superadmin" element={<Superadmin />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />
+          <Route path="/messages/drafts" element={<Inbox />} />
+          <Route path="/messages/templates" element={<Templates />} />
           <Route path="/contacts" element={<Contacts onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/conversation/:id" element={<Conversation onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/agents" element={<Agents />} />
@@ -181,7 +189,12 @@ export function App() {
           <Route path="/routing/new" element={<RoutingEdit />} />
           <Route path="/routing/:id" element={<RoutingEdit />} />
           <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/templates" element={<Templates />} />
+          <Route path="/media" element={<Media />} />
+          {/* Agent Calls now lives nested under the Agents section: both URLs
+              resolve to the same page so old links keep working. */}
           <Route path="/agent-calls" element={<AgentCalls />} />
+          <Route path="/agents/calls" element={<AgentCalls />} />
           <Route path="/credits" element={<Credits />} />
           <Route path="/numbers" element={<Numbers />} />
           <Route path="/a2p" element={<A2P />} />

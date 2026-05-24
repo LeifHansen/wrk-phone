@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from '../lib/api';
 import { usePolling } from '../lib/usePolling';
 import { toast } from '../components/Toast';
@@ -24,7 +24,7 @@ export function Campaigns() {
   const [segments, setSegments] = useState<Segment[]>([]);
   const [showNew, setShowNew] = useState(false);
   const [name, setName] = useState('');
-  const [template, setTemplate] = useState('Hi {{name}}, ');
+  const [template, setTemplate] = useState('Hi {{first_name}}, ');
   const [recipientsRaw, setRecipientsRaw] = useState('');
   const [target, setTarget] = useState<Target>('all');
   const [segId, setSegId] = useState<number | null>(null);
@@ -32,6 +32,12 @@ export function Campaigns() {
   const [imgPrompt, setImgPrompt] = useState('');
   const [genBusy, setGenBusy] = useState(false);
   const [busy, setBusy] = useState(false);
+  // Save generated/picked MMS images to the user's Media Library by default.
+  // Toggle off when the user just wants a one-off image for this blast.
+  const [saveImgToLibrary, setSaveImgToLibrary] = useState(true);
+  // Template picker for the body field.
+  const [templates, setTemplates] = useState<{ id: number; name: string; body: string; media_url: string | null }[]>([]);
+  const [tplOpen, setTplOpen] = useState(false);
 
   const load = () => {
     api.listCampaigns().then((r) => setList(r as Campaign[])).catch(() => {});
@@ -43,14 +49,30 @@ export function Campaigns() {
   const anySending = list.some((c) => c.status === 'sending');
   usePolling(load, anySending ? 4000 : 15000);
 
+  // Lazy-load templates when the user opens the New form for the first time.
+  useEffect(() => {
+    if (showNew && templates.length === 0) {
+      api.listTemplates().then(setTemplates).catch(() => {});
+    }
+  }, [showNew]);
+
   const genImage = async () => {
     if (!imgPrompt.trim()) return;
     setGenBusy(true);
     try {
-      const m = await api.generateImage(imgPrompt.trim());
+      const m = await api.generateImage(imgPrompt.trim(), saveImgToLibrary);
       setMediaUrl(m.url);
     } catch (e: any) { toast(`Image gen failed: ${e.message}`, 'err'); }
     finally { setGenBusy(false); }
+  };
+
+  const applyTemplate = async (id: number) => {
+    setTplOpen(false);
+    try {
+      const t = await api.getTemplate(id);
+      setTemplate(t.body);
+      if (t.media_url) setMediaUrl(t.media_url);
+    } catch (e: any) { toast(e.message, 'err'); }
   };
 
   const create = async () => {
@@ -92,7 +114,27 @@ export function Campaigns() {
           <div className="cond-card" style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
             <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Campaign name (e.g. Spring promo)" />
             <textarea className="textarea" value={template} onChange={(e) => setTemplate(e.target.value)}
-              placeholder="Message — use {{name}} to personalize" />
+              placeholder="Message — use {{first_name}} to personalize" />
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              <button type="button" className="btn ghost" onClick={() => setTplOpen((s) => !s)}
+                disabled={templates.length === 0}
+                title={templates.length === 0 ? 'No templates yet — create one in Messages → Templates' : 'Insert a saved template'}>
+                📝 Use template
+              </button>
+              <span style={{ fontSize: 11, color: 'var(--muted)' }}>
+                Tokens: <code>{'{{first_name}}'}</code> · <code>{'{{name}}'}</code> · <code>{'{{phone}}'}</code>
+              </span>
+            </div>
+            {tplOpen && (
+              <div className="cond-card" style={{ display: 'grid', gap: 6, maxHeight: 220, overflowY: 'auto' }}>
+                {templates.map((t) => (
+                  <button key={t.id} type="button" className="btn ghost" style={{ textAlign: 'left', justifyContent: 'flex-start' }}
+                    onClick={() => applyTemplate(t.id)}>
+                    <b>{t.name}</b> — <span style={{ color: 'var(--muted)' }}>{t.body.slice(0, 60)}</span>
+                  </button>
+                ))}
+              </div>
+            )}
             <SmsAiTools text={template} goal="bulk SMS/MMS marketing campaign" onApply={setTemplate} />
 
             {/* WHO */}
@@ -128,13 +170,19 @@ export function Campaigns() {
                   <button className="btn ghost" onClick={() => setMediaUrl(null)}>Remove</button>
                 </div>
               ) : (
-                <div style={{ display: 'flex', gap: 8 }}>
-                  <input className="input" value={imgPrompt} onChange={(e) => setImgPrompt(e.target.value)}
-                    placeholder="Describe an image — AI makes it (e.g. retro neon sale banner)" />
-                  <button className="btn pink" onClick={genImage} disabled={genBusy || !imgPrompt.trim()}>
-                    {genBusy ? 'Drawing…' : 'Generate'}
-                  </button>
-                </div>
+                <>
+                  <div style={{ display: 'flex', gap: 8 }}>
+                    <input className="input" value={imgPrompt} onChange={(e) => setImgPrompt(e.target.value)}
+                      placeholder="Describe an image — AI makes it (e.g. retro neon sale banner)" />
+                    <button className="btn pink" onClick={genImage} disabled={genBusy || !imgPrompt.trim()}>
+                      {genBusy ? 'Drawing…' : 'Generate'}
+                    </button>
+                  </div>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 12 }}>
+                    <input type="checkbox" checked={saveImgToLibrary} onChange={(e) => setSaveImgToLibrary(e.target.checked)} />
+                    <span>Save to Media Library for reuse on future sends</span>
+                  </label>
+                </>
               )}
             </div>
 
