@@ -7,10 +7,14 @@ export const agentRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
 const AGENT_COLORS = ['lime', 'pink', 'orange', 'neon', 'red', 'black'] as const;
 
+// Random color, biased toward unused ones so a fresh account gets variety
+// instead of three lime agents in a row. The user has no UI to pick a color
+// (intentional — keeps the create flow simple); rotation happens here.
 function nextColor(): typeof AGENT_COLORS[number] {
-  const used = (db.prepare(`SELECT color FROM agents WHERE user_id = ?`).all(USER) as any[]).map((r) => r.color);
-  for (const c of AGENT_COLORS) if (!used.includes(c)) return c;
-  return AGENT_COLORS[used.length % AGENT_COLORS.length];
+  const used = new Set((db.prepare(`SELECT color FROM agents WHERE user_id = ?`).all(USER) as any[]).map((r) => r.color));
+  const unused = AGENT_COLORS.filter((c) => !used.has(c));
+  const pool = unused.length > 0 ? unused : (AGENT_COLORS as readonly string[]);
+  return pool[Math.floor(Math.random() * pool.length)] as typeof AGENT_COLORS[number];
 }
 
 function fetchAgent(id: number): AgentRow | null {
@@ -77,6 +81,14 @@ agentRouter.post('/agents/from-preset', (req, res) => {
   const persona = vibe?.persona || '';
   const name = String(req.body.name || preset.label).slice(0, 32);
   const now = Date.now();
+  // Compose instructions: the role-overview line + every starterInstruction
+  // bullet from the preset. Positive directives MUST live here, not in the
+  // rules list — the system prompt renders rules as "DO NOT do any of the
+  // following" so a positive line in rules turns into the opposite of intent.
+  const baseInstructions = `You handle ${preset.label.toLowerCase()} messages on my work line.`;
+  const instructions = preset.starterInstructions.length
+    ? `${baseInstructions}\n\n${preset.starterInstructions.map((s) => `- ${s}`).join('\n')}`
+    : baseInstructions;
   const result = db.prepare(
     `INSERT INTO agents (user_id, name, emoji, color, role, persona, instructions, examples_json, rules_json, mode, voice_mode, is_default, created_at, updated_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'suggest', 'off', 0, ?, ?)`
@@ -84,10 +96,10 @@ agentRouter.post('/agents/from-preset', (req, res) => {
     USER,
     name,
     preset.emoji,
-    preset.color,
+    nextColor(),       // randomize — no UI color picker by design
     preset.slug,
     persona,
-    `You handle ${preset.label.toLowerCase()} messages on my work line.`,
+    instructions,
     JSON.stringify(preset.starterExamples),
     JSON.stringify(preset.starterRules),
     now,
@@ -105,7 +117,8 @@ agentRouter.post('/agents/from-brief', async (req, res) => {
   try {
     const drafted = await draftAgentFromBrief(brief);
     const now = Date.now();
-    const color = drafted.color || nextColor();
+    // Always random — no UI picker; drafted.color is ignored intentionally.
+    const color = nextColor();
     const r = db.prepare(
       `INSERT INTO agents (user_id, name, emoji, color, role, persona, instructions, examples_json, rules_json, mode, voice_mode, is_default, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'custom', ?, ?, ?, ?, 'suggest', 'off', 0, ?, ?)`

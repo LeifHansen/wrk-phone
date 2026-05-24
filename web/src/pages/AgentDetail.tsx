@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Agent, AGENT_COLORS, COLOR_BG, COLOR_FG, api } from '../lib/api';
+import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
 import { toast } from '../components/Toast';
 import { IconPencil } from '../components/Icons';
 
@@ -138,33 +138,6 @@ export function AgentDetail() {
           </div>
         </div>
         <div className="agent-section">
-          <h3>Sends from</h3>
-          <p className="hint">Which number this agent texts from when it auto-replies. Default uses the active line.</p>
-          <SendNumberPicker
-            value={(merged as any).send_number || ''}
-            onChange={async (v) => {
-              try { await api.patchAgent(aid, { send_number: v || null } as any); setAgent((p) => p ? ({ ...p, send_number: v || null } as any) : p); toast('Send number updated ✓'); }
-              catch (e: any) { toast(e.message, 'err'); }
-            }}
-          />
-        </div>
-
-        <div className="agent-section">
-          <h3>Color</h3>
-          <div className="color-row">
-            {AGENT_COLORS.map((c) => (
-              <button
-                key={c}
-                onClick={() => set('color', c)}
-                className={'color-chip' + (merged.color === c ? ' active' : '')}
-                style={{ background: COLOR_BG[c] }}
-                aria-label={c}
-              />
-            ))}
-          </div>
-        </div>
-
-        <div className="agent-section">
           <h3>Messaging</h3>
           <div className="mode-row">
             {MODES.map((m) => (
@@ -178,65 +151,14 @@ export function AgentDetail() {
           <p className="hint">{MODES.find((m) => m.key === merged.mode)?.blurb}</p>
         </div>
 
-        <div className="agent-section">
-          <h3>Voicemail Greeting</h3>
-          <div className="mode-row">
-            {MODES.map((m) => (
-              <button
-                key={m.key}
-                onClick={() => setVoiceMode(m.key)}
-                className={'mode-btn' + (merged.voice_mode === m.key ? ' active ' + m.key : '')}
-              >{m.label}</button>
-            ))}
-          </div>
-        </div>
-
-        <div className="agent-section">
-          <h3>Voice</h3>
-          <VoicePicker
-            current={merged.voice_name || null}
-            onPick={async (v) => {
-              await api.patchAgent(aid, { voice_id: v.id ?? null, voice_name: v.name, tts_voice: v.tts_voice } as any);
-              setAgent((a) => a ? { ...a, voice_name: v.name, tts_voice: v.tts_voice } as any : a);
-            }}
-          />
-        </div>
-
         <div className="agent-section cta-row">
           <Link to={`/agents/${aid}/optimize`} className="btn lime lg" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>✨ Optimize</Link>
           <Link to={`/agents/${aid}/train`} className="btn neon lg" style={{ flex: 1, textAlign: 'center', textDecoration: 'none' }}>🎓 Quick Train</Link>
         </div>
 
         <div className="agent-section">
-          <h3>Don't do these things</h3>
-          <p className="hint">Tap a rule to remove it.</p>
-          <div style={{ marginTop: 8 }}>
-            {merged.rules.map((r, i) => (
-              <div key={i} className="rule-pill" onClick={() => set('rules', merged.rules.filter((_, idx) => idx !== i))}>
-                <span style={{ flex: 1 }}>🚫 {r}</span>
-                <span className="x">×</span>
-              </div>
-            ))}
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <input
-                className="input"
-                value={newRule}
-                onChange={(e) => setNewRule(e.target.value)}
-                placeholder="Add a rule…"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && newRule.trim()) { set('rules', [...merged.rules, newRule.trim()]); setNewRule(''); }
-                }}
-              />
-              <button
-                className="btn"
-                onClick={() => { if (newRule.trim()) { set('rules', [...merged.rules, newRule.trim()]); setNewRule(''); } }}
-              >+</button>
-            </div>
-          </div>
-        </div>
-
-        <div className="agent-section">
           <h3>Training examples</h3>
+          <p className="hint">Real inbound + how you'd reply. The agent learns your voice from these.</p>
           {merged.examples.map((ex, i) => (
             <div key={i} className="example-card">
               <label>Inbound</label>
@@ -255,21 +177,90 @@ export function AgentDetail() {
           </button>
         </div>
 
+        {/* Everything most users never touch lives below — collapsed by default
+            so the create/edit flow stays focused on the few things that matter
+            (mode, examples, training). Open when you want to tune voice,
+            voicemail, persona, sending number, or add hard limits. */}
         <div className="agent-section">
           <button className="btn ghost" onClick={() => setAdvanced((a) => !a)}>
-            {advanced ? '▾' : '▸'} Advanced
+            {advanced ? '▾' : '▸'} Advanced settings
           </button>
           {advanced && (
-            <>
-              <div style={{ marginTop: 12 }}>
-                <h3>Persona / Voice</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 22, marginTop: 16 }}>
+              <div>
+                <h3>Persona / voice</h3>
                 <textarea className="textarea" value={merged.persona} onChange={(e) => set('persona', e.target.value)} />
               </div>
-              <div style={{ marginTop: 12 }}>
+
+              <div>
                 <h3>Instructions</h3>
                 <textarea className="textarea" value={merged.instructions} onChange={(e) => set('instructions', e.target.value)} />
               </div>
-            </>
+
+              <div>
+                <h3>Hard limits (the agent will never do these)</h3>
+                <p className="hint">Negative guardrails only — phrase things as "don't…" or "never…". Tap a limit to remove it.</p>
+                <div style={{ marginTop: 8 }}>
+                  {merged.rules.map((r, i) => (
+                    <div key={i} className="rule-pill" onClick={() => set('rules', merged.rules.filter((_, idx) => idx !== i))}>
+                      <span style={{ flex: 1 }}>🚫 {r}</span>
+                      <span className="x">×</span>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                    <input
+                      className="input"
+                      value={newRule}
+                      onChange={(e) => setNewRule(e.target.value)}
+                      placeholder="e.g. don't promise refunds"
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && newRule.trim()) { set('rules', [...merged.rules, newRule.trim()]); setNewRule(''); }
+                      }}
+                    />
+                    <button
+                      className="btn"
+                      onClick={() => { if (newRule.trim()) { set('rules', [...merged.rules, newRule.trim()]); setNewRule(''); } }}
+                    >+</button>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3>Voicemail greeting</h3>
+                <div className="mode-row">
+                  {MODES.map((m) => (
+                    <button
+                      key={m.key}
+                      onClick={() => setVoiceMode(m.key)}
+                      className={'mode-btn' + (merged.voice_mode === m.key ? ' active ' + m.key : '')}
+                    >{m.label}</button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3>Voice</h3>
+                <VoicePicker
+                  current={merged.voice_name || null}
+                  onPick={async (v) => {
+                    await api.patchAgent(aid, { voice_id: v.id ?? null, voice_name: v.name, tts_voice: v.tts_voice } as any);
+                    setAgent((a) => a ? { ...a, voice_name: v.name, tts_voice: v.tts_voice } as any : a);
+                  }}
+                />
+              </div>
+
+              <div>
+                <h3>Sends from</h3>
+                <p className="hint">Which number this agent texts from when it auto-replies. Default uses the active line.</p>
+                <SendNumberPicker
+                  value={(merged as any).send_number || ''}
+                  onChange={async (v) => {
+                    try { await api.patchAgent(aid, { send_number: v || null } as any); setAgent((p) => p ? ({ ...p, send_number: v || null } as any) : p); toast('Send number updated ✓'); }
+                    catch (e: any) { toast(e.message, 'err'); }
+                  }}
+                />
+              </div>
+            </div>
           )}
         </div>
 

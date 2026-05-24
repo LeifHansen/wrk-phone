@@ -5,9 +5,21 @@ export interface AgentPreset {
   slug: string;
   label: string;
   emoji: string;
+  // `color` is no longer used at create time (assigned randomly), but kept on
+  // the type so the wizard's role-picker UI can still tint each preset chip
+  // distinctly. Tweaking the color happens via app code now, not the user.
   color: 'lime' | 'pink' | 'orange' | 'neon' | 'red' | 'black';
   blurb: string;
   vibes: { slug: string; label: string; persona: string }[];
+  // POSITIVE behaviors merged into the agent's `instructions` field. These
+  // render in the system prompt as imperative directives ("here's how to
+  // behave"), which is what the model needs to actually do them.
+  starterInstructions: string[];
+  // NEGATIVE guardrails merged into the agent's `rules` field. The system
+  // prompt prefixes these with "DO NOT do any of the following" — so EVERY
+  // item must be a thing we want the agent to NEVER do. A positive instruction
+  // here ("always offer time windows") becomes "DO NOT always offer time
+  // windows" in the prompt, which is the opposite of intent.
   starterRules: string[];
   starterExamples: { in: string; out: string }[];
 }
@@ -24,10 +36,12 @@ export const PRESETS: AgentPreset[] = [
       { slug: 'warm', label: 'Warm & polite', persona: 'warm, polite, full sentences. friendly but not overly chatty.' },
       { slug: 'dry',  label: 'Dry humor',     persona: 'dry, witty, lowercase, brief. tiny dose of humor when natural.' },
     ],
+    starterInstructions: [
+      "If a message feels urgent, say I'll get back to them shortly — don't try to handle it yourself.",
+    ],
     starterRules: [
       "Don't make plans or commit to meetings on my behalf",
       "Don't share my address, email, or other personal info",
-      "If urgent, just say I'll get back to them shortly",
     ],
     starterExamples: [
       { in: 'hey you free thursday?', out: "let me check my cal and get back to you tn" },
@@ -45,9 +59,11 @@ export const PRESETS: AgentPreset[] = [
       { slug: 'direct',       label: 'Direct',       persona: 'direct, professional, gets to value fast. no fluff. uses their first name once.' },
       { slug: 'enthusiastic', label: 'Enthusiastic', persona: 'energetic, positive, uses 1 emoji max per reply, makes them feel seen.' },
     ],
+    starterInstructions: [
+      "When the prospect wants to talk, offer two specific time windows for a call.",
+    ],
     starterRules: [
-      "Never quote prices — say I'll follow up with details",
-      "Always offer 2 specific time windows for a call",
+      "Never quote prices — say you'll follow up with details",
       "Never disparage a competitor",
     ],
     starterExamples: [
@@ -65,10 +81,14 @@ export const PRESETS: AgentPreset[] = [
       { slug: 'human',    label: 'Human & honest', persona: 'human, candid, lowercase. acknowledges they get a lot of cold messages.' },
       { slug: 'polished', label: 'Polished',       persona: 'polished, professional, third-person company references. concise.' },
     ],
+    starterInstructions: [
+      "If a candidate isn't interested, thank them and back off — no follow-up.",
+      // STOP/HELP is already enforced by the compliance layer before the
+      // agent is ever invoked, so we don't add a rule for it (would just
+      // confuse the model into echoing it).
+    ],
     starterRules: [
       "Never reveal salary or comp details over text",
-      "If they're not interested, thank them and back off — no follow-up",
-      "Always respect 'remove me' / 'STOP'",
     ],
     starterExamples: [
       { in: 'whats the role pay?', out: "happy to share comp on a quick call — easier than texting it. you free this week for 15 min?" },
@@ -85,9 +105,11 @@ export const PRESETS: AgentPreset[] = [
       { slug: 'helpful', label: 'Helpful & clear', persona: 'helpful, plain language, confirms understanding, gives next steps.' },
       { slug: 'apologetic', label: 'Apologetic', persona: 'sincere, apologetic when things break, owns the issue, sets clear expectations.' },
     ],
+    starterInstructions: [
+      "If you don't know the answer, say 'let me check with the team and get back to you.'",
+    ],
     starterRules: [
       "Never invent product features",
-      "If you don't know, say 'let me check with the team and get back to you'",
       "Don't promise refunds — escalate to a human",
     ],
     starterExamples: [
@@ -105,10 +127,13 @@ export const PRESETS: AgentPreset[] = [
       { slug: 'hype',    label: 'Hype & friendly',  persona: 'energetic, friendly, hypes the customer. uses their name. light emoji.' },
       { slug: 'craft',   label: 'Craft & considered', persona: 'thoughtful, craft-forward, talks about process. lowercase ok.' },
     ],
+    starterInstructions: [
+      "Give a price range (not a final quote) and ask qualifying questions.",
+      "Mention turnaround time when it's relevant.",
+    ],
     starterRules: [
-      "Never quote a final price — give a range and ask qualifying questions",
-      "Always mention turnaround time when relevant",
       "Don't accept bookings — collect info and let me confirm",
+      "Don't quote a final price",
     ],
     starterExamples: [
       { in: 'how much for a custom piece?', out: "depends on size + materials — usually $X–$Y range. what did you have in mind?" },
@@ -122,6 +147,7 @@ export const PRESETS: AgentPreset[] = [
     color: 'black',
     blurb: 'Describe what you want in one sentence — AI drafts the whole agent.',
     vibes: [],
+    starterInstructions: [],
     starterRules: [],
     starterExamples: [],
   },
