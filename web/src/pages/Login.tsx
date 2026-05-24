@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api, auth } from '../lib/api';
 import { Logo } from '../components/Logo';
 
@@ -8,10 +8,18 @@ export function Login({ initialMode = 'login' }: { initialMode?: 'login' | 'sign
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
   const [email, setEmail] = useState('');
   const [pw, setPw] = useState('');
+  // Signup requires explicit, opt-in acknowledgement of the Terms of
+  // Service and Privacy Policy — the Sign-up button is disabled until
+  // this is true, so the click itself is the affirmative legal act.
+  const [agreedTos, setAgreedTos] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const submit = async () => {
+    if (mode === 'signup' && !agreedTos) {
+      setErr('Please agree to the Terms of Service and Privacy Policy to create an account.');
+      return;
+    }
     setBusy(true); setErr('');
     try {
       const r = mode === 'login' ? await api.login(email, pw) : await api.signup(email, pw);
@@ -26,6 +34,8 @@ export function Login({ initialMode = 'login' }: { initialMode?: 'login' | 'sign
     } finally { setBusy(false); }
   };
 
+  const disableSubmit = busy || !email || !pw || (mode === 'signup' && !agreedTos);
+
   return (
     <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
       <div className="cond-card" style={{ width: 380, maxWidth: '100%' }}>
@@ -39,8 +49,31 @@ export function Login({ initialMode = 'login' }: { initialMode?: 'login' | 'sign
           autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
           value={pw} onChange={(e) => setPw(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && submit()} />
+
+        {mode === 'signup' && (
+          <label style={{
+            display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, padding: 12,
+            background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 8,
+            fontSize: 13, lineHeight: 1.45, cursor: 'pointer',
+          }}>
+            <input type="checkbox" checked={agreedTos}
+              onChange={(e) => setAgreedTos(e.target.checked)}
+              style={{ marginTop: 3, width: 18, height: 18, flexShrink: 0 }} />
+            <span>
+              I have read and agree to the{' '}
+              <Link to="/terms" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 800 }}>
+                Terms of Service
+              </Link>{' '}
+              and{' '}
+              <Link to="/privacy" target="_blank" rel="noopener noreferrer" style={{ fontWeight: 800 }}>
+                Privacy Policy
+              </Link>.
+            </span>
+          </label>
+        )}
+
         {err && <div style={{ color: 'var(--red)', fontSize: 13, marginTop: 10 }}>{err}</div>}
-        <button className="btn lg" style={{ width: '100%', marginTop: 16 }} onClick={submit} disabled={busy || !email || !pw}>
+        <button className="btn lg" style={{ width: '100%', marginTop: 16 }} onClick={submit} disabled={disableSubmit}>
           {busy ? '…' : mode === 'login' ? 'Log in' : 'Sign up'}
         </button>
         <button className="btn ghost" style={{ width: '100%', marginTop: 8 }}

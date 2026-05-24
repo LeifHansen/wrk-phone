@@ -4,6 +4,19 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
 
+    <!-- Google tag (gtag.js) — web app + marketing site only.
+         Loaded once at app boot; navigation between SPA routes does NOT
+         re-execute this block, so we leave the default `gtag('config', ...)`
+         in place and rely on Enhanced Measurement (auto page_view + history
+         changes) to track route changes. -->
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-0R3KZJY66Y"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag(){dataLayer.push(arguments);}
+      gtag('js', new Date());
+      gtag('config', 'G-0R3KZJY66Y');
+    </script>
+
     <title>WrkPhn — AI Work Phone: AI Text Agents, AI Voice Agents &amp; AI SMS Marketing</title>
     <meta name="description" content="WrkPhn is the AI work phone for small business: AI text agents, AI voice agents, and AI SMS marketing on one shared number. Easy to use, cheap, no contract — live in minutes." />
     <meta name="keywords" content="AI SMS marketing, AI text agents, AI voice agents, AI work phone, AI receptionist, business texting app, automated SMS replies, cheap business phone number, no contract phone service, shared team inbox, 10DLC compliant texting, AI answering service, SMS automation, virtual phone number" />

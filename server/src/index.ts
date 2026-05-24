@@ -159,6 +159,8 @@ app.get('/sitemap.xml', (_req, res) => {
     { loc: '/register', pri: '0.8', f: 'monthly' },
     { loc: '/login', pri: '0.5', f: 'monthly' },
     { loc: '/blog', pri: '0.8', f: 'daily' },
+    { loc: '/terms', pri: '0.3', f: 'yearly' },
+    { loc: '/privacy', pri: '0.3', f: 'yearly' },
   ];
   let urls = core.map((u) =>
     `  <url><loc>${base}${u.loc}</loc><changefreq>${u.f}</changefreq><priority>${u.pri}</priority></url>`);

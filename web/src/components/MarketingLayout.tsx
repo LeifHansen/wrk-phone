@@ -55,6 +55,10 @@ export function MarketingLayout({ children }: { children: ReactNode }) {
           <Link to="/login">Log in</Link>
           <Link to="/register">Register</Link>
         </nav>
+        <nav className="lp-foot-links" aria-label="Legal" style={{ flexBasis: '100%' }}>
+          <Link to="/terms">Terms of Service</Link>
+          <Link to="/privacy">Privacy Policy</Link>
+        </nav>
         <div className="lp-foot-fine">
           © {new Date().getFullYear()} WrkPhn — Work. Call. Connect. The AI work phone for
           business: AI text agents, AI voice agents, and SMS marketing.

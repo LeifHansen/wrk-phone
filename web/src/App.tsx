@@ -55,6 +55,8 @@ const TextCampaigns = page(() => import('./pages/marketing/TextCampaigns'), 'Tex
 const AiTextAgents = page(() => import('./pages/marketing/AiTextAgents'), 'AiTextAgents');
 const AiVoiceAgents = page(() => import('./pages/marketing/AiVoiceAgents'), 'AiVoiceAgents');
 const BusinessSmsApp = page(() => import('./pages/marketing/BusinessSmsApp'), 'BusinessSmsApp');
+const Terms = page(() => import('./pages/Terms'), 'Terms');
+const PrivacyPolicy = page(() => import('./pages/PrivacyPolicy'), 'PrivacyPolicy');
 
 const MARKETING_ROUTES = [
   '/sms-marketing-app',
@@ -65,6 +67,8 @@ const MARKETING_ROUTES = [
   '/ai-text-agents',
   '/ai-voice-agents',
   '/business-sms-app',
+  '/terms',
+  '/privacy',
 ];
 
 // Routes rendered without the app sidebar (public marketing + auth + setup).
@@ -173,6 +177,8 @@ export function App() {
           <Route path="/ai-text-agents" element={<AiTextAgents />} />
           <Route path="/ai-voice-agents" element={<AiVoiceAgents />} />
           <Route path="/business-sms-app" element={<BusinessSmsApp />} />
+          <Route path="/terms" element={<Terms />} />
+          <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/superadmin" element={<Superadmin />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />

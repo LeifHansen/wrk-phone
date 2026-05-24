@@ -229,6 +229,10 @@ export function Landing() {
           <Link to="/login">Log in</Link>
           <Link to="/register">Register</Link>
         </nav>
+        <nav className="lp-foot-links" aria-label="Legal" style={{ flexBasis: '100%' }}>
+          <Link to="/terms">Terms of Service</Link>
+          <Link to="/privacy">Privacy Policy</Link>
+        </nav>
         <div className="lp-foot-fine">© {new Date().getFullYear()} WrkPhn — Work. Call. Connect. AI work phone with AI text agents, AI voice agents, and SMS marketing.</div>
       </footer>
     </div>
