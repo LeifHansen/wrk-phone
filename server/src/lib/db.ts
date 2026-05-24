@@ -253,6 +253,49 @@ db.exec(`
     released_at INTEGER
   );
 
+  -- Outbound AI voice calls. The "Call with Agent" feature: pick an agent,
+  -- write a script, pick recipients, dial them automatically and have the
+  -- agent deliver the message in its voice. Mirrors the campaigns flow.
+  -- TCPA NOTE: the create endpoint requires explicit consent acknowledgement
+  -- before sending; consent timestamp + IP/user-agent are stored here for
+  -- the audit trail you'll want if a recipient ever complains.
+  CREATE TABLE IF NOT EXISTS agent_calls (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    agent_id INTEGER NOT NULL REFERENCES agents(id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    script TEXT NOT NULL,
+    from_number TEXT,                                -- caller ID; null = use active
+    status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','sending','done','failed')),
+    placed_count INTEGER NOT NULL DEFAULT 0,
+    total_count INTEGER NOT NULL DEFAULT 0,
+    -- TCPA audit trail
+    consent_acknowledged INTEGER NOT NULL DEFAULT 0,
+    consent_acknowledged_at INTEGER,
+    consent_acknowledged_ip TEXT,
+    consent_acknowledged_ua TEXT,
+    created_at INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS agent_call_recipients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    agent_call_id INTEGER NOT NULL REFERENCES agent_calls(id) ON DELETE CASCADE,
+    phone TEXT NOT NULL,
+    name TEXT,
+    -- 'skipped-*' lets the UI explain WHY we didn't dial (quiet hours,
+    -- voice opt-out, invalid number) instead of just showing 'failed'.
+    status TEXT NOT NULL DEFAULT 'pending'
+      CHECK(status IN ('pending','initiated','ringing','in-progress','completed',
+                       'busy','no-answer','failed','canceled',
+                       'skipped-opted-out','skipped-quiet-hours')),
+    twilio_sid TEXT,
+    duration_sec INTEGER,
+    answered_by TEXT,                                -- Twilio machine-detection result
+    error TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_agent_call_recipients ON agent_call_recipients(agent_call_id, status);
+  CREATE INDEX IF NOT EXISTS idx_agent_call_recipients_sid ON agent_call_recipients(twilio_sid) WHERE twilio_sid IS NOT NULL;
+
   -- Indexes for hot read paths (defined last; all tables exist by here).
   CREATE INDEX IF NOT EXISTS idx_conversations_user_recent ON conversations(user_id, last_message_at DESC);
   CREATE INDEX IF NOT EXISTS idx_campaign_recipients ON campaign_recipients(campaign_id, status);
@@ -283,6 +326,13 @@ tryAddColumn('conversations', 'autopilot INTEGER NOT NULL DEFAULT 0');
 tryAddColumn('conversations', 'our_number TEXT');
 tryAddColumn('agents', 'send_number TEXT');
 tryAddColumn('agents', 'hidden INTEGER NOT NULL DEFAULT 0');
+// Voice opt-out lives separately from SMS opt-out — TCPA treats them as
+// distinct channels and a recipient may consent to texts but not calls.
+tryAddColumn('contacts', 'voice_opted_out INTEGER NOT NULL DEFAULT 0');
+// User-set quiet hours (UTC offset minutes, e.g. -480 = PT). Stored per
+// user; falls back to America/Los_Angeles if unset. The send loop enforces
+// "no automated calls outside 8am–9pm local time" for TCPA hygiene.
+tryAddColumn('app_settings', 'quiet_hours_tz_offset INTEGER');
 
 // One-time backfill: stamp our_number on conversations created before the
 // column existed, using each account's current sending number. Without it a
@@ -464,6 +514,48 @@ export function setOptOut(userId: string, phone: string, optedOut: boolean) {
 export function isOptedOut(userId: string, phone: string): boolean {
   const r = db.prepare(`SELECT opted_out FROM contacts WHERE user_id = ? AND phone = ?`).get(userId, phone) as any;
   return !!r?.opted_out;
+}
+
+// ---- Voice opt-out (separate from SMS opt-out) ----
+// TCPA treats SMS and voice as distinct channels. A recipient who pressed
+// "9" during an agent call (or a sender we manually flagged) gets recorded
+// here and is excluded from future automated call campaigns regardless of
+// their SMS opt-in state.
+export function setVoiceOptOut(userId: string, phone: string, optedOut: boolean) {
+  db.prepare(
+    `INSERT INTO contacts (user_id, phone, name, voice_opted_out) VALUES (?, ?, '', ?)
+     ON CONFLICT(user_id, phone) DO UPDATE SET voice_opted_out = ?`
+  ).run(userId, phone, optedOut ? 1 : 0, optedOut ? 1 : 0);
+}
+export function isVoiceOptedOut(userId: string, phone: string): boolean {
+  const r = db.prepare(`SELECT voice_opted_out FROM contacts WHERE user_id = ? AND phone = ?`).get(userId, phone) as any;
+  return !!r?.voice_opted_out;
+}
+
+// ---- Outbound agent-call cost ----
+// Twilio outbound voice (US local/TF) runs ~$0.014/min; pick a flat per-call
+// budget covering ~1.5 min of audio + carrier surcharges. 10 credits = $0.10
+// at the same rate SMS uses ($5 / 500 credits = $0.01 per credit), giving
+// the user a clear "one call ≈ ten SMS" mental model.
+export const VOICE_CALL_COST = 10;
+export function voiceCallCost(): number { return VOICE_CALL_COST; }
+
+// ---- Quiet hours (TCPA: no automated calls outside 8am–9pm local time) ----
+// We don't store recipient timezones, so we use the SENDER's tz as a proxy.
+// Until per-recipient tz is available, this is the conservative call: a 9am
+// blast from a PT-based business won't fire until 11am ET locally — better
+// to be safe by default than expose the user to TCPA risk for a few extra
+// "ringing at 7am" minutes saved.
+export function isInQuietHours(userId: string, now = new Date()): boolean {
+  const s = getAppSettings(userId) as any;
+  // tz offset in MINUTES east of UTC. Default America/Los_Angeles (PT, -480
+  // in winter / -420 in summer — use a static -480 as a safe default; a
+  // DST-aware version would use Intl.DateTimeFormat).
+  const tzMin = typeof s.quiet_hours_tz_offset === 'number' ? s.quiet_hours_tz_offset : -480;
+  const localMs = now.getTime() + tzMin * 60 * 1000;
+  const localHour = new Date(localMs).getUTCHours();   // 0-23 in target tz
+  // Allowed window: 08:00 ≤ hour < 21:00 (so up to but not including 9pm).
+  return !(localHour >= 8 && localHour < 21);
 }
 
 // ---- subscriptions ----

@@ -11,6 +11,7 @@ import { smsRouter } from './routes/sms.js';
 import { conversationsRouter } from './routes/conversations.js';
 import { agentRouter } from './routes/agent.js';
 import { campaignsRouter, recoverInterruptedCampaigns } from './routes/campaigns.js';
+import { agentCallsRouter, recoverInterruptedAgentCalls } from './routes/agentCalls.js';
 import { pushRouter } from './routes/push.js';
 import { routingRouter } from './routes/routing.js';
 import { diagRouter } from './routes/diag.js';
@@ -101,6 +102,7 @@ app.use('/api', smsRouter);
 app.use('/api', conversationsRouter);
 app.use('/api', agentRouter);
 app.use('/api', campaignsRouter);
+app.use('/api', agentCallsRouter);
 app.use('/api', pushRouter);
 // Cost/abuse guards on the OpenAI- and Twilio-billed surfaces. NOTE: the
 // Twilio-driven prank voice loop (/api/voice/prank*) is intentionally NOT
@@ -217,5 +219,6 @@ app.listen(port, '0.0.0.0', () => {
   // crash). Runs before scheduler so a half-sent blast that fell off the
   // previous boot reconciles its credit reservation immediately.
   recoverInterruptedCampaigns();
+  recoverInterruptedAgentCalls();
   startBlogScheduler();
 });

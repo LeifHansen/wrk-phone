@@ -141,6 +141,14 @@ export const api = {
   listCampaigns: () => req<any[]>('/api/campaigns'),
   createCampaign: (payload: any) => req<{ id: number }>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) }),
   sendCampaign: (id: number) => req(`/api/campaigns/${id}/send`, { method: 'POST' }),
+
+  // ---- Agent calls (outbound AI voice campaigns) ----
+  listAgentCalls: () => req<any[]>('/api/agent-calls'),
+  getAgentCall: (id: number) => req<{ campaign: any; recipients: any[] }>(`/api/agent-calls/${id}`),
+  createAgentCall: (payload: any) => req<{ id: number }>('/api/agent-calls', { method: 'POST', body: JSON.stringify(payload) }),
+  // consent must be true — server enforces TCPA acknowledgement before dialing.
+  sendAgentCall: (id: number, consent: boolean) =>
+    req(`/api/agent-calls/${id}/send`, { method: 'POST', body: JSON.stringify({ consent }) }),
   // contacts
   listContacts: (q?: string, segmentId?: number) => {
     const p = new URLSearchParams();

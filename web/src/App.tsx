@@ -36,6 +36,7 @@ const AgentTrain = page(() => import('./pages/AgentTrain'), 'AgentTrain');
 const Routing = page(() => import('./pages/Routing'), 'Routing');
 const RoutingEdit = page(() => import('./pages/RoutingEdit'), 'RoutingEdit');
 const Campaigns = page(() => import('./pages/Campaigns'), 'Campaigns');
+const AgentCalls = page(() => import('./pages/AgentCalls'), 'AgentCalls');
 const Settings = page(() => import('./pages/Settings'), 'Settings');
 const Blog = page(() => import('./pages/Blog'), 'Blog');
 const BlogPost = page(() => import('./pages/BlogPost'), 'BlogPost');
@@ -124,6 +125,9 @@ export function App() {
         <NavLink to="/campaigns" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Campaigns">
           <span className="glyph"><IconBlast /></span><span className="nav-label">BLAST</span>
         </NavLink>
+        <NavLink to="/agent-calls" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agent calls — outbound AI voice">
+          <span className="glyph"><IconPhone /></span><span className="nav-label">CALLS</span>
+        </NavLink>
         <NavLink to="/agents" className={({ isActive }) => 'nav-item' + (isActive ? ' active' : '')} title="Agents">
           <span className="glyph"><IconAgent /></span><span className="nav-label">AGENTS</span>
         </NavLink>
@@ -177,6 +181,7 @@ export function App() {
           <Route path="/routing/new" element={<RoutingEdit />} />
           <Route path="/routing/:id" element={<RoutingEdit />} />
           <Route path="/campaigns" element={<Campaigns />} />
+          <Route path="/agent-calls" element={<AgentCalls />} />
           <Route path="/credits" element={<Credits />} />
           <Route path="/numbers" element={<Numbers />} />
           <Route path="/a2p" element={<A2P />} />
