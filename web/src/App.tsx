@@ -41,8 +41,31 @@ const Blog = page(() => import('./pages/Blog'), 'Blog');
 const BlogPost = page(() => import('./pages/BlogPost'), 'BlogPost');
 const Superadmin = page(() => import('./pages/Superadmin'), 'Superadmin');
 
+// Dedicated SEO landings, each targeting one keyword cluster. They share the
+// MarketingLayout (same header/footer/SEO hook) so the cross-link network
+// stays consistent and a visitor never feels like they jumped sites.
+const SmsMarketingApp = page(() => import('./pages/marketing/SmsMarketingApp'), 'SmsMarketingApp');
+const TextMarketingApp = page(() => import('./pages/marketing/TextMarketingApp'), 'TextMarketingApp');
+const MassTextingApp = page(() => import('./pages/marketing/MassTextingApp'), 'MassTextingApp');
+const SmsCampaigns = page(() => import('./pages/marketing/SmsCampaigns'), 'SmsCampaigns');
+const TextCampaigns = page(() => import('./pages/marketing/TextCampaigns'), 'TextCampaigns');
+const AiTextAgents = page(() => import('./pages/marketing/AiTextAgents'), 'AiTextAgents');
+const AiVoiceAgents = page(() => import('./pages/marketing/AiVoiceAgents'), 'AiVoiceAgents');
+const BusinessSmsApp = page(() => import('./pages/marketing/BusinessSmsApp'), 'BusinessSmsApp');
+
+const MARKETING_ROUTES = [
+  '/sms-marketing-app',
+  '/text-marketing-app',
+  '/mass-texting-app',
+  '/sms-campaigns',
+  '/text-campaigns',
+  '/ai-text-agents',
+  '/ai-voice-agents',
+  '/business-sms-app',
+];
+
 // Routes rendered without the app sidebar (public marketing + auth + setup).
-const CHROMELESS = ['/lp', '/login', '/register', '/welcome', '/setup'];
+const CHROMELESS = ['/lp', '/login', '/register', '/welcome', '/setup', ...MARKETING_ROUTES];
 const isChromeless = (p: string) => CHROMELESS.includes(p) || p === '/blog' || p.startsWith('/blog/');
 
 export function App() {
@@ -131,6 +154,15 @@ export function App() {
           <Route path="/setup" element={<Setup />} />
           <Route path="/blog" element={<Blog />} />
           <Route path="/blog/:slug" element={<BlogPost />} />
+          {/* Dedicated SEO landings — one per keyword cluster. */}
+          <Route path="/sms-marketing-app" element={<SmsMarketingApp />} />
+          <Route path="/text-marketing-app" element={<TextMarketingApp />} />
+          <Route path="/mass-texting-app" element={<MassTextingApp />} />
+          <Route path="/sms-campaigns" element={<SmsCampaigns />} />
+          <Route path="/text-campaigns" element={<TextCampaigns />} />
+          <Route path="/ai-text-agents" element={<AiTextAgents />} />
+          <Route path="/ai-voice-agents" element={<AiVoiceAgents />} />
+          <Route path="/business-sms-app" element={<BusinessSmsApp />} />
           <Route path="/superadmin" element={<Superadmin />} />
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />

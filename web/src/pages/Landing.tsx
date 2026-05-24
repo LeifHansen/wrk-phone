@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import { LogoMark } from '../components/Logo';
+import { MARKETING_LINKS } from '../components/MarketingLayout';
 
 // Public marketing site. SEO-first: real headings, keyword-rich descriptive
 // copy, and document <title>/<meta> set on mount so crawlers that execute JS
@@ -218,13 +219,17 @@ export function Landing() {
           <LogoMark size={28} />
           <span>WrkPhn</span>
         </div>
-        <div className="lp-foot-links">
+        {/* Cross-link to every dedicated SEO landing — gives Google a clear
+            site map of the keyword cluster and spreads link equity. */}
+        <nav className="lp-foot-links" aria-label="Marketing pages">
+          {MARKETING_LINKS.map((l) => (
+            <Link key={l.to} to={l.to}>{l.label}</Link>
+          ))}
           <Link to="/blog">Blog</Link>
           <Link to="/login">Log in</Link>
           <Link to="/register">Register</Link>
-          <a href="#features">Features</a>
-        </div>
-        <div className="lp-foot-fine">© {new Date().getFullYear()} WrkPhn — AI work phone, AI SMS marketing, AI text &amp; voice agents.</div>
+        </nav>
+        <div className="lp-foot-fine">© {new Date().getFullYear()} WrkPhn — Work. Call. Connect. AI work phone with AI text agents, AI voice agents, and SMS marketing.</div>
       </footer>
     </div>
   );

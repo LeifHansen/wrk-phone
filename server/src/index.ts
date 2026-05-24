@@ -137,6 +137,17 @@ app.get('/sitemap.xml', (_req, res) => {
   const core = [
     { loc: '/', pri: '1.0', f: 'weekly' },
     { loc: '/lp', pri: '0.9', f: 'weekly' },
+    // Dedicated SEO landings — one per keyword cluster. All high-priority
+    // because they're the entry points Google should index for the long-tail
+    // queries (e.g. "sms marketing app", "ai voice agents").
+    { loc: '/sms-marketing-app', pri: '0.9', f: 'weekly' },
+    { loc: '/text-marketing-app', pri: '0.9', f: 'weekly' },
+    { loc: '/mass-texting-app',  pri: '0.9', f: 'weekly' },
+    { loc: '/sms-campaigns',     pri: '0.9', f: 'weekly' },
+    { loc: '/text-campaigns',    pri: '0.9', f: 'weekly' },
+    { loc: '/ai-text-agents',    pri: '0.9', f: 'weekly' },
+    { loc: '/ai-voice-agents',   pri: '0.9', f: 'weekly' },
+    { loc: '/business-sms-app',  pri: '0.9', f: 'weekly' },
     { loc: '/register', pri: '0.8', f: 'monthly' },
     { loc: '/login', pri: '0.5', f: 'monthly' },
     { loc: '/blog', pri: '0.8', f: 'daily' },
