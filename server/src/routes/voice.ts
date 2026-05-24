@@ -140,7 +140,7 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
   try {
     const recipientId = Number(req.params.recipientId);
     const row = db.prepare(
-      `SELECT acr.id, acr.phone, acr.name, ac.script, ac.user_id,
+      `SELECT acr.id, acr.phone, acr.name, ac.script, ac.user_id, ac.voicemail_only,
               a.name AS agent_name, a.tts_voice
          FROM agent_call_recipients acr
          JOIN agent_calls ac ON ac.id = acr.agent_call_id
@@ -162,23 +162,40 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
     // Twilio AnsweredBy values: human, machine_start, machine_end_beep,
-    // machine_end_silence, machine_end_other, fax, unknown. Anything that
-    // starts with "machine" → leave a short voicemail. Default to human.
-    const answeredBy = String(req.body.AnsweredBy || 'human');
-    const isMachine = answeredBy.startsWith('machine');
+    // machine_end_silence, machine_end_other, fax, unknown.
+    // - Regular agent call: treat machine* as voicemail, everything else as
+    //   a live human (matches the prior behavior).
+    // - voicemail_only: treat ANYTHING that isn't a confirmed human as a
+    //   machine so we don't apologize+hangup on unclassified pickups. Better
+    //   to occasionally leave a voicemail on a fax than to burn a paid call.
+    const answeredBy = String(req.body.AnsweredBy || '');
+    const voicemailOnly = !!row.voicemail_only;
+    const isMachine = voicemailOnly
+      ? answeredBy !== 'human'
+      : answeredBy.startsWith('machine');
 
     const greetName = row.name ? `, ${row.name}` : '';
     const intro = `Hi${greetName}, this is ${row.agent_name}. ${row.script}`;
-    if (isMachine) {
-      // Voicemail path: just leave the message + identifying info.
+
+    if (voicemailOnly && !isMachine) {
+      // DROP-VOICEMAIL on human pickup: brief apology + hangup. We can't redial
+      // straight to voicemail (Twilio doesn't expose carrier-side RVM), but
+      // the next attempt — or the recipient calling back — will land on
+      // voicemail naturally. The recipient's number is NOT auto-opted-out.
+      twiml.pause({ length: 1 });
+      twiml.say({ voice }, "Sorry, wrong number. Goodbye.");
+      twiml.hangup();
+    } else if (isMachine) {
+      // Voicemail path (always for voicemail-only; fallback for regular
+      // calls when Twilio AMD detects a machine). Just leave the script.
       twiml.pause({ length: 1 });
       twiml.say({ voice }, intro);
       twiml.say({ voice }, 'Thanks, goodbye.');
       twiml.hangup();
     } else {
-      // Live human path: deliver message inside a Gather so the recipient
-      // can press 9 to opt out. Timeout=3 keeps the call short after the
-      // message ends if they don't press anything.
+      // Live human path on a regular agent call: deliver message inside a
+      // Gather so the recipient can press 9 to opt out. Timeout=3 keeps the
+      // call short after the message ends if they don't press anything.
       const gather = twiml.gather({
         numDigits: 1,
         timeout: 3,

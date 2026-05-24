@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Agent, AGENT_COLORS, COLOR_BG, COLOR_FG, api } from '../lib/api';
 import { toast } from '../components/Toast';
@@ -294,8 +294,10 @@ function VoicePicker({ current, onPick }: {
 }) {
   const [data, setData] = useState<any>(null);
   const [creating, setCreating] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const [name, setName] = useState('');
   const [style, setStyle] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const load = () => api.listVoices().then(setData).catch(() => {});
   useEffect(() => { load(); }, []);
@@ -309,6 +311,42 @@ function VoicePicker({ current, onPick }: {
       setName(''); setStyle(''); load();
     } catch (e: any) { toast(e.message, 'err'); }
     finally { setCreating(false); }
+  };
+
+  // Voice-sample upload. The user picks an audio file (mp3/wav/m4a) or a
+  // short video clip; we extract the audio bytes and POST them as raw body.
+  // If the server has a cloning provider wired (ELEVENLABS_API_KEY) we get
+  // back a real cloned voice; otherwise it falls back to a Polly preset and
+  // the sample is saved for later use.
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!name.trim()) {
+      toast('Name your voice first (e.g. "My voice").', 'err');
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 20 * 1024 * 1024) {
+      toast('Sample is too big — keep it under 20 MB.', 'err');
+      e.target.value = '';
+      return;
+    }
+    if (!/^(audio|video)\//.test(file.type)) {
+      toast('Pick an audio or video file.', 'err');
+      e.target.value = '';
+      return;
+    }
+    setUploading(true);
+    try {
+      const v = await api.uploadVoiceSample(file, name.trim(), style.trim());
+      onPick({ id: v.id, name: v.name, tts_voice: v.tts_voice });
+      toast(v.note, v.cloned ? 'ok' : 'info');
+      setName(''); setStyle(''); load();
+    } catch (e: any) { toast(e.message, 'err'); }
+    finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   if (!data) return <p className="hint">Loading voices…</p>;
@@ -327,7 +365,7 @@ function VoicePicker({ current, onPick }: {
         {data.custom.map((c: any) => (
           <button key={c.id} className={'seg-chip' + (current === c.name ? ' on' : '')}
             onClick={() => onPick({ id: c.id, name: c.name, tts_voice: c.tts_voice })}>
-            ★ {c.name}
+            {c.cloned ? '🎙️' : '★'} {c.name}
           </button>
         ))}
       </div>
@@ -339,7 +377,18 @@ function VoicePicker({ current, onPick }: {
         <button className="btn pink" onClick={create} disabled={creating || !name.trim()}>
           {creating ? '…' : 'Create voice'}
         </button>
+        <button className="btn lime" onClick={() => fileInputRef.current?.click()}
+          disabled={uploading || !name.trim()}
+          title="Upload a 15–30s clean voice sample (mp3 / wav / m4a / mp4) to clone">
+          {uploading ? 'Uploading…' : '🎙️ Upload sample'}
+        </button>
+        <input ref={fileInputRef} type="file" accept="audio/*,video/*"
+          onChange={onFile} style={{ display: 'none' }} />
       </div>
+      <p className="hint" style={{ marginTop: 8 }}>
+        Tip: 15–30 seconds of clean speech, single speaker, low background noise.
+        Don't upload a voice you don't have rights to use.
+      </p>
     </div>
   );
 }

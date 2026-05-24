@@ -39,6 +39,10 @@ export function AgentCalls() {
   const [target, setTarget] = useState<Target>('all');
   const [segId, setSegId] = useState<number | null>(null);
   const [recipientsRaw, setRecipientsRaw] = useState('');
+  // Drop-voicemail mode: the agent ONLY leaves a voicemail. If a live human
+  // picks up, the call apologizes briefly and hangs up — the user can then
+  // try again later (or the recipient calls back to voicemail naturally).
+  const [voicemailOnly, setVoicemailOnly] = useState(false);
   const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [openDetailId, setOpenDetailId] = useState<number | null>(null);
@@ -71,7 +75,7 @@ export function AgentCalls() {
     if (!name.trim()) return toast('Name required.', 'err');
     if (!agentId) return toast('Pick an agent.', 'err');
     if (!script.trim()) return toast('Write a script.', 'err');
-    const payload: any = { name: name.trim(), agentId, script: script.trim() };
+    const payload: any = { name: name.trim(), agentId, script: script.trim(), voicemailOnly };
     if (target === 'all') payload.allContacts = true;
     else if (target === 'segment') {
       if (!segId) return toast('Pick a segment.', 'err');
@@ -87,6 +91,7 @@ export function AgentCalls() {
       setShowNew(false);
       setName(''); setAgentId(null); setScript('');
       setRecipientsRaw(''); setTarget('all'); setSegId(null);
+      setVoicemailOnly(false);
       setConsent(false);
       load();
       toast(`Draft created (#${out.id}). Click it to review and send.`, 'ok');
@@ -180,6 +185,17 @@ export function AgentCalls() {
                   placeholder={'+15551234567, Sam\n+15559876543, Alex'} />
               )}
             </div>
+
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: 12,
+                            background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 8 }}>
+              <input type="checkbox" checked={voicemailOnly} onChange={(e) => setVoicemailOnly(e.target.checked)}
+                style={{ marginTop: 4, width: 18, height: 18 }} />
+              <span style={{ fontSize: 13, lineHeight: 1.45 }}>
+                <b>Drop voicemail only</b> — leave the script as a voicemail. If a live
+                human picks up, the call apologizes briefly and hangs up (Twilio doesn't
+                support carrier-side ringless voicemail; this is the closest legal proxy).
+              </span>
+            </label>
 
             <button className="btn" onClick={create} disabled={busy}>{busy ? 'Creating…' : 'Create draft'}</button>
           </div>

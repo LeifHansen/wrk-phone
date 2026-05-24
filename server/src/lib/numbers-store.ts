@@ -115,6 +115,25 @@ export function listAccountNumbers(userId: string): AccountNumber[] {
   ).all(userId) as AccountNumber[];
 }
 
+/**
+ * The set of active sender numbers an account can round-robin a high-volume
+ * campaign across. Most accounts have one number; power users with multiple
+ * 10DLC-registered locals get N-way parallel sends and a matching throughput
+ * multiplier. If the account has no active rows at all, falls back to the
+ * passed fallback (typically `getActiveNumber()`) so the caller always has
+ * at least one lane.
+ */
+export function listSenderNumbers(userId: string, fallback?: string): string[] {
+  const rows = db.prepare(
+    `SELECT phone FROM account_numbers
+     WHERE user_id = ? AND status = 'active'
+     ORDER BY is_default DESC, created_at ASC`
+  ).all(userId) as { phone: string }[];
+  const list = rows.map((r) => r.phone).filter(Boolean);
+  if (list.length > 0) return list;
+  return fallback ? [fallback] : [];
+}
+
 /** The account's default sending line, or null if it has none. */
 export function getDefaultNumber(userId: string): AccountNumber | null {
   return (db.prepare(

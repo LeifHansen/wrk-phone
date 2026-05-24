@@ -18,6 +18,7 @@ import { diagRouter } from './routes/diag.js';
 import { numbersRouter } from './routes/numbers.js';
 import { contactsRouter } from './routes/contacts.js';
 import { mediaRouter, MEDIA_DIR } from './routes/media.js';
+import { VOICE_SAMPLE_DIR } from './routes/voices.js';
 import { creditsRouter, stripeWebhookHandler } from './routes/credits.js';
 import { voicesRouter } from './routes/voices.js';
 import { billingRouter } from './routes/billing.js';
@@ -126,6 +127,9 @@ app.use('/api', blogRouter);
 app.use('/api', aiRouter);
 app.use('/api', prankRouter);
 app.use('/media', express.static(MEDIA_DIR));
+// Voice samples are served as public URLs so the cloning provider can fetch
+// them on-demand and so the UI can play them back for verification.
+app.use('/voice-samples', express.static(VOICE_SAMPLE_DIR));
 
 // Unknown API routes must return JSON 404 (not the SPA HTML fallback) so the
 // client's fetch wrapper gets a parseable error.

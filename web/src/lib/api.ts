@@ -211,15 +211,34 @@ export const api = {
       '/api/credits'
     ),
   listVoices: () =>
-    req<{ grokAvailable: boolean; note: string;
+    req<{ grokAvailable: boolean; elevenlabsAvailable?: boolean; cloningProvider?: string | null; note: string;
       presets: { name: string; style: string; tts_voice: string }[];
-      custom: { id: number; name: string; provider: string; tts_voice: string; style: string }[] }>(
+      custom: { id: number; name: string; provider: string; tts_voice: string; style: string; sample_url?: string | null; cloned?: number }[] }>(
       '/api/voices'
     ),
   createVoice: (name: string, style: string) =>
     req<{ id: number; name: string; provider: string; tts_voice: string }>(
       '/api/voices', { method: 'POST', body: JSON.stringify({ name, style }) }
     ),
+  // Upload a voice sample (audio/short video) and create a cloned voice. If
+  // no cloning provider is wired (no ELEVENLABS_API_KEY), the server saves
+  // the sample and falls back to a Polly preset — the voice still works on
+  // calls and auto-upgrades the moment a provider key is added.
+  uploadVoiceSample: async (file: File, name: string, style: string) => {
+    const buf = await file.arrayBuffer();
+    const res = await fetch('/api/voices/upload', {
+      method: 'POST',
+      headers: {
+        'Content-Type': file.type || 'audio/mpeg',
+        'X-Voice-Name': name,
+        'X-Voice-Style': style,
+        ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
+      },
+      body: buf,
+    });
+    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    return res.json() as Promise<{ id: number; name: string; provider: string; tts_voice: string; sample_url: string; cloned: number; note: string }>;
+  },
   buyCredits: (packageId: string) =>
     req<{ ok: boolean; added: number; balance: number; stub: boolean }>(
       '/api/credits/purchase', { method: 'POST', body: JSON.stringify({ packageId }) }

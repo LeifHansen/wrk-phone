@@ -5,6 +5,8 @@ import {
   voiceCallCost, isVoiceOptedOut, isInQuietHours,
   getActiveNumber,
 } from '../lib/db.js';
+import { listSenderNumbers } from '../lib/numbers-store.js';
+import { processBatch } from '../lib/messagingProcessor.js';
 import { twilioClient } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 
@@ -39,12 +41,16 @@ agentCallsRouter.get('/agent-calls/:id', (req, res) => {
 });
 
 // ---------- create draft ----------
-// body: { name, agentId, script, fromNumber?, recipients? | segmentId | allContacts }
+// body: { name, agentId, script, fromNumber?, voicemailOnly?, recipients? | segmentId | allContacts }
 agentCallsRouter.post('/agent-calls', (req, res) => {
   const name = String(req.body.name || '').trim();
   const script = String(req.body.script || '').trim();
   const agentId = Number(req.body.agentId);
   const fromNumber = req.body.fromNumber ? String(req.body.fromNumber) : null;
+  // Drop-voicemail mode: hang up on live human pickup, leave the script as
+  // the voicemail message. Implemented via Twilio AMD (DetectMessageEnd) +
+  // a TwiML branch on AnsweredBy.
+  const voicemailOnly = req.body.voicemailOnly ? 1 : 0;
   if (!name || !script || !agentId) {
     return res.status(400).json({ error: 'name, script, and agentId required' });
   }
@@ -73,9 +79,9 @@ agentCallsRouter.post('/agent-calls', (req, res) => {
   const cId = Number(
     db.prepare(
       `INSERT INTO agent_calls
-         (user_id, agent_id, name, script, from_number, total_count, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(USER, agentId, name, script, fromNumber, recipients.length, Date.now()).lastInsertRowid
+         (user_id, agent_id, name, script, from_number, voicemail_only, total_count, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(USER, agentId, name, script, fromNumber, voicemailOnly, recipients.length, Date.now()).lastInsertRowid
   );
   const ins = db.prepare(
     `INSERT INTO agent_call_recipients (agent_call_id, phone, name) VALUES (?, ?, ?)`
@@ -127,8 +133,20 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
     });
   }
 
-  // Persist the consent acknowledgement BEFORE flipping to sending — that's
-  // the audit trail you'll want if a recipient ever complains.
+  // ORDER MATTERS for crash-safety: mark opted-out + quiet-hours rows
+  // BEFORE flipping the parent row to 'sending'. Otherwise a crash in
+  // between would leave 'pending' rows the recovery sweep would refund
+  // credits for, even though we never reserved those credits.
+  for (const { r, optedOut } of work) {
+    if (optedOut) {
+      db.prepare(`UPDATE agent_call_recipients SET status = 'skipped-opted-out' WHERE id = ?`).run(r.id);
+    } else if (quietHours) {
+      db.prepare(`UPDATE agent_call_recipients SET status = 'skipped-quiet-hours' WHERE id = ?`).run(r.id);
+    }
+  }
+
+  // Persist the consent acknowledgement WITH the status flip — that's the
+  // audit trail you'll want if a recipient ever complains.
   db.prepare(
     `UPDATE agent_calls
         SET status = 'sending',
@@ -143,69 +161,77 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
     String(req.headers['user-agent'] || '').slice(0, 200),
     id,
   );
-  res.json({ ok: true, queued: billable.length, reserved: reserve, quietHoursSkipped: quietHours ? work.length - work.filter(w=>w.optedOut).length : 0 });
-
-  // Fire-and-forget loop. Twilio voice rate-limit is ~1 call/sec per
-  // from-number for safety; we throttle to 1000ms.
+  // Round-robin across every active sender number the account owns. Many
+  // users have just one; multi-number accounts (10DLC + locals) get the
+  // multiplier for free.
   const base = (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
-  if (!base) {
-    log.error('agent-calls.send', `cannot dial: PUBLIC_BASE_URL not set (id=${id})`);
+  const senderNumbers = campaign.from_number
+    ? [campaign.from_number]
+    : listSenderNumbers(USER, getActiveNumber(USER) || undefined);
+  if (!base || senderNumbers.length === 0) {
+    log.error('agent-calls.send',
+      `cannot dial: missing ${!base ? 'PUBLIC_BASE_URL' : 'from-number'} (id=${id})`);
     addCredits(USER, reserve);
     db.prepare(`UPDATE agent_calls SET status = 'failed' WHERE id = ?`).run(id);
-    return;
-  }
-  const fromNum = campaign.from_number || getActiveNumber(USER);
-  if (!fromNum) {
-    log.error('agent-calls.send', `cannot dial: no from number (id=${id})`);
-    addCredits(USER, reserve);
-    db.prepare(`UPDATE agent_calls SET status = 'failed' WHERE id = ?`).run(id);
-    return;
+    return res.status(500).json({ error: 'no public base URL or sender number configured' });
   }
 
+  res.json({
+    ok: true,
+    queued: billable.length,
+    reserved: reserve,
+    lanes: senderNumbers.length,
+    quietHoursSkipped: quietHours ? work.length - work.filter(w => w.optedOut).length : 0,
+  });
+
+  // (Pre-pass for opt-outs and quiet hours ran above before status flip.)
+  const dialable = work.filter((w) => !w.optedOut && !quietHours).map((w) => w.r);
+
+  // Voice rate-limit is much tighter than SMS — Twilio caps outbound at
+  // ~1 call/sec per from-number on standard accounts. Each lane gets 2
+  // concurrent workers with a 1000ms minimum interval (effective: 2/sec
+  // peak, ~1/sec sustained), which is the safe ceiling without an
+  // enterprise rate-limit increase. Multi-number accounts scale linearly.
   (async () => {
     let placed = 0;
-    for (const { r, optedOut } of work) {
-      if (optedOut) {
-        db.prepare(
-          `UPDATE agent_call_recipients SET status = 'skipped-opted-out' WHERE id = ?`
-        ).run(r.id);
-        continue;
-      }
-      if (quietHours) {
-        db.prepare(
-          `UPDATE agent_call_recipients SET status = 'skipped-quiet-hours' WHERE id = ?`
-        ).run(r.id);
-        continue;
-      }
-      try {
-        const call = await twilioClient.calls.create({
-          to: r.phone,
-          from: fromNum,
-          url: `${base}/api/voice/agent-call-twiml/${r.id}`,
-          method: 'POST',
-          // Machine detection — Twilio waits ~5s to classify human vs voicemail
-          // then includes AnsweredBy in the TwiML POST. We branch on it: humans
-          // get the full script, machines get a short voicemail-style version.
-          machineDetection: 'DetectMessageEnd',
-          statusCallback: `${base}/api/voice/agent-call-status`,
-          statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
-          statusCallbackMethod: 'POST',
-          timeout: 30,
-        });
-        db.prepare(
-          `UPDATE agent_call_recipients SET status = 'initiated', twilio_sid = ? WHERE id = ?`
-        ).run(call.sid, r.id);
-        placed++;
-      } catch (err: any) {
-        addCredits(USER, perCallCost); // refund — this one never dialed
-        db.prepare(
-          `UPDATE agent_call_recipients SET status = 'failed', error = ? WHERE id = ?`
-        ).run((err.message || 'error').slice(0, 500), r.id);
-      }
-      db.prepare(`UPDATE agent_calls SET placed_count = ? WHERE id = ?`).run(placed, id);
-      await new Promise((res) => setTimeout(res, 1000));
-    }
-    db.prepare(`UPDATE agent_calls SET status = 'done' WHERE id = ?`).run(id);
+    await processBatch(
+      dialable,
+      async (r: any, from) => {
+        try {
+          const call = await twilioClient.calls.create({
+            to: r.phone,
+            from,
+            url: `${base}/api/voice/agent-call-twiml/${r.id}`,
+            method: 'POST',
+            machineDetection: 'DetectMessageEnd',
+            statusCallback: `${base}/api/voice/agent-call-status`,
+            statusCallbackEvent: ['initiated', 'ringing', 'answered', 'completed'],
+            statusCallbackMethod: 'POST',
+            timeout: 30,
+          });
+          db.prepare(
+            `UPDATE agent_call_recipients SET status = 'initiated', twilio_sid = ? WHERE id = ?`
+          ).run(call.sid, r.id);
+          placed++;
+          if (placed % 10 === 0) {
+            db.prepare(`UPDATE agent_calls SET placed_count = ? WHERE id = ?`).run(placed, id);
+          }
+        } catch (err: any) {
+          addCredits(USER, perCallCost); // refund — never dialed
+          db.prepare(
+            `UPDATE agent_call_recipients SET status = 'failed', error = ? WHERE id = ?`
+          ).run((err.message || 'error').slice(0, 500), r.id);
+          // Don't rethrow — fully handled here, the processor's result-tracking
+          // surface is unused so the rethrow just doubles the log noise.
+        }
+      },
+      {
+        fromNumbers: senderNumbers,
+        concurrencyPerLane: 2,
+        perLaneMinIntervalMs: 1000,
+      },
+    );
+    db.prepare(`UPDATE agent_calls SET placed_count = ?, status = 'done' WHERE id = ?`).run(placed, id);
   })().catch((e) => {
     log.error('agent-calls', `send loop crashed for ${id}`, e);
     db.prepare(`UPDATE agent_calls SET status = 'failed' WHERE id = ?`).run(id);
@@ -221,15 +247,20 @@ export function recoverInterruptedAgentCalls(): void {
       `SELECT * FROM agent_calls WHERE status = 'sending'`
     ).all() as any[];
     for (const c of stuck) {
-      const pending = db.prepare(
+      // Only refund rows we hadn't yet handed to Twilio. A row WITH a
+      // twilio_sid was already dialed (Twilio doesn't know we crashed —
+      // the call will still ring, AMD-classify, run TwiML, and post status
+      // callbacks that update the row). Refunding it would credit a call
+      // that actually happened, AND a re-send would double-dial.
+      const refundable = db.prepare(
         `SELECT COUNT(*) AS n FROM agent_call_recipients
-          WHERE agent_call_id = ? AND status = 'pending'`
+          WHERE agent_call_id = ? AND status = 'pending' AND twilio_sid IS NULL`
       ).get(c.id) as { n: number };
-      const refund = (pending?.n || 0) * voiceCallCost();
+      const refund = (refundable?.n || 0) * voiceCallCost();
       if (refund > 0) addCredits(c.user_id, refund);
       db.prepare(`UPDATE agent_calls SET status = 'draft' WHERE id = ?`).run(c.id);
       log.warn('agent-calls.recover',
-        `campaign ${c.id} ("${c.name}") was 'sending' at boot — refunded ${refund} credits for ${pending?.n || 0} unsent recipients and reset to draft`);
+        `campaign ${c.id} ("${c.name}") was 'sending' at boot — refunded ${refund} credits for ${refundable?.n || 0} undialed recipients and reset to draft`);
     }
   } catch (e) {
     log.error('agent-calls.recover', 'recovery sweep failed', e);

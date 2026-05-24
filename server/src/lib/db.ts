@@ -333,6 +333,17 @@ tryAddColumn('contacts', 'voice_opted_out INTEGER NOT NULL DEFAULT 0');
 // user; falls back to America/Los_Angeles if unset. The send loop enforces
 // "no automated calls outside 8am–9pm local time" for TCPA hygiene.
 tryAddColumn('app_settings', 'quiet_hours_tz_offset INTEGER');
+// Voice cloning: store the user-uploaded reference sample + the cloned
+// provider voice id (e.g. ElevenLabs voice_id). `cloned=1` means the
+// `tts_voice` column holds an actual cloned voice id (format
+// `provider:id`, e.g. `elevenlabs:abc123`), not a generic Polly preset.
+tryAddColumn('voices', 'sample_url TEXT');
+tryAddColumn('voices', 'cloned INTEGER NOT NULL DEFAULT 0');
+// Agent calls: voicemail-only mode — drop a voicemail without leaving a
+// message on a live human pickup. Twilio AMD classifies the answer; if
+// human, the call apologizes briefly and hangs up; if voicemail, the
+// agent leaves the script as the voicemail message.
+tryAddColumn('agent_calls', 'voicemail_only INTEGER NOT NULL DEFAULT 0');
 
 // One-time backfill: stamp our_number on conversations created before the
 // column existed, using each account's current sending number. Without it a
