@@ -5,7 +5,25 @@ import { log } from '../lib/log.js';
 
 export const billingRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
-const stripe = process.env.STRIPE_SECRET_KEY ? new Stripe(process.env.STRIPE_SECRET_KEY) : null;
+
+// A "real" Stripe key passes the prefix check AND doesn't look like our
+// placeholder (e.g. `sk_test_xxxxxxxxxxxxxxxxxxxxxxxx`). Without this guard
+// the constructor succeeds — but every API call 401s with a misleading
+// "Invalid API Key" error, and from the user's POV the Subscribe button is
+// just broken. Treating the placeholder as unconfigured falls back to the
+// dev path that records a 'dev' subscription so the flow stays testable.
+function isUsableStripeKey(k: string | undefined): boolean {
+  if (!k) return false;
+  if (!/^sk_(test|live)_/.test(k)) return false;
+  if (/x{6,}/i.test(k) || /your[_-]?key|placeholder|stub/i.test(k)) return false;
+  return k.length > 30; // real Stripe keys are ~100 chars
+}
+const stripe = isUsableStripeKey(process.env.STRIPE_SECRET_KEY)
+  ? new Stripe(process.env.STRIPE_SECRET_KEY as string)
+  : null;
+if (process.env.STRIPE_SECRET_KEY && !stripe) {
+  log.warn('billing', 'STRIPE_SECRET_KEY looks like a placeholder/stub — treating as unconfigured. Set a real sk_live_… or sk_test_… key in Fly secrets to enable real Stripe checkout.');
+}
 
 // Recurring plans. Prices are created inline (price_data) so there's no
 // pre-setup in the Stripe dashboard required. `setupFee` is a one-time charge

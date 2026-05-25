@@ -59,7 +59,17 @@ voiceRouter.post('/voice/outbound', (req, res) => {
       log.error('voice/outbound', 'no valid caller ID (number not provisioned?) — call will fail', { callerId });
       twiml.say('This line has no caller ID configured.');
     } else {
-      const dial = twiml.dial({ callerId, answerOnBridge: true });
+      // `action` fires when the dial completes — Twilio POSTs DialCallStatus,
+      // DialCallDuration, DialCallSid. This is the only signal we get back
+      // about the call lifecycle for softphone-initiated outbound, so it's
+      // also the only place we can persist a row in the `calls` table for
+      // analytics. Without it, the metrics table stays empty forever.
+      const dial = twiml.dial({
+        callerId,
+        answerOnBridge: true,
+        action: '/api/voice/dial-status?direction=out',
+        method: 'POST',
+      });
       if (/^\+?\d+$/.test(to)) dial.number(to);
       else dial.client(to);
     }
@@ -85,11 +95,65 @@ voiceRouter.post('/voice/inbound', (req, res) => {
     twiml.reject();
     return res.type('text/xml').send(twiml.toString());
   }
-  const dial = twiml.dial({ timeout: 25, answerOnBridge: true, callerId: fromNumber });
+  // `action` fires when the softphone-side dial leg ends — gives us the
+  // DialCallStatus / DialCallDuration we need to log inbound calls in the
+  // analytics-feeding `calls` table. Without it the table stays empty.
+  // Twilio fetches the action URL with a fresh body, so the inbound-vs-
+  // outbound bookkeeping is preserved via the query-string flag.
+  const dial = twiml.dial({
+    timeout: 25,
+    answerOnBridge: true,
+    callerId: fromNumber,
+    action: '/api/voice/dial-status?direction=in',
+    method: 'POST',
+  });
   dial.client(owner);
   // If client doesn't answer, fall through to voicemail
   twiml.redirect({ method: 'POST' }, '/api/voice/voicemail-greeting');
   res.type('text/xml').send(twiml.toString());
+});
+
+// Dial-action callback — fires when the inner <Dial> leg completes for
+// inbound OR outbound calls. Body includes DialCallStatus,
+// DialCallDuration, DialCallSid. We log the call here so analytics has
+// actual data; previously /voice/status was the only INSERT site but it
+// only fires when statusCallback is configured (which it never was on
+// these routes), so the `calls` table stayed empty.
+voiceRouter.post('/voice/dial-status', (req, res) => {
+  try {
+    const direction = req.query.direction === 'in' ? 'in' : 'out';
+    // For outbound: caller is the softphone identity (parent CallSid),
+    // peer is the dialed number → req.body.To on the original call but
+    // we get it via the original /voice/outbound's `To` param indirectly.
+    // For inbound: peer is From (the external caller), our number is To.
+    const from = String(req.body.From || '');
+    const to = String(req.body.To || '');
+    const dialStatus = String(req.body.DialCallStatus || '');
+    const duration = Number(req.body.DialCallDuration || 0);
+    const dialSid = String(req.body.DialCallSid || '') || String(req.body.CallSid || '');
+
+    // Only record calls that actually connected. 'completed' is the success
+    // status; 'busy', 'no-answer', 'canceled', 'failed' aren't logged here
+    // (they show up in error logs above). This matches what users expect
+    // analytics to mean: "calls that actually happened."
+    if (dialStatus === 'completed') {
+      const peer = direction === 'in' ? from : to;
+      const ourNumber = direction === 'in' ? to : from;
+      const owner = resolveInboundOwner(ourNumber, peer);
+      if (owner) {
+        db.prepare(
+          'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'
+        ).run(owner, peer, direction, duration, dialSid, Date.now());
+      }
+    } else {
+      log.info('voice/dial-status', `dial ${dialStatus}`, { direction, from, to, duration });
+    }
+  } catch (e) {
+    log.error('voice/dial-status', 'handler threw', e);
+  }
+  // Empty TwiML hangs up. The Dial leg has ended either way — there's
+  // nothing else for Twilio to do.
+  res.type('text/xml').send(new (twilio.twiml.VoiceResponse)().toString());
 });
 
 voiceRouter.post('/voice/voicemail-greeting', async (req, res) => {
