@@ -20,20 +20,25 @@
       "env": {
         "EXPO_PUBLIC_API_BASE_URL": "https://wrkphn.com"
       },
-      "autoIncrement": true
+      "autoIncrement": true,
+      "ios": {
+        "resourceClass": "m-medium"
+      }
     }
   },
   "submit": {
     "production": {
       "ios": {
         "appleId": "layfansun@gmail.com",
+        "appleTeamId": "637678XV8Y",
         "ascAppId": "PENDING_CREATE_IN_APP_STORE_CONNECT",
-        "appleTeamId": "637678XV8Y"
+        "_ASC_API_KEY_NOTE": "Once App Store Connect app exists, replace ascAppId with the numeric App ID from the URL (e.g. 1234567890). For automated submit, also set EXPO_APPLE_APP_SPECIFIC_PASSWORD or use the App Store Connect API key at ~/.app-store-connect/AuthKey_<KEY_ID>.p8 (key id 5Z29P6C3YN, issuer 41b160e9-71e4-4c24-b04f-a7950f2c2c2c)."
       },
       "android": {
-        "_comment": "Place the Play service-account JSON at mobile/play-service-account.json (gitignored), then run: eas submit -p android --profile production",
+        "_comment": "Place the Play service-account JSON at mobile/play-service-account.json (gitignored), then run: eas submit -p android --profile production. The service account is created in Google Cloud Console for the Play Console app — grant 'Release manager' access in Play Console → Users and permissions.",
         "serviceAccountKeyPath": "./play-service-account.json",
-        "track": "internal"
+        "track": "internal",
+        "releaseStatus": "draft"
       }
     }
   }

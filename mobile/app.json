@@ -3,7 +3,7 @@
     "name": "WrkPhn",
     "slug": "wrk-phone",
     "scheme": "wrkphn",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
@@ -16,15 +16,25 @@
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.wrkphn.app",
+      "buildNumber": "1",
       "icon": "./assets/icon.png",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "WrkPhn needs the mic for calls.",
-        "NSContactsUsageDescription": "WrkPhn syncs your contacts so names show on calls and texts, and your agents can recognize known people.",
-        "UIBackgroundModes": ["voip", "audio", "remote-notification"]
+        "NSMicrophoneUsageDescription": "WrkPhn uses the microphone so you can make and receive voice calls on your work line.",
+        "NSContactsUsageDescription": "WrkPhn syncs your contacts so caller names show in your inbox and AI agents can recognize known senders. Sync is optional and only runs when you tap Sync.",
+        "NSUserTrackingUsageDescription": "WrkPhn does not track you across other companies' apps or websites.",
+        "UIBackgroundModes": ["voip", "audio", "remote-notification"],
+        "LSApplicationQueriesSchemes": ["tel", "sms", "mailto"],
+        "ITSAppUsesNonExemptEncryption": false,
+        "CFBundleDevelopmentRegion": "en",
+        "CFBundleLocalizations": ["en"]
+      },
+      "config": {
+        "usesNonExemptEncryption": false
       }
     },
     "android": {
       "package": "com.wrkphn.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FBF8EC"
@@ -33,7 +43,12 @@
         "RECORD_AUDIO",
         "MODIFY_AUDIO_SETTINGS",
         "POST_NOTIFICATIONS",
-        "READ_CONTACTS"
+        "READ_CONTACTS",
+        "VIBRATE",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_PHONE_CALL",
+        "USE_FULL_SCREEN_INTENT",
+        "BLUETOOTH_CONNECT"
       ]
     },
     "web": {
