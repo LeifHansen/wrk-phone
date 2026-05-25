@@ -131,11 +131,19 @@ voicesRouter.post('/voices', async (req, res) => {
 
   const tts_voice = pickTtsForStyle(style);
   const provider = 'tts';
-  const r = db.prepare(
+  // Upsert on (user_id, name) so saving the same name twice REPLACES instead
+  // of creating a duplicate row. Prevents the "two of the same voice appeared
+  // and selecting one highlights both" bug.
+  db.prepare(
     `INSERT INTO voices (user_id, name, provider, tts_voice, style, created_at)
-     VALUES (?, ?, ?, ?, ?, ?)`
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(user_id, name) DO UPDATE SET
+        provider = excluded.provider,
+        tts_voice = excluded.tts_voice,
+        style = excluded.style`
   ).run(USER, name, provider, tts_voice, style, Date.now());
-  res.json({ id: Number(r.lastInsertRowid), name, provider, tts_voice, style, cloned: 0 });
+  const row = db.prepare(`SELECT id FROM voices WHERE user_id = ? AND name = ?`).get(USER, name) as { id: number };
+  res.json({ id: row.id, name, provider, tts_voice, style, cloned: 0 });
 });
 
 // POST /api/voices/upload — accepts a raw audio/video sample for cloning.
@@ -187,12 +195,26 @@ voicesRouter.post(
     const tts_voice = cloned || pickTtsForStyle(style);
     const provider = cloned ? 'elevenlabs' : 'tts';
 
-    const r = db.prepare(
+    // Upsert on (user_id, name) — re-uploading the same-named voice replaces
+    // the prior row's sample/clone instead of creating a duplicate. Old
+    // sample_url is dropped from disk so we don't accumulate orphaned files.
+    const prior = db.prepare(`SELECT sample_url FROM voices WHERE user_id = ? AND name = ?`).get(USER, name) as { sample_url: string | null } | undefined;
+    if (prior?.sample_url) {
+      try { fs.unlinkSync(path.join(VOICE_SAMPLE_DIR, prior.sample_url)); } catch { /* already gone */ }
+    }
+    db.prepare(
       `INSERT INTO voices (user_id, name, provider, tts_voice, style, sample_url, cloned, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(user_id, name) DO UPDATE SET
+          provider = excluded.provider,
+          tts_voice = excluded.tts_voice,
+          style = excluded.style,
+          sample_url = excluded.sample_url,
+          cloned = excluded.cloned`
     ).run(USER, name, provider, tts_voice, style, file, cloned ? 1 : 0, Date.now());
+    const row = db.prepare(`SELECT id FROM voices WHERE user_id = ? AND name = ?`).get(USER, name) as { id: number };
     res.json({
-      id: Number(r.lastInsertRowid),
+      id: row.id,
       name, provider, tts_voice, style,
       sample_url: sampleUrlFor(file),
       cloned: cloned ? 1 : 0,

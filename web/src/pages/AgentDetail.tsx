@@ -253,10 +253,11 @@ export function AgentDetail() {
               <div>
                 <h3>Voice</h3>
                 <VoicePicker
-                  current={merged.voice_name || null}
+                  currentId={(merged as any).voice_id ?? null}
+                  currentName={merged.voice_name || null}
                   onPick={async (v) => {
                     await api.patchAgent(aid, { voice_id: v.id ?? null, voice_name: v.name, tts_voice: v.tts_voice } as any);
-                    setAgent((a) => a ? { ...a, voice_name: v.name, tts_voice: v.tts_voice } as any : a);
+                    setAgent((a) => a ? { ...a, voice_id: v.id ?? null, voice_name: v.name, tts_voice: v.tts_voice } as any : a);
                   }}
                 />
               </div>
@@ -320,8 +321,13 @@ export function AgentDetail() {
   );
 }
 
-function VoicePicker({ current, onPick }: {
-  current: string | null;
+function VoicePicker({ currentId, currentName, onPick }: {
+  // Selection state — currentId is the source of truth for custom voices
+  // (unique per row), currentName is used to highlight a preset (presets
+  // don't have ids). This fixes the duplicate-name bug where two voices
+  // with the same name both highlighted when one was selected.
+  currentId: number | null;
+  currentName: string | null;
   onPick: (v: { id?: number; name: string; tts_voice: string }) => void;
 }) {
   const [data, setData] = useState<any>(null);
@@ -385,17 +391,23 @@ function VoicePicker({ current, onPick }: {
   return (
     <div>
       <p className="hint" style={{ marginBottom: 10 }}>
-        {current ? <>Using <b>{current}</b>. </> : 'No voice set — pick or create one. '}{data.note}
+        {currentName ? <>Using <b>{currentName}</b>. </> : 'No voice set — pick or create one. '}{data.note}
       </p>
       <div className="seg-chips">
         {data.presets.map((p: any) => (
-          <button key={p.name} className={'seg-chip' + (current === p.name ? ' on' : '')}
+          // Presets have no id — highlight only when currentId is null AND
+          // the name matches. Prevents a custom voice that happens to share
+          // a preset's name from co-highlighting the preset.
+          <button key={p.name}
+            className={'seg-chip' + (currentId == null && currentName === p.name ? ' on' : '')}
             onClick={() => onPick({ name: p.name, tts_voice: p.tts_voice })}>
             {p.name} · {p.style}
           </button>
         ))}
         {data.custom.map((c: any) => (
-          <button key={c.id} className={'seg-chip' + (current === c.name ? ' on' : '')}
+          // Custom voices — match by id only. If two voices share a name
+          // (legacy data), only the actually-selected one highlights now.
+          <button key={c.id} className={'seg-chip' + (currentId === c.id ? ' on' : '')}
             onClick={() => onPick({ id: c.id, name: c.name, tts_voice: c.tts_voice })}>
             {c.cloned ? '🎙️' : '★'} {c.name}
           </button>

@@ -8,10 +8,11 @@ import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
 import { SubNav } from '../components/SubNav';
 
+// Templates moved into the Media section — they pair with the Media
+// Library since templates can reference library images for MMS.
 const MSGS_SUBTABS = [
-  { to: '/messages',           label: 'Inbox',     end: true },
-  { to: '/messages/drafts',    label: 'Drafts' },
-  { to: '/messages/templates', label: 'Templates' },
+  { to: '/messages',        label: 'Inbox',  end: true },
+  { to: '/messages/drafts', label: 'Drafts' },
 ];
 
 interface Row {

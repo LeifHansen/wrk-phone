@@ -355,6 +355,24 @@ tryAddColumn('a2p_registrations', 'twilio_customer_profile_sid TEXT');
 tryAddColumn('a2p_registrations', 'twilio_end_user_sid TEXT');
 tryAddColumn('a2p_registrations', 'twilio_evaluation_sid TEXT');
 tryAddColumn('a2p_registrations', 'otp_verified INTEGER NOT NULL DEFAULT 0');
+
+// Voices: enforce one row per (user, name). Prevents the "I uploaded a
+// voice and got two of them, and clicking one highlights both" bug — the
+// duplicate row was created silently because there was no constraint.
+// Existing duplicates get collapsed (keep newest, since it's most likely
+// the one the user wanted) before adding the index, otherwise CREATE
+// UNIQUE INDEX would fail on a populated table.
+try {
+  db.exec(`
+    DELETE FROM voices WHERE id IN (
+      SELECT id FROM voices v
+       WHERE id < (SELECT MAX(id) FROM voices v2 WHERE v2.user_id = v.user_id AND v2.name = v.name)
+    );
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_voices_user_name ON voices(user_id, name);
+  `);
+} catch (e) {
+  log.warn('db.voices', 'dedup + unique-index failed (will retry next boot)', e);
+}
 // Voice cloning: store the user-uploaded reference sample + the cloned
 // provider voice id (e.g. ElevenLabs voice_id). `cloned=1` means the
 // `tts_voice` column holds an actual cloned voice id (format

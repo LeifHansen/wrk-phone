@@ -1,6 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '../lib/api';
 import { toast } from '../components/Toast';
+import { SubNav } from '../components/SubNav';
+
+const MEDIA_SUBTABS = [
+  { to: '/media',           label: 'Library',   end: true },
+  { to: '/media/templates', label: 'Templates' },
+];
 
 interface Item { id: number; url: string; prompt: string | null; kind: string; created_at: number }
 
@@ -63,6 +69,7 @@ export function Media() {
           </div>
         </div>
       </div>
+      <SubNav tabs={MEDIA_SUBTABS} />
 
       <div className="page-body">
         {/* Upload + AI generate */}

@@ -4,10 +4,11 @@ import { toast } from '../components/Toast';
 import { SmsAiTools } from '../components/SmsAiTools';
 import { SubNav } from '../components/SubNav';
 
-const MSGS_SUBTABS = [
-  { to: '/messages',           label: 'Inbox',     end: true },
-  { to: '/messages/drafts',    label: 'Drafts' },
-  { to: '/messages/templates', label: 'Templates' },
+// Templates live as a subtab under Media — they're authored on top of the
+// Media Library (an MMS template can reference any image you've uploaded).
+const MEDIA_SUBTABS = [
+  { to: '/media',           label: 'Library',   end: true },
+  { to: '/media/templates', label: 'Templates' },
 ];
 
 interface Tpl {
@@ -69,7 +70,7 @@ export function Templates() {
         </div>
         {!editing && <button className="btn" onClick={startNew}>+ New template</button>}
       </div>
-      <SubNav tabs={MSGS_SUBTABS} />
+      <SubNav tabs={MEDIA_SUBTABS} />
 
       <div className="page-body">
         {editing && (

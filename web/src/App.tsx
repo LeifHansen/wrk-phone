@@ -183,7 +183,10 @@ export function App() {
           <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/messages" element={<Inbox />} />
           <Route path="/messages/drafts" element={<Inbox />} />
+          {/* /messages/templates kept as a backward-compat alias — old links
+              still work but the canonical route lives under /media now. */}
           <Route path="/messages/templates" element={<Templates />} />
+          <Route path="/media/templates" element={<Templates />} />
           <Route path="/contacts" element={<Contacts onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/conversation/:id" element={<Conversation onCall={(p) => { setPeer(p); setInCall(true); }} />} />
           <Route path="/agents" element={<Agents />} />
