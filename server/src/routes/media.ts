@@ -162,6 +162,21 @@ mediaRouter.post('/media/upload', async (req, res) => {
 // Headers:
 //   Content-Type: image/* | video/*
 //   X-Save-To-Library: '1' (default) or '0'
+// Strict mime allowlist — extension is derived ONLY from this map. An
+// unknown / spoofed mime now returns 415 instead of being silently relabeled
+// as `image/png` (which the previous fallback allowed and which let a video
+// payload bypass the smaller image size cap).
+const MIME_TO_EXT: Record<string, { ext: string; kind: 'upload' | 'video' }> = {
+  'image/png':       { ext: 'png',  kind: 'upload' },
+  'image/jpeg':      { ext: 'jpg',  kind: 'upload' },
+  'image/jpg':       { ext: 'jpg',  kind: 'upload' },
+  'image/webp':      { ext: 'webp', kind: 'upload' },
+  'image/gif':       { ext: 'gif',  kind: 'upload' },
+  'video/mp4':       { ext: 'mp4',  kind: 'video'  },
+  'video/quicktime': { ext: 'mov',  kind: 'video'  },
+  'video/webm':      { ext: 'webm', kind: 'video'  },
+};
+
 mediaRouter.post(
   '/media/upload-raw',
   raw({ type: ['image/*', 'video/*'], limit: MAX_VIDEO_BYTES }),
@@ -169,21 +184,24 @@ mediaRouter.post(
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'image or video body required' });
     }
-    const mime = String(req.header('content-type') || '').toLowerCase();
-    const isVideo = mime.startsWith('video/');
-    if (!isVideo && req.body.length > MAX_IMAGE_BYTES) {
-      return res.status(413).json({ error: 'image too large (max 10MB)' });
+    const mime = String(req.header('content-type') || '').toLowerCase().split(';')[0].trim();
+    const meta = MIME_TO_EXT[mime];
+    if (!meta) {
+      return res.status(415).json({
+        error: `unsupported content-type "${mime}". Use one of: ${Object.keys(MIME_TO_EXT).join(', ')}.`,
+      });
     }
-    const extMap: Record<string, string> = {
-      'image/png': 'png', 'image/jpeg': 'jpg', 'image/jpg': 'jpg', 'image/webp': 'webp', 'image/gif': 'gif',
-      'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm',
-    };
-    const ext = extMap[mime] || (isVideo ? 'mp4' : 'png');
-    const saved = await saveBytes(req.body as Buffer, ext, mime);
+    // Per-kind size cap. Image upload caps at 10MB; video at 50MB.
+    const cap = meta.kind === 'video' ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (req.body.length > cap) {
+      return res.status(413).json({
+        error: `${meta.kind} too large (max ${Math.round(cap / (1024 * 1024))}MB)`,
+      });
+    }
+    const saved = await saveBytes(req.body as Buffer, meta.ext, mime);
     const saveToLibrary = req.header('x-save-to-library') !== '0';
-    const kind = isVideo ? 'video' : 'upload';
-    const id = saveToLibrary ? recordInLibrary(saved.url, kind) : null;
-    res.json({ id, url: saved.url, savedToLibrary: !!id, kind });
+    const id = saveToLibrary ? recordInLibrary(saved.url, meta.kind) : null;
+    res.json({ id, url: saved.url, savedToLibrary: !!id, kind: meta.kind });
   },
 );
 

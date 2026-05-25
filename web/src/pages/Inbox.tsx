@@ -45,8 +45,10 @@ export function Inbox() {
   const [rows, setRows] = useState<Row[]>([]);
   const [drafts, setDrafts] = useState<DraftRow[]>([]);
   const loc = useLocation();
-  // URL is source of truth so the back button + deep links work.
-  const tab: 'inbox' | 'drafts' = loc.pathname.endsWith('/drafts') ? 'drafts' : 'inbox';
+  // URL is source of truth so the back button + deep links work. Use an
+  // exact match so a future route like /messages/foo/drafts can't activate
+  // the drafts tab here.
+  const tab: 'inbox' | 'drafts' = loc.pathname === '/messages/drafts' ? 'drafts' : 'inbox';
 
   const load = () => {
     api.listConversations().then((r) => setRows(r as Row[])).catch(() => {});

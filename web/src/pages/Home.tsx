@@ -99,30 +99,33 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
 
   // Save as draft — the conversation row is created so the draft has a home
   // (and shows up in Messages → Drafts), but nothing goes out to Twilio.
+  // Shares the `sending` flag with Send so a fast double-click can't queue
+  // a Save while a Send is in flight (or vice versa).
   const saveDraftText = async () => {
     const target = e164(num);
-    if (!target || (!msg.trim())) {
-      toast('Need a number and a message to save a draft.', 'err');
+    if (!target || (!msg.trim()) || sending) {
+      if (!sending) toast('Need a number and a message to save a draft.', 'err');
       return;
     }
+    setSending(true);
     try {
       await api.saveDraft({ peer_phone: target, body: msg.trim() });
       setNum(''); setMsg('');
       toast('Draft saved — find it in Messages → Drafts');
     } catch (e: any) {
       toast(`Save failed: ${e.message}`, 'err');
-    }
+    } finally { setSending(false); }
   };
 
-  // Pick a template + render its tokens against the current recipient (if
-  // one is set). Falls back to the raw body when there's no contact yet.
+  // Pick a template + render its tokens against the current recipient.
+  // Always uses the render endpoint — when no recipient is set, the server
+  // resolves {{first_name}} to "there" instead of leaving the literal token
+  // in the body (which would otherwise ship to the recipient on Send).
   const useTemplate = async (id: number) => {
     setTplOpen(false);
     try {
       const target = e164(num);
-      const rendered = target
-        ? await api.renderTemplate(id, { phone: target })
-        : await api.getTemplate(id);
+      const rendered = await api.renderTemplate(id, target ? { phone: target } : {});
       setMsg((cur) => (cur ? `${cur}\n${rendered.body}` : rendered.body));
     } catch (e: any) { toast(`Template failed: ${e.message}`, 'err'); }
   };

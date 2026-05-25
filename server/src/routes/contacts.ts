@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { lookup } from 'dns/promises';
 import { isIP } from 'net';
 import { db } from '../lib/db.js';
+import { normalizePhone } from '../lib/phone.js';
 
 export const contactsRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
@@ -58,19 +59,9 @@ async function safeFetchText(start: string, maxHops = 5): Promise<Response> {
   throw new Error('too many redirects');
 }
 
-export function normalizePhone(raw: string): string | null {
-  if (!raw) return null;
-  const s = raw.replace(/[^\d+]/g, '');
-  if (s.startsWith('+')) {
-    const digits = s.slice(1).replace(/\D/g, '');
-    return digits.length >= 8 ? `+${digits}` : null;
-  }
-  const d = s.replace(/\D/g, '');
-  if (d.length === 10) return `+1${d}`;
-  if (d.length === 11 && d.startsWith('1')) return `+${d}`;
-  if (d.length >= 8 && d.length <= 15) return `+${d}`;
-  return null;
-}
+// (normalizePhone now lives in ../lib/phone.ts — single source of truth so
+//  contacts.ts and conversations.ts can't drift on what counts as "the same"
+//  phone, which is what caused the original duplicate-contact bug.)
 
 function withSegments(rows: any[]): any[] {
   if (rows.length === 0) return rows;

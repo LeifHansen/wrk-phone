@@ -379,44 +379,53 @@ function dedupePhoneRows() {
     const contactRows = db.prepare(
       `SELECT id, user_id, phone, name FROM contacts`
     ).all() as { id: number; user_id: string; phone: string; name: string | null }[];
-    type ContactGroup = { keepId: number; mergeIds: number[]; canonicalPhone: string; canonicalName: string | null };
+    type ContactGroup = { allIds: number[]; canonicalPhone: string; allNames: string[] };
     const contactGroups = new Map<string, ContactGroup>(); // key = user_id|canonicalPhone
+    // Two-pass: collect every row's id + name into the group first, THEN
+    // pick the best name (longest non-empty) across the whole group. The
+    // prior one-pass logic discarded names that arrived after a non-empty
+    // keeper was already chosen.
     for (const r of contactRows) {
       const canonical = _normPhone(r.phone) || r.phone; // keep as-is if unparseable
       const key = `${r.user_id}|${canonical}`;
       const g = contactGroups.get(key);
       if (!g) {
-        contactGroups.set(key, { keepId: r.id, mergeIds: [], canonicalPhone: canonical, canonicalName: r.name });
+        contactGroups.set(key, { allIds: [r.id], canonicalPhone: canonical, allNames: r.name ? [r.name] : [] });
       } else {
-        // Prefer the row that has a name; ties → keep the older (lower id).
-        if (!g.canonicalName && r.name) {
-          g.mergeIds.push(g.keepId);
-          g.keepId = r.id;
-          g.canonicalName = r.name;
-        } else {
-          g.mergeIds.push(r.id);
-        }
+        g.allIds.push(r.id);
+        if (r.name) g.allNames.push(r.name);
       }
     }
     let mergedContacts = 0, renormalized = 0;
     db.transaction(() => {
       for (const g of contactGroups.values()) {
-        if (g.mergeIds.length > 0) {
+        // Keep the oldest (smallest id) row; the keep choice is stable and
+        // doesn't matter for content because we re-stamp name + phone below.
+        const sortedIds = [...g.allIds].sort((a, b) => a - b);
+        const keepId = sortedIds[0];
+        const mergeIds = sortedIds.slice(1);
+        // Best name = longest non-empty (gives "Leif Hansen" priority over
+        // "Leif"); fall back to whatever's there, or null.
+        const bestName = g.allNames.length === 0
+          ? null
+          : g.allNames.reduce((a, b) => (b.trim().length > a.trim().length ? b : a));
+        if (mergeIds.length > 0) {
+          const inList = mergeIds.map(() => '?').join(',');
           // Redirect contact_segments to the kept contact, then drop dupes.
-          const inList = g.mergeIds.map(() => '?').join(',');
           db.prepare(
             `INSERT OR IGNORE INTO contact_segments (contact_id, segment_id)
              SELECT ?, segment_id FROM contact_segments WHERE contact_id IN (${inList})`
-          ).run(g.keepId, ...g.mergeIds);
-          db.prepare(`DELETE FROM contact_segments WHERE contact_id IN (${inList})`).run(...g.mergeIds);
-          db.prepare(`DELETE FROM contacts WHERE id IN (${inList})`).run(...g.mergeIds);
-          mergedContacts += g.mergeIds.length;
+          ).run(keepId, ...mergeIds);
+          db.prepare(`DELETE FROM contact_segments WHERE contact_id IN (${inList})`).run(...mergeIds);
+          db.prepare(`DELETE FROM contacts WHERE id IN (${inList})`).run(...mergeIds);
+          mergedContacts += mergeIds.length;
         }
-        // Snap the kept row to canonical phone form + ensure the best name wins.
-        const cur = db.prepare(`SELECT phone, name FROM contacts WHERE id = ?`).get(g.keepId) as { phone: string; name: string | null } | undefined;
-        if (cur && (cur.phone !== g.canonicalPhone || (!cur.name && g.canonicalName))) {
-          db.prepare(`UPDATE contacts SET phone = ?, name = COALESCE(NULLIF(name,''), ?) WHERE id = ?`)
-            .run(g.canonicalPhone, g.canonicalName, g.keepId);
+        // Snap the kept row to canonical phone form + bestName (unconditional
+        // so a longer name in a now-deleted dupe still wins).
+        const cur = db.prepare(`SELECT phone, name FROM contacts WHERE id = ?`).get(keepId) as { phone: string; name: string | null } | undefined;
+        if (cur && (cur.phone !== g.canonicalPhone || cur.name !== bestName)) {
+          db.prepare(`UPDATE contacts SET phone = ?, name = ? WHERE id = ?`)
+            .run(g.canonicalPhone, bestName, keepId);
           renormalized++;
         }
       }
@@ -482,63 +491,62 @@ dedupePhoneRows();
 // ---------- Media → R2 backfill (one-time per file) ----------
 // When R2 was wired AFTER files had already been written to the local Fly
 // volume, those rows still point at /media/<file>. This sweep moves each
-// local file to R2 and updates the DB URL. Idempotent — rows whose URL
-// already lives on the configured R2 public base are skipped.
+// local file to R2 and updates the DB URL. Idempotent — the SELECT
+// excludes rows already on the R2 public base, so re-runs short-circuit at
+// the DB level instead of scanning every row in JS.
 //
-// Runs only when R2 is configured (R2_PUBLIC_BASE set) — without it the
-// migration would be a no-op anyway, since storageBackend() falls back
-// to local.
-function migrateMediaToR2() {
+// Exported so index.ts can `await` it BEFORE recoverInterrupted*() runs —
+// otherwise a recovery could re-send an MMS using a media_url that's being
+// rewritten under it.
+export async function migrateMediaToR2(): Promise<void> {
   const r2Base = (process.env.R2_PUBLIC_BASE || '').trim().replace(/\/$/, '');
   if (!r2Base) return;
-  // Lazy import to keep storage's S3Client out of cold-start critical path
-  // when R2 isn't configured at all.
-  Promise.resolve().then(async () => {
-    try {
-      const { saveBytes, MEDIA_DIR } = await import('./storage.js');
-      const fs = await import('node:fs');
-      const path = await import('node:path');
-      const rows = db.prepare(
-        `SELECT id, url FROM media WHERE url LIKE '%/media/%'`
-      ).all() as { id: number; url: string }[];
-      let moved = 0, missing = 0, failed = 0;
-      for (const row of rows) {
-        // Already on R2? (covers re-runs.)
-        if (row.url.startsWith(r2Base + '/')) continue;
-        // Pull the local filename out of the URL.
-        const m = row.url.match(/\/media\/([^/?#]+)$/);
-        if (!m) continue;
-        const file = m[1];
-        const local = path.join(MEDIA_DIR, file);
-        if (!fs.existsSync(local)) { missing++; continue; }
-        try {
-          const buf = fs.readFileSync(local);
-          const ext = (file.split('.').pop() || 'bin').toLowerCase();
-          const saved = await saveBytes(buf, ext);
-          if (saved.url.startsWith(r2Base + '/')) {
-            db.prepare(`UPDATE media SET url = ? WHERE id = ?`).run(saved.url, row.id);
-            // Best-effort delete the now-orphan local file.
-            try { fs.unlinkSync(local); } catch { /* fine */ }
-            moved++;
-          } else {
-            // saveBytes fell back to local for some reason (R2 unreachable).
-            failed++;
+  try {
+    const { saveBytes, MEDIA_DIR } = await import('./storage.js');
+    const fs = await import('node:fs');
+    const path = await import('node:path');
+    // SELECT excludes rows already on R2 so re-runs are O(0) at the DB level.
+    const rows = db.prepare(
+      `SELECT id, url FROM media WHERE url LIKE '%/media/%' AND url NOT LIKE ?`
+    ).all(`${r2Base}/%`) as { id: number; url: string }[];
+    let moved = 0, missing = 0, failed = 0;
+    for (const row of rows) {
+      const m = row.url.match(/\/media\/([^/?#]+)$/);
+      if (!m) continue;
+      const file = m[1];
+      const local = path.join(MEDIA_DIR, file);
+      if (!fs.existsSync(local)) { missing++; continue; }
+      try {
+        const buf = fs.readFileSync(local);
+        const ext = (file.split('.').pop() || 'bin').toLowerCase();
+        const saved = await saveBytes(buf, ext);
+        if (saved.url.startsWith(r2Base + '/')) {
+          db.prepare(`UPDATE media SET url = ? WHERE id = ?`).run(saved.url, row.id);
+          try { fs.unlinkSync(local); } catch { /* already gone is fine */ }
+          moved++;
+        } else {
+          // R2 PUT failed → saveBytes fell back to local with a NEW hex key.
+          // Clean up that bonus local file and leave the original row alone
+          // so the next boot tries again (without orphaning disk space).
+          const newFileMatch = saved.url.match(/\/media\/([^/?#]+)$/);
+          if (newFileMatch) {
+            try { fs.unlinkSync(path.join(MEDIA_DIR, newFileMatch[1])); } catch {}
           }
-        } catch (e) {
           failed++;
-          log.warn('db.r2-migrate', `failed to move ${file}`, e);
         }
+      } catch (e) {
+        failed++;
+        log.warn('db.r2-migrate', `failed to move ${file}`, e);
       }
-      if (moved || missing || failed) {
-        log.warn('db.r2-migrate',
-          `media→R2 backfill: moved ${moved}, missing ${missing}, failed ${failed}`);
-      }
-    } catch (e) {
-      log.error('db.r2-migrate', 'migration sweep crashed', e);
     }
-  });
+    if (moved || missing || failed) {
+      log.warn('db.r2-migrate',
+        `media→R2 backfill: moved ${moved}, missing ${missing}, failed ${failed}`);
+    }
+  } catch (e) {
+    log.error('db.r2-migrate', 'migration sweep crashed', e);
+  }
 }
-migrateMediaToR2();
 
 // One-time backfill: stamp our_number on conversations created before the
 // column existed, using each account's current sending number. Without it a

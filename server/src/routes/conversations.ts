@@ -15,6 +15,9 @@ export const conversationsRouter = Router();
 // uses two preaggregated joins (latest message + contact name), one pass each.
 conversationsRouter.get('/conversations', (req, res) => {
   const USER = OWNER_ID;
+  // EXCLUDE drafts from the inbox preview. A draft is an unsent message
+  // pinned to a conversation — it should appear ONLY in the Drafts subtab,
+  // not as "You: …" in the inbox or push last_body / last_direction.
   const rows = db.prepare(`
     SELECT c.id, c.peer_phone, c.last_message_at, c.unread_count, c.agent_id,
            lm.body AS last_body, lm.direction AS last_direction,
@@ -26,8 +29,9 @@ conversationsRouter.get('/conversations', (req, res) => {
       FROM messages m
       JOIN (
         SELECT conversation_id, MAX(created_at) AS max_at
-        FROM messages GROUP BY conversation_id
+        FROM messages WHERE status != 'draft' GROUP BY conversation_id
       ) lx ON lx.conversation_id = m.conversation_id AND lx.max_at = m.created_at
+        AND m.status != 'draft'
     ) lm ON lm.conversation_id = c.id
     LEFT JOIN contacts ct ON ct.user_id = c.user_id AND ct.phone = c.peer_phone
     LEFT JOIN agents a ON a.id = COALESCE(c.agent_id,
@@ -39,12 +43,13 @@ conversationsRouter.get('/conversations', (req, res) => {
 });
 
 // GET /api/conversations/:id/messages  (and currently-assigned agent)
+// Hide drafts from the thread view — they belong on the Drafts subtab.
 conversationsRouter.get('/conversations/:id/messages', (req, res) => {
   const USER = OWNER_ID;
   const id = Number(req.params.id);
   const messages = db.prepare(
     `SELECT id, direction, body, status, created_at, is_ai, is_suggestion, agent_id
-     FROM messages WHERE conversation_id = ? ORDER BY created_at ASC`
+     FROM messages WHERE conversation_id = ? AND status != 'draft' ORDER BY created_at ASC`
   ).all(id);
   const conv = db.prepare('SELECT * FROM conversations WHERE id = ?').get(id);
   const agent = getAgentForConversation(USER, id);
@@ -146,7 +151,11 @@ conversationsRouter.post('/drafts', (req, res) => {
   const media_url = req.body.media_url ? String(req.body.media_url) : null;
   if (!peer) return res.status(400).json({ error: 'valid peer_phone required' });
   if (!body && !media_url) return res.status(400).json({ error: 'body or media_url required' });
-  // Get-or-create the conversation so it shows up in the inbox too.
+  // Get-or-create the conversation. CRITICAL: don't bump last_message_at on
+  // an existing conversation when saving a draft — drafts aren't sent yet
+  // and shouldn't yank the thread to the top of the inbox (or claim more
+  // recent activity than there actually is). New-conversation case still
+  // sets it to now so the row sorts predictably.
   const existing = db.prepare(
     'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
   ).get(USER, peer) as { id: number } | undefined;

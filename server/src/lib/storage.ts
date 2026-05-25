@@ -56,6 +56,11 @@ export function storageBackend(): 'r2' | 'local' {
  * Save raw bytes and return a public URL. Tries R2 first when configured;
  * falls back to local disk on R2 error so a misconfigured bucket doesn't
  * brick MMS sends.
+ *
+ * Throws when the local-disk fallback would return a useless URL — i.e.
+ * R2 isn't configured AND `PUBLIC_BASE_URL` is empty. Without this, callers
+ * would persist `/media/<file>` (a relative path) into the DB and Twilio
+ * MMS would reject every fetch silently.
  */
 export async function saveBytes(buf: Buffer, ext = 'png', mime?: string): Promise<{ key: string; url: string }> {
   const key = `${crypto.randomBytes(8).toString('hex')}.${ext}`;
@@ -77,8 +82,12 @@ export async function saveBytes(buf: Buffer, ext = 'png', mime?: string): Promis
       // fall through
     }
   }
+  const base = publicBase();
+  if (!base) {
+    throw new Error('storage.saveBytes: cannot write — neither R2 nor PUBLIC_BASE_URL is configured (the resulting URL would be unusable by Twilio).');
+  }
   fs.writeFileSync(path.join(LOCAL_MEDIA_DIR, key), buf);
-  return { key, url: `${publicBase()}/media/${key}` };
+  return { key, url: `${base}/media/${key}` };
 }
 
 /** Best-effort delete. Tries R2 first if the URL looks like R2; else local. */

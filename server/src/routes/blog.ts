@@ -35,7 +35,9 @@ blogRouter.get('/admin/overview', requireSuperadmin, (_req, res) => {
   res.json({
     users: n(`SELECT COUNT(*) n FROM users`),
     conversations: n(`SELECT COUNT(*) n FROM conversations`),
-    messages: n(`SELECT COUNT(*) n FROM messages`),
+    // Exclude drafts from the public messages count — they're unsent and
+    // shouldn't inflate the homepage stat.
+    messages: n(`SELECT COUNT(*) n FROM messages WHERE status != 'draft'`),
     agents: n(`SELECT COUNT(*) n FROM agents`),
     campaigns: n(`SELECT COUNT(*) n FROM campaigns`),
     blogPublished: n(`SELECT COUNT(*) n FROM blog_posts WHERE status='published'`),

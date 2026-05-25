@@ -36,7 +36,7 @@ import { log } from './lib/log.js';
 import { twilioWebhook } from './lib/twilioVerify.js';
 import { authContext, requireOwner } from './lib/auth.js';
 import { authRouter } from './routes/auth.js';
-import './lib/db.js'; // ensure migrations run
+import { migrateMediaToR2 } from './lib/db.js'; // ensure migrations run (importing also fires the dedupe sweep)
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -218,14 +218,15 @@ process.on('unhandledRejection', (r) => log.error('process', 'unhandledRejection
 process.on('uncaughtException', (e) => log.error('process', 'uncaughtException', e));
 
 const port = Number(process.env.PORT || 4000);
-app.listen(port, '0.0.0.0', () => {
+app.listen(port, '0.0.0.0', async () => {
   console.log(`WrkPhn server listening on :${port}`);
   if (!process.env.PUBLIC_BASE_URL) {
     console.warn('Warning: PUBLIC_BASE_URL not set. Twilio webhooks need a public URL.');
   }
-  // Recover any campaigns mid-send when this process started (Fly deploy /
-  // crash). Runs before scheduler so a half-sent blast that fell off the
-  // previous boot reconciles its credit reservation immediately.
+  // Move any legacy local-disk media to R2 BEFORE the recoveries run — a
+  // recovered campaign re-sending an MMS could otherwise race the migration
+  // rewriting its media_url out from under it.
+  await migrateMediaToR2();
   recoverInterruptedCampaigns();
   recoverInterruptedAgentCalls();
   startBlogScheduler();
