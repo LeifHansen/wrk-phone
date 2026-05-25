@@ -77,7 +77,12 @@ export function A2P() {
         </div>
       </div>
 
-      <div className="page-body" style={{ maxWidth: 660 }}>
+      {/* Don't set maxWidth on .page-body — the desktop styles in styles.css
+          already cap content at 1080px via padding-inline. An additional
+          inline maxWidth collapses the visible area on wide screens because
+          the parent's padding subtracts inside the capped box. The wizard
+          itself uses .cond-card which keeps a readable line length naturally. */}
+      <div className="page-body">
         {step !== 'status' && (
           <div className="wiz-steps">
             {STEPS.map((s, i) => (
