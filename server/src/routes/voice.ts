@@ -120,40 +120,54 @@ voiceRouter.post('/voice/inbound', (req, res) => {
 // only fires when statusCallback is configured (which it never was on
 // these routes), so the `calls` table stayed empty.
 voiceRouter.post('/voice/dial-status', (req, res) => {
+  const twiml = new (twilio.twiml.VoiceResponse)();
   try {
     const direction = req.query.direction === 'in' ? 'in' : 'out';
-    // For outbound: caller is the softphone identity (parent CallSid),
-    // peer is the dialed number → req.body.To on the original call but
-    // we get it via the original /voice/outbound's `To` param indirectly.
-    // For inbound: peer is From (the external caller), our number is To.
     const from = String(req.body.From || '');
     const to = String(req.body.To || '');
     const dialStatus = String(req.body.DialCallStatus || '');
     const duration = Number(req.body.DialCallDuration || 0);
     const dialSid = String(req.body.DialCallSid || '') || String(req.body.CallSid || '');
 
-    // Only record calls that actually connected. 'completed' is the success
-    // status; 'busy', 'no-answer', 'canceled', 'failed' aren't logged here
-    // (they show up in error logs above). This matches what users expect
-    // analytics to mean: "calls that actually happened."
+    // Only record completed dials. Busy/no-answer/canceled/failed go to logs
+    // (above) but not the calls table — matches what users mean by
+    // "calls placed/received" on the analytics page.
     if (dialStatus === 'completed') {
       const peer = direction === 'in' ? from : to;
       const ourNumber = direction === 'in' ? to : from;
-      const owner = resolveInboundOwner(ourNumber, peer);
+      // resolveInboundOwner is built for inbound webhooks — it returns null
+      // when no account exclusively owns the number AND there's no prior
+      // conversation on it. That's correct for inbound on a SHARED toll-free
+      // (we can't tell whose number it is). But for OUTBOUND from the
+      // softphone, the call CAME from this account by definition — fall
+      // back to OWNER_ID so single-user prod always logs. (Multi-tenant
+      // outbound would need a CallSid→user map at /voice/outbound time;
+      // out of scope.)
+      const owner = resolveInboundOwner(ourNumber, peer) || (direction === 'out' ? USER : null);
       if (owner) {
         db.prepare(
           'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'
         ).run(owner, peer, direction, duration, dialSid, Date.now());
+      } else {
+        log.warn('voice/dial-status', 'no owner resolved — call not logged', { direction, from, to });
       }
     } else {
       log.info('voice/dial-status', `dial ${dialStatus}`, { direction, from, to, duration });
     }
+
+    // INBOUND voicemail fallback: when the user's softphone didn't answer
+    // (no-answer / busy / failed / canceled), redirect to the voicemail
+    // greeting handler. Without this redirect, the action callback would
+    // just hang up empty and the caller would never reach voicemail —
+    // the <Redirect> after <Dial> in /voice/inbound is IGNORED once
+    // `action` is set on the dial.
+    if (req.query.direction === 'in' && dialStatus !== 'completed') {
+      twiml.redirect({ method: 'POST' }, '/api/voice/voicemail-greeting');
+    }
   } catch (e) {
     log.error('voice/dial-status', 'handler threw', e);
   }
-  // Empty TwiML hangs up. The Dial leg has ended either way — there's
-  // nothing else for Twilio to do.
-  res.type('text/xml').send(new (twilio.twiml.VoiceResponse)().toString());
+  res.type('text/xml').send(twiml.toString());
 });
 
 voiceRouter.post('/voice/voicemail-greeting', async (req, res) => {

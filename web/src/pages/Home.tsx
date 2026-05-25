@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
 import { IconContacts } from '../components/Icons';
 import { SmsAiTools } from '../components/SmsAiTools';
+import { AgentInitiate } from '../components/AgentInitiate';
 import { toast } from '../components/Toast';
 
 const KEYS = [
@@ -226,20 +227,24 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
             <SmsAiTools text={msg} goal="1:1 customer text" onApply={setMsg} compact />
           )}
 
-          {/* Send / Save as Draft */}
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn lime lg" style={{ flex: 1 }}
+          {/* Send / Save as Draft + Agent send (when any auto agent exists) */}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <button className="btn lime lg" style={{ flex: 1, minWidth: 110 }}
               onClick={sendText}
               disabled={!e164(num) || !msg.trim() || sending}
               title="Send the message now">
               {sending ? 'Sending…' : '✉ Send'}
             </button>
-            <button className="btn ghost lg" style={{ flex: 1 }}
+            <button className="btn ghost lg" style={{ flex: 1, minWidth: 110 }}
               onClick={saveDraftText}
               disabled={!e164(num) || !msg.trim() || sending}
               title="Save without sending — find it later in Messages → Drafts">
               💾 Save as Draft
             </button>
+            {/* When a number is entered, surface the agent-initiate buttons
+                inline. AgentInitiate self-renders nothing when no auto
+                agent exists, so this is a no-op in that case. */}
+            {e164(num) && <AgentInitiate to={{ phone: e164(num) }} compact />}
           </div>
         </div>
       )}
@@ -247,20 +252,30 @@ export function Home({ onCall }: { onCall: (peer: string) => void }) {
       {/* CALL-mode dial pad action row — only render when on call mode so
           the action row doesn't fight the new TEXT-mode composer's buttons. */}
       {mode === 'call' && (
-        <div className="phone-actions">
-          <span className="pa-side" aria-hidden="true" />
-          <button
-            className="pa-go go-call"
-            onClick={goCall}
-            disabled={!num}
-          >
-            ✆
-          </button>
-          <button className="pa-side" onClick={back} title="Delete" aria-label="Delete">
-            <span className="pa-glyph">⌫</span>
-            <span className="pa-cap">{num ? 'DEL' : ''}</span>
-          </button>
-        </div>
+        <>
+          <div className="phone-actions">
+            <span className="pa-side" aria-hidden="true" />
+            <button
+              className="pa-go go-call"
+              onClick={goCall}
+              disabled={!num}
+            >
+              ✆
+            </button>
+            <button className="pa-side" onClick={back} title="Delete" aria-label="Delete">
+              <span className="pa-glyph">⌫</span>
+              <span className="pa-cap">{num ? 'DEL' : ''}</span>
+            </button>
+          </div>
+          {/* Agent-initiate next to the user's call button. AgentInitiate
+              self-hides when there are no auto agents, so this is a no-op
+              for users who haven't enabled any. */}
+          {e164(num) && (
+            <div style={{ display: 'flex', justifyContent: 'center', gap: 12, marginTop: 16 }}>
+              <AgentInitiate to={{ phone: e164(num) }} compact />
+            </div>
+          )}
+        </>
       )}
 
       {pick && (

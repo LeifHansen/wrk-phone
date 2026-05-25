@@ -111,9 +111,23 @@ a2pRouter.post('/a2p/submit', async (req, res) => {
       }
     }
   } catch (e: any) {
+    // TrustHub failures fall back to the manual-console flow with the
+    // FULL error surfaced — previously the message was generic and the
+    // user had no idea why no OTP arrived. Common failure modes we've
+    // seen: "Invalid regulation" (the policySid doesn't match this
+    // account's available regulations — Twilio rotates these per account
+    // type / region); 401/403 (TrustHub API not enabled on the account);
+    // 422 (missing required attribute like business_industry).
     status = 'manual';
-    note = `Auto-submit unavailable (${e.message}). Package saved — file via Twilio Console; everything is pre-filled.`;
-    log.warn('a2p/submit', 'trusthub submission fell back to manual', e);
+    const code = e.code || e.status || 'err';
+    const detail = e.message || String(e);
+    note =
+      `Twilio rejected the automated submission (${code}: ${detail}). ` +
+      `Most common cause: this Twilio account isn't enabled for ISV / TrustHub APIs, ` +
+      `OR the sole-prop policy SID differs for this account type. ` +
+      `Workaround: file the registration manually in Twilio Console → Messaging → ` +
+      `Regulatory Compliance — your saved package has everything pre-filled.`;
+    log.warn('a2p/submit', 'trusthub submission failed', { code, detail, profile });
   }
 
   db.prepare(
