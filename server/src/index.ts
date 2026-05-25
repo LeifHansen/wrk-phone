@@ -128,7 +128,12 @@ app.use('/api', analyticsRouter);
 app.use('/api', blogRouter);
 app.use('/api', aiRouter);
 app.use('/api', prankRouter);
-app.use('/media', express.static(MEDIA_DIR));
+// `redirect: false` stops express.static from 301-ing bare `/media` to
+// `/media/` — without it, opening /media in the browser short-circuits
+// the SPA fallback (which serves the Media Library page) and tries to
+// list a directory instead. Files at `/media/<hex>.png` still served
+// from disk; only the bare-path collision is fixed.
+app.use('/media', express.static(MEDIA_DIR, { redirect: false }));
 // Voice samples are served as public URLs so the cloning provider can fetch
 // them on-demand and so the UI can play them back for verification.
 app.use('/voice-samples', express.static(VOICE_SAMPLE_DIR));
