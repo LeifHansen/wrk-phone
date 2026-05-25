@@ -479,6 +479,67 @@ function dedupePhoneRows() {
 }
 dedupePhoneRows();
 
+// ---------- Media → R2 backfill (one-time per file) ----------
+// When R2 was wired AFTER files had already been written to the local Fly
+// volume, those rows still point at /media/<file>. This sweep moves each
+// local file to R2 and updates the DB URL. Idempotent — rows whose URL
+// already lives on the configured R2 public base are skipped.
+//
+// Runs only when R2 is configured (R2_PUBLIC_BASE set) — without it the
+// migration would be a no-op anyway, since storageBackend() falls back
+// to local.
+function migrateMediaToR2() {
+  const r2Base = (process.env.R2_PUBLIC_BASE || '').trim().replace(/\/$/, '');
+  if (!r2Base) return;
+  // Lazy import to keep storage's S3Client out of cold-start critical path
+  // when R2 isn't configured at all.
+  Promise.resolve().then(async () => {
+    try {
+      const { saveBytes, MEDIA_DIR } = await import('./storage.js');
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const rows = db.prepare(
+        `SELECT id, url FROM media WHERE url LIKE '%/media/%'`
+      ).all() as { id: number; url: string }[];
+      let moved = 0, missing = 0, failed = 0;
+      for (const row of rows) {
+        // Already on R2? (covers re-runs.)
+        if (row.url.startsWith(r2Base + '/')) continue;
+        // Pull the local filename out of the URL.
+        const m = row.url.match(/\/media\/([^/?#]+)$/);
+        if (!m) continue;
+        const file = m[1];
+        const local = path.join(MEDIA_DIR, file);
+        if (!fs.existsSync(local)) { missing++; continue; }
+        try {
+          const buf = fs.readFileSync(local);
+          const ext = (file.split('.').pop() || 'bin').toLowerCase();
+          const saved = await saveBytes(buf, ext);
+          if (saved.url.startsWith(r2Base + '/')) {
+            db.prepare(`UPDATE media SET url = ? WHERE id = ?`).run(saved.url, row.id);
+            // Best-effort delete the now-orphan local file.
+            try { fs.unlinkSync(local); } catch { /* fine */ }
+            moved++;
+          } else {
+            // saveBytes fell back to local for some reason (R2 unreachable).
+            failed++;
+          }
+        } catch (e) {
+          failed++;
+          log.warn('db.r2-migrate', `failed to move ${file}`, e);
+        }
+      }
+      if (moved || missing || failed) {
+        log.warn('db.r2-migrate',
+          `media→R2 backfill: moved ${moved}, missing ${missing}, failed ${failed}`);
+      }
+    } catch (e) {
+      log.error('db.r2-migrate', 'migration sweep crashed', e);
+    }
+  });
+}
+migrateMediaToR2();
+
 // One-time backfill: stamp our_number on conversations created before the
 // column existed, using each account's current sending number. Without it a
 // reply to an established thread would look "cold" to resolveInboundOwner and

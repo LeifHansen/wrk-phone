@@ -5,6 +5,33 @@ import { generateVoiceGreeting } from '../lib/agent.js';
 import { twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { emit } from '../lib/events.js';
+import { isElevenLabsVoice, synthesizeElevenLabs } from '../lib/tts.js';
+import crypto from 'node:crypto';
+
+// Render `text` as either Twilio `<Say>` (Polly path) or pre-synthesized
+// `<Play>` audio (ElevenLabs cloned-voice path). Falls back to Polly if the
+// ElevenLabs synthesis fails — the call still works, just in the default
+// voice instead of the cloned one.
+async function speak(
+  parent: any,
+  voice: string,
+  text: string,
+  ctx: { userId: string; cacheKey: string },
+): Promise<void> {
+  if (isElevenLabsVoice(voice)) {
+    const url = await synthesizeElevenLabs(text, voice, ctx.userId, ctx.cacheKey);
+    if (url) { parent.play({}, url); return; }
+    // fall through → Polly as a safety net
+  }
+  const pollyVoice = (voice && voice.startsWith('Polly.')) ? voice : 'Polly.Joanna-Neural';
+  parent.say({ voice: pollyVoice }, text);
+}
+
+// Stable hash for the TTS cache key — text + voice id together so a tweak
+// to either invalidates the cached MP3 automatically.
+function hashKey(...parts: string[]): string {
+  return crypto.createHash('sha1').update(parts.join('|')).digest('hex').slice(0, 16);
+}
 
 export const voiceRouter = Router();
 const VoiceResponse = twilio.twiml.VoiceResponse;
@@ -135,7 +162,7 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
 // the message inside a <Gather> so the recipient can press 9 to opt out.
 // If Twilio's AMD classifies the call as "machine" we play a shorter
 // voicemail-friendly take (no Gather — voicemails don't press keys).
-voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
+voiceRouter.post('/voice/agent-call-twiml/:recipientId', async (req, res) => {
   const twiml = new VoiceResponse();
   try {
     const recipientId = Number(req.params.recipientId);
@@ -176,6 +203,18 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
 
     const greetName = row.name ? `, ${row.name}` : '';
     const intro = `Hi${greetName}, this is ${row.agent_name}. ${row.script}`;
+    // TTS rendering context. cacheKey scopes per recipient + branch so we
+    // don't reuse the human-branch MP3 on the voicemail branch (slightly
+    // different text), and Twilio webhook retries reuse the same MP3 once
+    // it's been rendered the first time.
+    const ttsCtx = (label: string) => ({
+      userId: row.user_id as string,
+      cacheKey: hashKey(voice, label, intro, String(recipientId)),
+    });
+    const optOutPrompt = 'Press 9 if you would like to be removed from our calls. Otherwise, goodbye.';
+    const optOutCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'optout', optOutPrompt) };
+    const goodbyeCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'goodbye', 'Thanks, goodbye.') };
+    const wrongNumberCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'wrongnum', 'Sorry, wrong number. Goodbye.') };
 
     if (voicemailOnly && !isMachine) {
       // DROP-VOICEMAIL on human pickup: brief apology + hangup. We can't redial
@@ -183,14 +222,14 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
       // the next attempt — or the recipient calling back — will land on
       // voicemail naturally. The recipient's number is NOT auto-opted-out.
       twiml.pause({ length: 1 });
-      twiml.say({ voice }, "Sorry, wrong number. Goodbye.");
+      await speak(twiml, voice, 'Sorry, wrong number. Goodbye.', wrongNumberCtx);
       twiml.hangup();
     } else if (isMachine) {
       // Voicemail path (always for voicemail-only; fallback for regular
       // calls when Twilio AMD detects a machine). Just leave the script.
       twiml.pause({ length: 1 });
-      twiml.say({ voice }, intro);
-      twiml.say({ voice }, 'Thanks, goodbye.');
+      await speak(twiml, voice, intro, ttsCtx('intro'));
+      await speak(twiml, voice, 'Thanks, goodbye.', goodbyeCtx);
       twiml.hangup();
     } else {
       // Live human path on a regular agent call: deliver message inside a
@@ -203,9 +242,9 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
         method: 'POST',
       });
       gather.pause({ length: 1 });
-      gather.say({ voice }, intro);
+      await speak(gather, voice, intro, ttsCtx('intro'));
       gather.pause({ length: 1 });
-      gather.say({ voice }, 'Press 9 if you would like to be removed from our calls. Otherwise, goodbye.');
+      await speak(gather, voice, optOutPrompt, optOutCtx);
       twiml.hangup();
     }
     res.type('text/xml').send(twiml.toString());
@@ -218,21 +257,29 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', (req, res) => {
 
 // Recipient pressed a key during the agent's message. "9" = opt out;
 // anything else = just hang up (don't burn a third Twilio request).
-voiceRouter.post('/voice/agent-call-keypress', (req, res) => {
+voiceRouter.post('/voice/agent-call-keypress', async (req, res) => {
   const twiml = new VoiceResponse();
   try {
     const recipientId = Number(req.query.recipientId);
     const digit = String(req.body.Digits || '');
     if (digit === '9' && recipientId) {
+      // Pull the agent's voice along with the opt-out info so the goodbye
+      // line is in the cloned voice when applicable.
       const row = db.prepare(
-        `SELECT acr.phone, ac.user_id FROM agent_call_recipients acr
+        `SELECT acr.phone, ac.user_id, a.tts_voice
+           FROM agent_call_recipients acr
            JOIN agent_calls ac ON ac.id = acr.agent_call_id
+           JOIN agents a ON a.id = ac.agent_id
           WHERE acr.id = ?`
       ).get(recipientId) as any;
       if (row) {
         setVoiceOptOut(row.user_id, row.phone, true);
-        const voice = 'Polly.Joanna-Neural';
-        twiml.say({ voice }, 'You have been removed from our list. Goodbye.');
+        const voice = row.tts_voice || 'Polly.Joanna-Neural';
+        const text = 'You have been removed from our list. Goodbye.';
+        await speak(twiml, voice, text, {
+          userId: row.user_id,
+          cacheKey: hashKey(voice, 'optout-confirm', text),
+        });
       }
     }
     twiml.hangup();

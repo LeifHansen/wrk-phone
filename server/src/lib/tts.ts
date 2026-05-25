@@ -1,0 +1,86 @@
+// ============================================================
+// Text-to-speech synthesis — ElevenLabs path.
+// ============================================================
+// Twilio TwiML has two ways to make the line speak:
+//   <Say voice="Polly.X">    → uses Twilio's built-in neural voices
+//   <Play>URL_to_audio.mp3</Play> → plays a pre-rendered audio file
+//
+// For cloned voices (saved as tts_voice = "elevenlabs:<voice_id>") we have
+// to pre-render via ElevenLabs and then <Play> the URL — Twilio doesn't
+// natively support ElevenLabs voice IDs. This module is that bridge.
+//
+// Result caching: callers pass an optional `cacheKey` so the same text +
+// voice synthesizes once. The cached URL lives in the `media` table with
+// `kind='generated'` and `prompt` set to the cache key, so a row can be
+// reused across calls / retries without re-billing ElevenLabs.
+
+import { db } from './db.js';
+import { saveBytes } from './storage.js';
+import { log } from './log.js';
+
+const ELEVENLABS_MODEL = process.env.ELEVENLABS_MODEL || 'eleven_turbo_v2_5';
+
+/** True iff a tts_voice string is an ElevenLabs cloned voice id. */
+export function isElevenLabsVoice(tts: string | null | undefined): tts is string {
+  return !!tts && tts.startsWith('elevenlabs:');
+}
+
+/**
+ * Synthesize `text` in the given ElevenLabs voice and return a public
+ * HTTPS URL Twilio can fetch. Caches the rendered MP3 in the media table
+ * keyed by `cacheKey` so we don't re-bill ElevenLabs on retries.
+ * Returns null when the ElevenLabs API key isn't set OR synthesis fails —
+ * the caller MUST fall back to a Polly `<Say>` so the call still works.
+ */
+export async function synthesizeElevenLabs(
+  text: string,
+  voiceIdWithPrefix: string,                // "elevenlabs:abc123"
+  userId: string,
+  cacheKey: string,                          // unique per (voice, text)
+): Promise<string | null> {
+  const apiKey = process.env.ELEVENLABS_API_KEY;
+  if (!apiKey) return null;
+  if (!isElevenLabsVoice(voiceIdWithPrefix)) return null;
+
+  const voiceId = voiceIdWithPrefix.slice('elevenlabs:'.length);
+  const prompt = `tts:${cacheKey}`;
+
+  // Cache hit? Reuse the prior synthesis (same voice + same text rendered
+  // earlier, e.g. on a Twilio webhook retry, or because the user is dialing
+  // the same recipient twice).
+  const cached = db.prepare(
+    `SELECT url FROM media WHERE user_id = ? AND prompt = ? AND kind = 'generated' LIMIT 1`
+  ).get(userId, prompt) as { url: string } | undefined;
+  if (cached?.url) return cached.url;
+
+  try {
+    const resp = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${encodeURIComponent(voiceId)}`, {
+      method: 'POST',
+      headers: {
+        'xi-api-key': apiKey,
+        'Content-Type': 'application/json',
+        'Accept': 'audio/mpeg',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: ELEVENLABS_MODEL,
+        voice_settings: { stability: 0.5, similarity_boost: 0.75, style: 0, use_speaker_boost: true },
+      }),
+    });
+    if (!resp.ok) {
+      log.warn('tts', `ElevenLabs synthesize failed: ${resp.status} ${await resp.text().catch(() => '')}`);
+      return null;
+    }
+    const buf = Buffer.from(await resp.arrayBuffer());
+    const saved = await saveBytes(buf, 'mp3', 'audio/mpeg');
+    // Persist for reuse on retries — also makes the rendered audio appear
+    // in the Media Library so the user can find/replay it.
+    db.prepare(
+      `INSERT INTO media (user_id, url, prompt, kind, created_at) VALUES (?, ?, ?, 'generated', ?)`
+    ).run(userId, saved.url, prompt, Date.now());
+    return saved.url;
+  } catch (e) {
+    log.warn('tts', 'ElevenLabs synthesize threw', e);
+    return null;
+  }
+}
