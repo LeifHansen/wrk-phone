@@ -84,10 +84,12 @@ diagRouter.get('/_diag', async (_req, res) => {
 
   // Webhook secret check.
   const wh = process.env.STRIPE_WEBHOOK_SECRET || '';
+  const whReal = /^whsec_/.test(wh) && !/x{6,}/i.test(wh) && wh.length > 20;
   checks.stripeWebhook = {
-    ok: !wh || (/^whsec_/.test(wh) && !/x{6,}/i.test(wh) && wh.length > 20),
+    ok: !wh || whReal,
     note: !wh ? 'not set (webhooks will be rejected in prod)' :
-      /^whsec_/.test(wh) && wh.length > 20 ? 'looks real' : 'looks like a placeholder',
+      whReal ? `prefix=${wh.slice(0, 6)}… length=${wh.length} — real` :
+      `placeholder (length=${wh.length}). Set with: fly secrets set STRIPE_WEBHOOK_SECRET=whsec_…`,
   };
 
   // ── ElevenLabs voice cloning ────────────────────────────────────────
