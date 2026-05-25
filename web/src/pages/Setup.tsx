@@ -30,7 +30,10 @@ export function Setup() {
           <div className="sub">We assign you a number automatically — nothing to pick.</div>
         </div>
       </div>
-      <div className="page-body" style={{ maxWidth: 520 }}>
+      {/* Don't set inline maxWidth — desktop styles cap content automatically;
+          inline cap collapses to a sliver because parent padding subtracts
+          inside the capped box (same bug A2P had). */}
+      <div className="page-body">
         {!number && !err && (
           <div className="cond-card" style={{ textAlign: 'center' }}>
             <div className="spinner" style={{ margin: '8px auto' }} />

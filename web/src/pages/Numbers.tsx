@@ -78,7 +78,10 @@ export function Numbers() {
   return (
     <>
       <div className="page-h"><div><h2>Your number</h2><div className="sub">Your assigned work line</div></div></div>
-      <div className="page-body" style={{ maxWidth: 520 }}>
+      {/* Desktop content cap is handled by styles.css via padding-inline.
+          An inline maxWidth here collapses to a sliver on wide screens
+          (same bug A2P.tsx had). */}
+      <div className="page-body">
         <p style={{ color: 'var(--muted)', fontSize: 13, marginBottom: 12 }}>
           You're assigned a number automatically. Calls and texts you send show
           this number, and replies land in your inbox.
