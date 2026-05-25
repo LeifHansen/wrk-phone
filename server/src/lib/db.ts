@@ -347,6 +347,14 @@ tryAddColumn('contacts', 'voice_opted_out INTEGER NOT NULL DEFAULT 0');
 // user; falls back to America/Los_Angeles if unset. The send loop enforces
 // "no automated calls outside 8am–9pm local time" for TCPA hygiene.
 tryAddColumn('app_settings', 'quiet_hours_tz_offset INTEGER');
+// Twilio TrustHub sole-prop registration: persist the customer-profile
+// + end-user SIDs so the OTP step (a separate request) can look them
+// up. Without these columns the user receives a code but the app has
+// no way to verify it.
+tryAddColumn('a2p_registrations', 'twilio_customer_profile_sid TEXT');
+tryAddColumn('a2p_registrations', 'twilio_end_user_sid TEXT');
+tryAddColumn('a2p_registrations', 'twilio_evaluation_sid TEXT');
+tryAddColumn('a2p_registrations', 'otp_verified INTEGER NOT NULL DEFAULT 0');
 // Voice cloning: store the user-uploaded reference sample + the cloned
 // provider voice id (e.g. ElevenLabs voice_id). `cloned=1` means the
 // `tts_voice` column holds an actual cloned voice id (format

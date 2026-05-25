@@ -315,7 +315,13 @@ export const api = {
   a2pDraft: (businessDescription: string) =>
     req<any>('/api/a2p/draft', { method: 'POST', body: JSON.stringify({ businessDescription }) }),
   a2pSubmit: (profile: any, pkg: any) =>
-    req<{ id: number; status: string; note: string }>('/api/a2p/submit', { method: 'POST', body: JSON.stringify({ profile, package: pkg }) }),
+    req<{ id: number; status: string; note: string; customerProfileSid?: string; endUserSid?: string }>(
+      '/api/a2p/submit', { method: 'POST', body: JSON.stringify({ profile, package: pkg }) }),
+  // After a2pSubmit returns status='otp_pending', the user receives an
+  // SMS code on the phone they registered. Submit it here to verify.
+  a2pVerifyOtp: (code: string) =>
+    req<{ ok: boolean; status: string; note?: string; profileStatus?: string }>(
+      '/api/a2p/verify-otp', { method: 'POST', body: JSON.stringify({ code }) }),
   a2pStatus: () => req<any>('/api/a2p/status'),
   // avatars
   genAvatar: (kind: 'account' | 'agent', agentId?: number, prompt?: string) =>

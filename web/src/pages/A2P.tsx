@@ -189,6 +189,11 @@ export function A2P() {
               <h2 style={{ margin: 0 }}>{String(status.status || '').toUpperCase()}</h2>
               <p style={{ margin: '8px 0 0' }}>{status.note}</p>
             </div>
+
+            {/* OTP entry — only renders when Twilio is waiting for the
+                verification code we just texted to the user's mobile. */}
+            {status.status === 'otp_pending' && <OtpStep onVerified={(s) => setStatus(s)} />}
+
             <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
               Carrier vetting is async (hours–days). This page auto-refreshes the status.
             </p>
@@ -197,5 +202,42 @@ export function A2P() {
         )}
       </div>
     </>
+  );
+}
+
+// OTP entry sub-step. Twilio texts a 4–8 digit code to the mobile the user
+// submitted on the registration form; this component takes that code,
+// verifies it, and updates the parent's status on success.
+function OtpStep({ onVerified }: { onVerified: (status: any) => void }) {
+  const [code, setCode] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const submit = async () => {
+    setErr(''); setBusy(true);
+    try {
+      const r = await api.a2pVerifyOtp(code.trim());
+      if (!r.ok) { setErr(r.note || 'OTP rejected'); return; }
+      // Re-pull the registration so the banner flips to in_review.
+      const fresh = await api.a2pStatus();
+      onVerified(fresh);
+    } catch (e: any) {
+      setErr(e.message || 'verify failed');
+    } finally { setBusy(false); }
+  };
+  return (
+    <div style={{ marginTop: 14, padding: 14, background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 8 }}>
+      <div className="sa-label">ENTER THE CODE TWILIO TEXTED YOU</div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 6 }}>
+        <input className="input" value={code} onChange={(e) => setCode(e.target.value)}
+          placeholder="123456" inputMode="numeric" maxLength={8} style={{ flex: 1 }} />
+        <button className="btn lime" onClick={submit} disabled={busy || !/^\d{4,8}$/.test(code.trim())}>
+          {busy ? '…' : 'Verify'}
+        </button>
+      </div>
+      {err && <p style={{ color: 'var(--red)', fontSize: 13, marginTop: 8 }}>{err}</p>}
+      <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 8 }}>
+        Didn't receive it? Resubmit the form to retry — Twilio re-sends.
+      </p>
+    </div>
   );
 }

@@ -4,6 +4,7 @@ import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
 import { OWNER_ID as USER, getUserId } from '../lib/auth.js';
+import { submitSoleProprietor, verifySoleProprietorOtp, submitCustomerProfileForReview } from '../lib/trusthub.js';
 
 export const a2pRouter = Router();
 
@@ -69,34 +70,102 @@ a2pRouter.post('/a2p/submit', async (req, res) => {
   let status = 'submitted';
   let note = '';
   let brandSid: string | null = null;
+  let customerProfileSid: string | null = null;
+  let endUserSid: string | null = null;
+  let evaluationSid: string | null = null;
+
   try {
-    // Secondary customer profile + brand registration is an ISV/TrustHub flow.
-    // We attempt the brand registration; if the account/SDK path isn't
-    // available, we fall back to "manual" with the full package retained.
-    const a2p: any = (twilioClient.messaging.v1 as any).a2p;
-    if (a2p?.brandRegistrations?.create) {
-      const brand = await a2p.brandRegistrations.create({
-        customerProfileBundleSid: profile.customerProfileBundleSid,
-        a2pProfileBundleSid: profile.a2pProfileBundleSid,
+    if (brandType === 'sole_prop') {
+      // Real Twilio TrustHub sole-prop submission. Creates Customer
+      // Profile + EndUser + Evaluation — the Evaluation step is what
+      // actually triggers Twilio to TEXT THE OTP to the user's mobile.
+      // Previously this route just stored the package and lied about
+      // sending an OTP; now the text actually arrives.
+      const result = await submitSoleProprietor({
+        firstName: String(profile.firstName),
+        lastName: String(profile.lastName),
+        email: String(profile.email),
+        mobilePhone: String(profile.mobilePhone),
+        businessName: profile.businessName ? String(profile.businessName) : undefined,
       });
-      brandSid = brand.sid;
-      status = 'in_review';
-      note = 'Brand submitted to Twilio. Carrier vetting is async (hours–days).';
+      customerProfileSid = result.customerProfileSid;
+      endUserSid = result.endUserSid;
+      evaluationSid = result.evaluation.sid;
+      status = 'otp_pending';
+      note = `Verification code texted to ${profile.mobilePhone}. POST the code to /api/a2p/verify-otp to complete identity verification, then Twilio submits for carrier review.`;
     } else {
-      status = 'manual';
-      note = brandType === 'sole_prop'
-        ? 'Sole-proprietor package generated and saved. Final step is a one-time code (OTP) Twilio texts to your mobile to verify identity — file in Twilio Console → Messaging → Regulatory Compliance (everything is pre-filled).'
-        : 'Account not ISV-enabled for fully-automated brand creation. The complete, carrier-ready package has been generated and saved — submit it in Twilio Console → Messaging → Regulatory Compliance (one paste).';
+      // Standard (EIN-backed) brand path — still requires manual filing
+      // in the console for now (different policy SID + supporting docs).
+      const a2p: any = (twilioClient.messaging.v1 as any).a2p;
+      if (a2p?.brandRegistrations?.create) {
+        const brand = await a2p.brandRegistrations.create({
+          customerProfileBundleSid: profile.customerProfileBundleSid,
+          a2pProfileBundleSid: profile.a2pProfileBundleSid,
+        });
+        brandSid = brand.sid;
+        status = 'in_review';
+        note = 'Brand submitted to Twilio. Carrier vetting is async (hours–days).';
+      } else {
+        status = 'manual';
+        note = 'Standard-brand auto-submit not available on this account. Package saved — file in Twilio Console → Messaging → Regulatory Compliance (pre-filled).';
+      }
     }
   } catch (e: any) {
     status = 'manual';
     note = `Auto-submit unavailable (${e.message}). Package saved — file via Twilio Console; everything is pre-filled.`;
-    log.warn('a2p/submit', 'brand registration fell back to manual', e);
+    log.warn('a2p/submit', 'trusthub submission fell back to manual', e);
   }
 
-  db.prepare(`UPDATE a2p_registrations SET status=?, twilio_brand_sid=?, note=?, updated_at=? WHERE id=?`)
-    .run(status, brandSid, note, Date.now(), id);
-  res.json({ id, status, note, brandSid });
+  db.prepare(
+    `UPDATE a2p_registrations
+        SET status = ?, twilio_brand_sid = ?,
+            twilio_customer_profile_sid = ?, twilio_end_user_sid = ?, twilio_evaluation_sid = ?,
+            note = ?, updated_at = ?
+      WHERE id = ?`
+  ).run(status, brandSid, customerProfileSid, endUserSid, evaluationSid, note, Date.now(), id);
+  res.json({ id, status, note, brandSid, customerProfileSid, endUserSid });
+});
+
+// POST /api/a2p/verify-otp  { code }
+// Submit the code Twilio texted the user. On success: the End User is
+// verified, the Customer Profile is submitted for carrier review, and
+// the registration row flips to 'in_review'. On failure: status stays
+// 'otp_pending' so the user can retry — the OTP isn't re-sent, but the
+// user can hit /api/a2p/submit again to start over.
+a2pRouter.post('/a2p/verify-otp', async (req, res) => {
+  const code = String(req.body?.code || '').trim();
+  if (!code || !/^\d{4,8}$/.test(code)) {
+    return res.status(400).json({ error: 'a 4–8 digit code is required' });
+  }
+  const reg = db.prepare(
+    `SELECT * FROM a2p_registrations WHERE user_id = ? AND status = 'otp_pending'
+     ORDER BY id DESC LIMIT 1`
+  ).get(USER) as any;
+  if (!reg) return res.status(404).json({ error: 'no pending OTP registration. Submit /api/a2p/submit first.' });
+  if (!reg.twilio_end_user_sid) {
+    return res.status(409).json({ error: 'this registration has no associated Twilio End User; resubmit /api/a2p/submit' });
+  }
+
+  const verify = await verifySoleProprietorOtp(reg.twilio_end_user_sid, code);
+  if (!verify.ok) {
+    return res.status(400).json({ ok: false, status: 'rejected', note: verify.note });
+  }
+
+  // OTP good → mark verified, submit profile for review.
+  let reviewStatus = 'pending-review';
+  try {
+    const r = await submitCustomerProfileForReview(reg.twilio_customer_profile_sid);
+    reviewStatus = r.status;
+  } catch (e: any) {
+    log.warn('a2p/verify-otp', 'profile submit-for-review failed', e);
+  }
+
+  db.prepare(
+    `UPDATE a2p_registrations SET otp_verified = 1, status = 'in_review', note = ?, updated_at = ? WHERE id = ?`
+  ).run(`OTP verified. Twilio profile status: ${reviewStatus}. Brand + campaign creation runs after profile is approved (1–3 business days).`,
+        Date.now(), reg.id);
+
+  res.json({ ok: true, status: 'in_review', profileStatus: reviewStatus });
 });
 
 // 3) Status — live-polls Twilio when we have a brand sid.

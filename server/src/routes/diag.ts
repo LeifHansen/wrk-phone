@@ -59,6 +59,52 @@ diagRouter.get('/_diag', async (_req, res) => {
     checks.voiceToken = { ok: false, note: `mint failed: ${String(e.message).slice(0, 60)}` };
   }
 
+  // ── Stripe ──────────────────────────────────────────────────────────
+  // Surface the exact state of the Stripe secret so you can tell at a
+  // glance whether business-line / credits checkout will work. We never
+  // return the key itself — just its prefix, length, and one of three
+  // states: usable / placeholder / missing.
+  const sk = process.env.STRIPE_SECRET_KEY || '';
+  let stripeState: 'usable' | 'placeholder' | 'missing' | 'malformed' = 'missing';
+  let stripeNote = '';
+  if (!sk) {
+    stripeState = 'missing';
+    stripeNote = 'STRIPE_SECRET_KEY not set — checkout will fall back to dev/no-charge mode';
+  } else if (!/^sk_(test|live)_/.test(sk)) {
+    stripeState = 'malformed';
+    stripeNote = `expected sk_test_ or sk_live_ prefix, got "${sk.slice(0, 8)}…"`;
+  } else if (/x{6,}/i.test(sk) || /your[_-]?key|placeholder|stub/i.test(sk) || sk.length <= 30) {
+    stripeState = 'placeholder';
+    stripeNote = `value looks like a stub (prefix=${sk.slice(0, 8)}…, length=${sk.length}). Set a real key with: fly secrets set STRIPE_SECRET_KEY=sk_live_…`;
+  } else {
+    stripeState = 'usable';
+    stripeNote = `prefix=${sk.slice(0, 8)}… length=${sk.length} — real Stripe checkout enabled`;
+  }
+  checks.stripe = { ok: stripeState === 'usable' || stripeState === 'missing', note: `${stripeState}: ${stripeNote}` };
+
+  // Webhook secret check.
+  const wh = process.env.STRIPE_WEBHOOK_SECRET || '';
+  checks.stripeWebhook = {
+    ok: !wh || (/^whsec_/.test(wh) && !/x{6,}/i.test(wh) && wh.length > 20),
+    note: !wh ? 'not set (webhooks will be rejected in prod)' :
+      /^whsec_/.test(wh) && wh.length > 20 ? 'looks real' : 'looks like a placeholder',
+  };
+
+  // ── ElevenLabs voice cloning ────────────────────────────────────────
+  const el = process.env.ELEVENLABS_API_KEY || '';
+  checks.elevenlabs = {
+    ok: !el || (el.length > 20 && !/x{6,}/i.test(el)),
+    note: !el ? 'not set (voice cloning falls back to Polly preset)' :
+      el.length > 20 && !/x{6,}/i.test(el) ? `prefix=${el.slice(0, 6)}… real voice cloning enabled` : 'placeholder value',
+  };
+
+  // ── R2 storage ──────────────────────────────────────────────────────
+  const r2Set = !!(process.env.R2_ACCOUNT_ID && process.env.R2_ACCESS_KEY_ID && process.env.R2_SECRET_ACCESS_KEY && process.env.R2_BUCKET && process.env.R2_PUBLIC_BASE);
+  checks.r2 = {
+    ok: true,
+    note: r2Set ? `enabled (bucket=${process.env.R2_BUCKET})` : 'not configured (using local Fly volume)',
+  };
+
   const allOk = Object.values(checks).every((c) => c.ok);
   res.status(allOk ? 200 : 503).json({ allOk, checks });
 });
