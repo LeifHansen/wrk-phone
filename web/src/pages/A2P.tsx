@@ -45,12 +45,17 @@ export function A2P() {
     catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
 
+  // Subscribe to the matching plan based on tier — sole_prop charges $5/mo,
+  // a2p charges $10/mo. Both unlock the same paid-tier features (number
+  // purchase, higher throughput); sole_prop just costs less and requires
+  // a manual identity verification step in Twilio Console.
   const submit = async () => {
     setBusy(true);
     try {
       const r = await api.a2pSubmit(profile, pkg);
       setStatus(r); setStep('status');
-      const sub = await api.subscribe('a2p');
+      const planId = profile.brandType === 'standard' ? 'a2p' : 'sole_prop';
+      const sub = await api.subscribe(planId);
       if (sub.url) { window.location.href = sub.url; return; }
     } catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
@@ -66,7 +71,9 @@ export function A2P() {
       <div className="page-h">
         <div>
           <h2>Register your business line</h2>
-          <div className="sub">A2P 10DLC · required by US carriers to text from a business number</div>
+          <div className="sub">
+            Pick a tier · the shared pool number stays free for low-volume / pay-as-you-go use
+          </div>
         </div>
       </div>
 
@@ -85,31 +92,49 @@ export function A2P() {
         {step === 'type' && (
           <div className="cond-card" style={{ display: 'grid', gap: 12 }}>
             <p style={{ color: 'var(--muted)', fontSize: 13, margin: 0 }}>
-              Pick how your business is set up. Most solo operators and freelancers
-              are sole proprietors — it's the fastest path and needs no EIN.
+              Two paid tiers — both unlock buying your own number + better
+              deliverability. <strong>You don't have to register at all</strong> if
+              you're fine on the free shared-pool number paying per text.
             </p>
+
+            {/* TIER 1 — cheaper Sole Proprietor */}
             <button
               className={'brand-opt' + (profile.brandType === 'sole_prop' ? ' on' : '')}
               onClick={() => set('brandType', 'sole_prop')}>
               <div className="brand-opt-h">
-                <strong>Sole proprietor</strong>
+                <strong>Sole Proprietor</strong> <span style={{ opacity: 0.7 }}>· $5/mo · $5 setup</span>
                 {profile.brandType === 'sole_prop' && <span className="badge">Selected</span>}
               </div>
               <div className="brand-opt-d">
-                Just you / a personal business. No EIN — verified by a one-time
-                code texted to your mobile. Lower volume, fastest approval.
+                Cheaper tier for solo operators and freelancers. After paying, a
+                one-time identity verification step happens in the Twilio Console
+                (~5 min — Twilio texts a code to your mobile to confirm you're real).
+                Throughput up to ~3,000 messages/day.
               </div>
             </button>
-            <button className="brand-opt disabled" disabled title="Coming soon">
+
+            {/* TIER 2 — premium Business Line A2P */}
+            <button
+              className={'brand-opt' + (profile.brandType === 'standard' ? ' on' : '')}
+              onClick={() => set('brandType', 'standard')}>
               <div className="brand-opt-h">
-                <strong>Standard / registered business</strong>
-                <span className="badge muted">Coming soon</span>
+                <strong>Business Line (A2P 10DLC)</strong> <span style={{ opacity: 0.7 }}>· $10/mo · $15 setup</span>
+                {profile.brandType === 'standard' && <span className="badge">Selected</span>}
               </div>
               <div className="brand-opt-d">
-                LLC, corporation, or nonprofit with an EIN. Higher throughput and
-                multiple campaigns. Ask us to enable this for your account.
+                For registered businesses (LLC, corp, nonprofit) with an EIN. Fully
+                automated brand + campaign registration via Twilio. Highest
+                throughput (~200,000 msgs/day) and best carrier deliverability.
               </div>
             </button>
+
+            {/* Free / pay-as-you-go reminder so the user knows they can skip */}
+            <div style={{ background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 8, padding: 12, fontSize: 13 }}>
+              <strong>Free / pay-as-you-go:</strong> stay on the shared toll-free
+              number. No registration needed. Texts are billed in credits ($5 = 500).
+              Best for low volume + ad-hoc use.
+            </div>
+
             <button className="btn lg" onClick={() => setStep('identity')}>Continue</button>
           </div>
         )}

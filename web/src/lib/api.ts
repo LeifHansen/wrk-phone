@@ -345,7 +345,7 @@ export const api = {
   importContactsUrl: (url: string, segmentId?: number) =>
     req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-url', { method: 'POST', body: JSON.stringify({ url, segmentId }) }),
   // recurring billing
-  subscribe: (plan: 'a2p' | 'number', ref?: string) =>
+  subscribe: (plan: 'a2p' | 'sole_prop' | 'number', ref?: string) =>
     req<{ url: string | null; stub?: boolean; note?: string }>(
       '/api/billing/subscribe',
       { method: 'POST', body: JSON.stringify({ plan, ref, returnUrl: location.origin }) }),

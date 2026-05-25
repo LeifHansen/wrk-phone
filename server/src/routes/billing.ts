@@ -6,12 +6,14 @@ import { log } from '../lib/log.js';
 export const billingRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
 
-// A "real" Stripe key passes the prefix check AND doesn't look like our
-// placeholder (e.g. `sk_test_xxxxxxxxxxxxxxxxxxxxxxxx`). Without this guard
-// the constructor succeeds — but every API call 401s with a misleading
-// "Invalid API Key" error, and from the user's POV the Subscribe button is
-// just broken. Treating the placeholder as unconfigured falls back to the
-// dev path that records a 'dev' subscription so the flow stays testable.
+// A "real" Stripe key passes the prefix check AND doesn't look like an
+// example/stub value (any 6+ consecutive x's, "your_key", "placeholder",
+// or short strings — real keys are ~100 chars). Without this guard the
+// Stripe constructor succeeds on a fake value but every API call 401s with
+// a misleading "Invalid API Key" error, and from the user's POV the
+// Subscribe button is just broken. Treating the stub as unconfigured falls
+// back to the dev path that records a 'dev' subscription so the flow
+// stays testable end-to-end without real Stripe credentials.
 function isUsableStripeKey(k: string | undefined): boolean {
   if (!k) return false;
   if (!/^sk_(test|live)_/.test(k)) return false;
@@ -26,11 +28,56 @@ if (process.env.STRIPE_SECRET_KEY && !stripe) {
 }
 
 // Recurring plans. Prices are created inline (price_data) so there's no
-// pre-setup in the Stripe dashboard required. `setupFee` is a one-time charge
-// added to the first invoice (covers Twilio's brand/campaign vetting cost).
-export const PLANS: Record<string, { label: string; monthly: number; setupFee?: number }> = {
-  a2p:    { label: 'Business line (A2P 10DLC)', monthly: 10, setupFee: 15 },
-  number: { label: 'Additional phone number',  monthly: 2 },
+// pre-setup in the Stripe dashboard required. `setupFee` is a one-time
+// charge added to the first invoice (covers Twilio's brand/campaign vetting).
+//
+// Tiering — cheap → premium:
+//   1. (no plan)   = free / pay-as-you-go on a shared toll-free pool number.
+//                    Standard credits buy SMS; works for low volume + ad-hoc
+//                    use without any registration.
+//   2. sole_prop  = cheaper sole-prop tier. Lower monthly + smaller setup,
+//                    but Twilio's sole-prop verification flow currently
+//                    requires a manual identity-verification step in the
+//                    Twilio Console (the automated TrustHub path is not
+//                    available on all accounts). Lower throughput than A2P.
+//   3. a2p        = the premium standard 10DLC Business Line. Full automated
+//                    brand + campaign registration; highest throughput; best
+//                    deliverability with US carriers.
+//   number        = paid add-on for an extra dedicated number on top of any
+//                    of the above (or the shared pool).
+export const PLANS: Record<string, {
+  label: string;
+  monthly: number;
+  setupFee?: number;
+  tier: 'addon' | 'sole_prop' | 'standard';
+  blurb: string;
+  throughput: string;
+  manualVerification?: boolean;
+}> = {
+  sole_prop: {
+    label: 'Sole Proprietor line',
+    monthly: 5,
+    setupFee: 5,
+    tier: 'sole_prop',
+    blurb: 'Cheaper monthly. Best for solos + small side-hustles. Requires a one-time identity step in the Twilio console (~5 min).',
+    throughput: 'Up to ~3,000 msgs/day',
+    manualVerification: true,
+  },
+  a2p: {
+    label: 'Business line (A2P 10DLC)',
+    monthly: 10,
+    setupFee: 15,
+    tier: 'standard',
+    blurb: 'Fully automated brand + campaign registration. Highest throughput. Best US carrier deliverability.',
+    throughput: 'Up to ~200,000 msgs/day',
+  },
+  number: {
+    label: 'Additional phone number',
+    monthly: 2,
+    tier: 'addon',
+    blurb: 'Add a dedicated local number on top of your shared pool number.',
+    throughput: '',
+  },
 };
 
 billingRouter.get('/billing/subscriptions', (_req, res) => {

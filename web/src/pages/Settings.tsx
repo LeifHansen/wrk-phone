@@ -151,7 +151,11 @@ export function Settings() {
           <div className="set-card">
             {subs.length === 0 && <Row label="Active plans"><span>None</span></Row>}
             {subs.map((s, i) => (
-              <Row key={i} label={s.plan === 'a2p' ? 'Business line · $10/mo' : `Number ${s.ref || ''} · $2/mo`}>
+              <Row key={i} label={
+                s.plan === 'a2p'       ? 'Business line · $10/mo' :
+                s.plan === 'sole_prop' ? 'Sole Proprietor · $5/mo' :
+                                         `Number ${s.ref || ''} · $2/mo`
+              }>
                 <span>{String(s.status).toUpperCase()}</span>
               </Row>
             ))}

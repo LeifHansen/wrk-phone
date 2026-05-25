@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from '../components/Toast';
 
@@ -98,22 +99,33 @@ export function Numbers() {
         </div>
 
         {!hasBusinessLine ? (
-          // ─── Upsell: locked behind the Business Line add-on ───
+          // ─── Upsell: two tiers, both unlock buying your own number ───
           <div className="cond-card">
             <h3 style={{ margin: '0 0 6px' }}>Want your own local number?</h3>
             <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
-              Upgrade to a <strong>Business Line</strong> to pick your own local
-              number by area code, registered for A2P 10DLC so your texts land
-              reliably.
+              Pick a registered line. Both tiers unlock buying your own local
+              number with carrier-grade deliverability. The shared toll-free
+              pool stays free for low-volume / pay-as-you-go use.
             </p>
-            <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 12 }}>
-              {a2p
-                ? <>${a2p.setupFee ?? 0} one-time setup + ${a2p.monthly}/mo</>
-                : '$15 one-time setup + $10/mo'}
+            <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
+              <div style={{ background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700 }}>Sole Proprietor — $5/mo + $5 setup</div>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+                  Cheaper. Best for solos. ~3,000 msgs/day. One-time mobile-OTP
+                  verification step in Twilio Console after checkout.
+                </div>
+              </div>
+              <div style={{ background: 'var(--lime)', border: '2px solid var(--ink)', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontWeight: 700 }}>Business Line — $10/mo + $15 setup</div>
+                <div style={{ fontSize: 12, color: 'var(--ink)', marginTop: 4 }}>
+                  Recommended. For LLC/corp with an EIN. Fully automated
+                  registration. ~200,000 msgs/day. Best US carrier deliverability.
+                </div>
+              </div>
             </div>
-            <button className="btn lg" onClick={startSubscribe} disabled={subscribing}>
-              {subscribing ? 'Starting checkout…' : 'Upgrade to Business Line'}
-            </button>
+            <Link to="/a2p" className="btn lg" style={{ textDecoration: 'none', display: 'inline-block' }}>
+              Pick a tier →
+            </Link>
           </div>
         ) : (
           // ─── Unlocked: search + buy a local number ───

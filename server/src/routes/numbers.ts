@@ -8,17 +8,19 @@ import { log } from '../lib/log.js';
 
 export const numbersRouter = Router();
 
-// Searching/buying your own local 10DLC number is a paid feature — it
-// requires the "Business Line" add-on (the A2P 10DLC subscription). Free
-// accounts use the shared toll-free pool. Replaces the old global
-// NUMBER_PURCHASE_ENABLED flag with a per-account entitlement.
+// Searching/buying your own local 10DLC number is a paid feature. EITHER
+// the Sole Proprietor tier OR the full Business Line A2P tier unlocks it
+// (both are registered senders by Twilio's standards; sole-prop has lower
+// throughput but still qualifies). Free accounts use the shared toll-free
+// pool and don't need to register anything.
 function hasBusinessLine(req: any): boolean {
-  return hasActiveSubscription(getUserId(req), 'a2p');
+  const uid = getUserId(req);
+  return hasActiveSubscription(uid, 'a2p') || hasActiveSubscription(uid, 'sole_prop');
 }
 const businessLineRequired = (_req: any, res: any) =>
   res.status(402).json({
-    error: 'Searching and buying your own number requires the Business Line add-on.',
-    upgrade: 'a2p',
+    error: 'Searching and buying your own number requires a registered line — either Sole Proprietor ($5/mo) or Business Line A2P ($10/mo).',
+    upgrade: 'sole_prop',
   });
 
 // The Messaging Service tied to the approved A2P 10DLC campaign — purchased
