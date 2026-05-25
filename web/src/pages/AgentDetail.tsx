@@ -22,6 +22,15 @@ export function AgentDetail() {
 
   const load = () => api.getAgent(aid).then((a) => { setAgent(a); setDirty({}); }).catch(() => {});
   useEffect(() => { load(); }, [aid]);
+  // Warn before closing the tab / reloading with unsaved edits — matches
+  // what users expect from any editing UI and rescues a "I clicked away
+  // and lost my changes" failure mode.
+  useEffect(() => {
+    if (Object.keys(dirty).length === 0) return;
+    const handler = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [dirty]);
 
   if (!agent) return <div className="page-body">Loading…</div>;
   const merged = { ...agent, ...dirty } as Agent;
@@ -32,6 +41,7 @@ export function AgentDetail() {
     try { setAgent(await api.patchAgent(aid, dirty)); setDirty({}); toast('Agent saved ✓'); }
     catch (e: any) { toast(`Save failed: ${e.message}`, 'err'); }
   };
+  const discard = () => { setDirty({}); toast('Changes discarded'); };
 
   const setMode = async (mode: 'off' | 'suggest' | 'auto') => {
     set('mode', mode);
@@ -86,7 +96,9 @@ export function AgentDetail() {
         </div>
       </div>
 
-      <div className="page-body" style={{ paddingTop: 16 }}>
+      {/* Bottom padding leaves room for the fixed Save bar so it doesn't
+          overlay the Delete-agent button at the very bottom of the form. */}
+      <div className="page-body" style={{ paddingTop: 16, paddingBottom: 100 }}>
         <div className="agent-section">
           <h3>Avatar</h3>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
@@ -269,10 +281,39 @@ export function AgentDetail() {
         </div>
       </div>
 
+      {/* Save bar — `position: fixed` so it's guaranteed visible regardless
+          of the parent's flex/overflow layout. The previous sticky approach
+          got clipped inside `.main { overflow: hidden }`, which made users
+          think edits weren't supported. */}
       {Object.keys(dirty).length > 0 && (
-        <div style={{ position: 'sticky', bottom: 16, margin: '0 16px 16px', background: 'var(--black)', color: '#fff', borderRadius: 14, padding: 14, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-          <span>{Object.keys(dirty).length} unsaved change{Object.keys(dirty).length === 1 ? '' : 's'}</span>
-          <button className="btn lime" onClick={save}>Save</button>
+        <div style={{
+          position: 'fixed',
+          bottom: 20,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 100,
+          background: 'var(--lime)',
+          color: 'var(--ink)',
+          border: '3px solid var(--ink)',
+          borderRadius: 14,
+          padding: '12px 16px',
+          boxShadow: 'var(--shadow-lg)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 12,
+          fontWeight: 700,
+        }}>
+          <span>
+            {Object.keys(dirty).length} unsaved change{Object.keys(dirty).length === 1 ? '' : 's'}
+          </span>
+          <button className="btn ghost" onClick={discard}
+            style={{ background: 'transparent', borderColor: 'var(--ink)' }}>
+            Discard
+          </button>
+          <button className="btn" onClick={save}
+            style={{ background: 'var(--ink)', color: 'var(--lime)' }}>
+            💾 Save changes
+          </button>
         </div>
       )}
     </>
