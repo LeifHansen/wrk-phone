@@ -47,16 +47,29 @@ export function getPrankAgent(userId: string): any | null {
   ).get(userId) || null;
 }
 
-// Idempotently create (or fetch) the hidden PrankMode agent for a user.
+// Idempotently create (or fetch) the PrankMode agent. Created visible
+// (hidden=0) so once a user discovers the easter egg via the contacts
+// search, they can SEE / EDIT / OPTIMIZE / DELETE it like any other agent.
+// The previous design (hidden=1 forever) made the agent feel broken: the
+// reveal toast fired but nothing showed up in the Agents list. Existing
+// hidden rows are unhidden on the next reveal call so old accounts
+// auto-heal.
 export function ensurePrankAgent(userId: string): any {
   const existing = getPrankAgent(userId);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.hidden) {
+      db.prepare(`UPDATE agents SET hidden = 0, updated_at = ? WHERE id = ?`)
+        .run(Date.now(), existing.id);
+      return db.prepare(`SELECT * FROM agents WHERE id = ?`).get(existing.id);
+    }
+    return existing;
+  }
   const now = Date.now();
   const r = db.prepare(
     `INSERT INTO agents
        (user_id, name, emoji, color, role, persona, instructions, examples_json,
         rules_json, mode, voice_mode, is_default, hidden, created_at, updated_at)
-     VALUES (?, ?, ?, 'purple', 'prankmode', ?, ?, ?, ?, 'auto', 'auto', 0, 1, ?, ?)`
+     VALUES (?, ?, ?, 'purple', 'prankmode', ?, ?, ?, ?, 'auto', 'auto', 0, 0, ?, ?)`
   ).run(userId, PRANK_NAME, PRANK_EMOJI, PRANK_PERSONA, PRANK_INSTRUCTIONS,
         PRANK_EXAMPLES, PRANK_RULES, now, now);
   return db.prepare(`SELECT * FROM agents WHERE id = ?`).get(Number(r.lastInsertRowid));

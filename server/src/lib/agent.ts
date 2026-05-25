@@ -1,5 +1,6 @@
 import { db, AgentRow, hydrateAgent, getAgentForConversation } from './db.js';
 import { openai, OPENAI_MODEL as MODEL } from './openai.js';
+import { log } from './log.js';
 
 export type AgentMode = 'off' | 'suggest' | 'auto';
 
@@ -257,9 +258,24 @@ Return JSON of shape:
     ],
     temperature: 0.4,
     response_format: { type: 'json_object' },
-    max_tokens: 900,
+    // Bumped from 900 → 1800. For agents with long personas + many rules
+    // (PrankMode is the worst offender), 900 truncated mid-object and the
+    // JSON.parse below crashed with a 500. 1800 still keeps the request
+    // cheap, fits 5 verbose optimization objects.
+    max_tokens: 1800,
   });
-  const parsed = JSON.parse(completion.choices[0]?.message?.content || '{"optimizations":[]}');
+  // Defensive parse: when OpenAI still produces malformed JSON (truncated
+  // by the cap, unexpected control char, etc.), return an empty list with
+  // a warning instead of bubbling a 500 to the user. The UI shows "no
+  // optimizations" which is the right outcome — better than a crashed
+  // page on a tap of the ✨ Optimize button.
+  let parsed: any;
+  try {
+    parsed = JSON.parse(completion.choices[0]?.message?.content || '{"optimizations":[]}');
+  } catch (e) {
+    log.warn('agent.optimize', 'JSON parse failed; returning empty optimization list', e);
+    return [];
+  }
   if (!Array.isArray(parsed.optimizations)) return [];
   return parsed.optimizations.slice(0, 5).map((o: any, i: number) => ({
     id: String(o.id || `opt-${i}`),

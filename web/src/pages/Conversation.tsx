@@ -6,6 +6,7 @@ import { subscribeEvents } from '../lib/events';
 import { Avatar } from '../components/Avatar';
 import { toast } from '../components/Toast';
 import { SmsAiTools } from '../components/SmsAiTools';
+import { AgentInitiate } from '../components/AgentInitiate';
 import { placeCall } from '../lib/voice';
 
 interface Msg {
@@ -124,6 +125,11 @@ export function Conversation({ onCall }: { onCall: (peer: string) => void }) {
           🤖 Autopilot {conv?.autopilot ? 'ON' : 'OFF'}
         </button>
         <button className="btn ghost" onClick={callPeer}>📞</button>
+        {/* When there's at least one auto agent, surface the agent-driven
+            entry points right next to the user-driven call button. */}
+        {conv?.peer_phone && (
+          <AgentInitiate to={{ phone: conv.peer_phone, name: conv?.name || undefined }} compact />
+        )}
       </div>
 
       {agent && agent.mode !== 'off' && (

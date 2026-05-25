@@ -142,6 +142,13 @@ export const api = {
   createCampaign: (payload: any) => req<{ id: number }>('/api/campaigns', { method: 'POST', body: JSON.stringify(payload) }),
   sendCampaign: (id: number) => req(`/api/campaigns/${id}/send`, { method: 'POST' }),
 
+  // Agent-initiated text — agent drafts opening, sends, autopilots replies.
+  initiateAgentText: (agentId: number, to: string, brief: string, name?: string) =>
+    req<{ conversationId: number; opening: string; twilioSid: string; autopilot: boolean }>(
+      `/api/agents/${agentId}/initiate-text`,
+      { method: 'POST', body: JSON.stringify({ to, brief, name }) }
+    ),
+
   // ---- Agent calls (outbound AI voice campaigns) ----
   listAgentCalls: () => req<any[]>('/api/agent-calls'),
   getAgentCall: (id: number) => req<{ campaign: any; recipients: any[] }>(`/api/agent-calls/${id}`),

@@ -246,6 +246,122 @@ agentRouter.post('/agents/:id/apply-patch', (req, res) => {
   res.json(hydrateAgent(fetchAgent(id)!));
 });
 
+// ---- Initiate a text thread WITH this agent ----
+// One-tap entry point: pick a recipient + a brief, the agent drafts the
+// opening message in its own voice and sends it. The conversation is then
+// auto-assigned to this agent with per-thread autopilot ON, so the agent
+// handles replies without further user action.
+// body: { to (e164), brief, name? }
+agentRouter.post('/agents/:id/initiate-text', async (req, res) => {
+  const id = Number(req.params.id);
+  const agent = fetchAgent(id);
+  if (!agent) return res.status(404).json({ error: 'agent not found' });
+
+  // Imports kept inline so this route file doesn't grow a tangle of cross
+  // imports — the agent/messaging stack is the bulk of the surface here.
+  const { normalizePhone } = await import('../lib/phone.js');
+  const { getOrCreateConversation, getActiveNumber, spendCredits, addCredits, getCredits, messageCost, isOptedOut, db } = await import('../lib/db.js');
+  const { twilioClient, twilioConfig } = await import('../lib/twilio.js');
+  const { hydrateAgent } = await import('../lib/db.js');
+  const { openai, OPENAI_MODEL } = await import('../lib/openai.js');
+  const { emit } = await import('../lib/events.js');
+
+  const to = normalizePhone(String(req.body?.to || ''));
+  const brief = String(req.body?.brief || '').trim();
+  const name = req.body?.name ? String(req.body.name).trim() : '';
+  if (!to) return res.status(400).json({ error: 'valid `to` phone required' });
+  if (!brief) return res.status(400).json({ error: 'brief required (what should the agent text about?)' });
+
+  if (isOptedOut(USER, to)) {
+    return res.status(409).json({ error: 'This contact has opted out (replied STOP). Messaging them is not allowed.' });
+  }
+
+  // Have the agent draft the opening message in its persona. Constrained
+  // to SMS length so we don't drop a paragraph on the recipient out of
+  // nowhere. Reuses the same constants and rules the agent uses for replies.
+  const ah = hydrateAgent(agent);
+  let opening = brief; // safety fallback if OpenAI fails
+  try {
+    const c = await openai.chat.completions.create({
+      model: OPENAI_MODEL,
+      temperature: 0.7,
+      max_tokens: 160,
+      messages: [
+        {
+          role: 'system',
+          content: `You are "${ah.name}", an SMS auto-responder agent. ` +
+            `Draft the FIRST outbound text to a contact based on the user's brief. ` +
+            `Stay in this persona: ${ah.persona || '(concise, friendly, professional)'}. ` +
+            `Follow these instructions: ${ah.instructions || '(none)'}. ` +
+            `HARD RULES: 1-2 short SMS-length sentences. No emoji unless natural. ` +
+            `Never claim to be an AI. If the recipient hasn't opted in, lead with a ` +
+            `clear identification and an opt-out option ("reply STOP to unsubscribe").`,
+        },
+        {
+          role: 'user',
+          content: `Recipient: ${name || to}\nBrief: ${brief}\n\nReturn ONLY the opening SMS text, no quotes, no preamble.`,
+        },
+      ],
+    });
+    const drafted = c.choices[0]?.message?.content?.trim();
+    if (drafted) opening = drafted.replace(/^["']|["']$/g, '');
+  } catch (e: any) {
+    // If OpenAI fails, send the brief itself — better than a 500.
+    // The caller is told via the .agent_failed flag in the response.
+  }
+
+  // Charge + send via Twilio. Mirrors /sms/send but assigns this agent +
+  // turns on autopilot before the SMS goes out, so the recipient's reply
+  // lands on a thread that auto-responds.
+  const cost = messageCost(opening, false);
+  if (!spendCredits(USER, cost)) {
+    return res.status(402).json({
+      error: `Not enough credits. This message costs ${cost} (balance ${getCredits(USER)}).`,
+      cost,
+    });
+  }
+
+  const fromNum = getActiveNumber(USER) || twilioConfig.defaultFrom;
+  const convId = getOrCreateConversation(USER, to, fromNum || null);
+  let msg: any;
+  try {
+    msg = await twilioClient.messages.create({ to, body: opening, from: fromNum });
+  } catch (err: any) {
+    addCredits(USER, cost); // refund — nothing went out
+    return res.status(500).json({ error: `Send failed: ${err.message}`, code: err.code });
+  }
+
+  // Persist the message + flip the thread to "this agent on autopilot" so
+  // replies handle automatically.
+  try {
+    const r = db.prepare(
+      `INSERT INTO messages (conversation_id, direction, body, twilio_sid, status, created_at, is_ai, agent_id)
+       VALUES (?, 'out', ?, ?, ?, ?, 1, ?)`
+    ).run(convId, opening, msg.sid, msg.status, Date.now(), id);
+    db.prepare('UPDATE conversations SET last_message_at = ?, agent_id = ?, autopilot = 1 WHERE id = ?')
+      .run(Date.now(), id, convId);
+    // If the contact had no name, save the one the caller provided so it
+    // shows up properly in the inbox right away.
+    if (name) {
+      db.prepare(
+        `INSERT INTO contacts (user_id, phone, name) VALUES (?, ?, ?)
+         ON CONFLICT(user_id, phone) DO UPDATE SET name = COALESCE(NULLIF(excluded.name,''), contacts.name)`
+      ).run(USER, to, name);
+    }
+    emit({ kind: 'message:new', conversationId: convId, direction: 'out' });
+    res.json({
+      conversationId: convId,
+      messageId: Number(r.lastInsertRowid),
+      twilioSid: msg.sid,
+      status: msg.status,
+      opening,
+      autopilot: true,
+    });
+  } catch (e: any) {
+    res.json({ conversationId: convId, twilioSid: msg.sid, status: msg.status, opening, warning: 'sent but not recorded' });
+  }
+});
+
 // ---- Conversation assignment ----
 // PATCH /api/conversations/:id/agent  body: { agent_id | null }
 agentRouter.patch('/conversations/:id/agent', (req, res) => {

@@ -4,6 +4,7 @@ import { api } from '../lib/api';
 import { placeCall } from '../lib/voice';
 import { toast } from '../components/Toast';
 import { IconPhone, IconMessage } from '../components/Icons';
+import { AgentInitiate } from '../components/AgentInitiate';
 
 interface Contact { id: number; phone: string; name: string; segments: { id: number; name: string }[] }
 interface Segment { id: number; name: string; count: number }
@@ -226,6 +227,9 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
                       onClick={(e) => { e.stopPropagation(); text(c); }}>
                       <IconMessage size={18} />
                     </button>
+                    {/* AgentInitiate self-renders ONLY when there's at least
+                        one auto-mode agent — otherwise the row stays unchanged. */}
+                    <AgentInitiate to={{ phone: c.phone, name: c.name }} compact />
                     <span className="c-chev" aria-hidden="true">›</span>
                   </div>
                 )}
