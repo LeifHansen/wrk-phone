@@ -26,26 +26,89 @@ Each agent picks one of those 6 colors as its identity — visible everywhere it
 
 ## What's built
 
-| Capability | How |
-| --- | --- |
-| **Multi-agent system** | Unlimited agents per user. Each has its own emoji + color + persona + rules + examples. Per-conversation routing — set a different agent on a per-thread basis, with a default fallback. |
-| **Auto-routing rules** | Rules evaluated on every cold inbound. Conditions: keyword match, AI intent, sender (known/unknown), specific number, area code, time of day. AND-joined within a rule, ordered by priority across rules. First match wins; result sticks to the conversation. |
-| **Easy training (Quick Wizard)** | 3 steps: pick a role preset (Personal / Sales / Recruiter / Support / Side Hustle / Custom) → pick a vibe (Chill, Direct, Hype, …) → name it. AI fills the rest. Or just type a one-liner and AI drafts the whole agent. |
-| **AI optimizations** | One-tap "✨ Optimize" analyzes recent traffic + current config and returns up to 5 structured patches (tone tweaks, new rules, new examples, mode changes). Each one applies in one click. |
-| **AI quick-train** | Generates 3 realistic inbound messages your agent might receive. You type how you'd actually reply. We save it as a few-shot example. |
-| **Two-way SMS inbox (iPhone Messages look)** | Twilio Programmable Messaging + webhook → SQLite → polled by clients |
-| **Outbound calls (softphone)** | Twilio Voice SDK (`@twilio/voice-react-native-sdk` on mobile, `@twilio/voice-sdk` on web) |
-| **Inbound calls ring the softphone** | TwiML `<Dial><Client>` to the registered identity |
-| **Voicemail w/ AI greeting + transcription** | Per-agent voicemail mode (Off = default greeting / Suggest = AI generates / Auto = same). Recordings transcribed to messages. |
-| **Mass text campaigns** | Create with `{{name}}` template; throttled send loop with per-recipient status |
-| **Native + browser softphone** | Same access-token endpoint, two SDKs |
+### 📞 Telephony — the work line
+- **Inbound + outbound calling** in the browser (Twilio Voice SDK) and a native softphone scaffold (Expo, custom dev build required for the RN SDK)
+- **Two-way SMS/MMS** on a single shared work number — threaded inbox with drafts, templates, MMS attachments
+- **Voicemail** with auto-transcription via Twilio
+- **Multi-number support** — buy/release Twilio numbers from inside the app, route inbound to specific agents
+- **A2P 10DLC** registration as a guided wizard — sole-proprietor (no EIN, mobile-OTP verification via TrustHub API) or full business brand, with carrier-vetting fallback to manual Twilio Console filing
 
-## What is NOT real (be honest with yourself before you ship)
+### 🤖 AI Agents
+- **Multiple named agents per account** — each with its own persona, color, hard rules, training examples, voice
+- **Three messaging modes**: Off / Suggest (drafts replies you tap to send) / Auto (sends safe replies on its own)
+- **Voice agents** answer calls and voicemail in your cloned voice
+- **Real voice cloning** via ElevenLabs — upload a 15-30s sample, get a real cloned voice on outbound calls + voicemail. Polly TTS presets as fallback.
+- **Quick Train wizard** — generates 3 realistic inbounds, you reply how you would, we save the pairs as few-shot examples
+- **One-tap Optimize** — reads recent traffic + current config, returns up to 5 structured patches (tone tweaks, new rules, new examples, mode changes), each applies in one click
+- **Hard limits** — negative guardrails ("never promise refunds") the agent will not cross
+- **Auto-routing rules** — keyword, AI-detected intent, sender (known/unknown), specific number, area code, time of day. AND-joined within a rule, prioritized across rules. First match wins, sticks to the conversation.
 
-- **eSIM was scrapped per request.** This is a pure softphone — calls/texts go through Twilio over data (Wi-Fi/LTE), not over a SIM-bound carrier voice channel.
-- **RCS via Twilio is outbound-only and gated.** Twilio's RCS Business Messaging is for businesses sending to consumers via a verified RCS Agent. There is no two-way peer RCS chat. The campaign system can route through a Messaging Service that has an RCS sender attached (channel field = `rcs`), but you'll need to apply for an RCS Agent through Twilio first. **Default is SMS — leave it on SMS until your RCS sender is approved.**
-- **Auth is single-user demo mode.** Everything keys off `DEMO_USER_ID`. Add real auth (Clerk, Auth0, or a JWT pass) before letting anyone else in.
-- **No rate-limit/retry on the campaign loop beyond a 100ms delay.** If you hit Twilio's per-MSID throttle, recipients flip to `failed` — no auto-retry yet.
+### 📣 Mass messaging (Campaigns)
+- **Bulk SMS campaigns** with `{{first_name}}` token substitution
+- **Round-robin send** across multiple numbers for higher throughput
+- **Concurrent batch processing** with per-lane rate limiting
+- **Quiet-hours enforcement** + automatic skip
+- **Atomic credit reservation** — no double-charge on crashes
+- **Recovery on restart** — interrupted campaigns refund undialed recipients
+
+### 📲 Agent Calls (outbound AI voice campaigns)
+- **Scripted outbound campaigns** — AI agent reads your script to a list of contacts in the cloned voice
+- **Drop-voicemail mode** — leaves a voicemail; brief apology + hangup on live human pickup
+- **TCPA compliance** — consent acknowledgement required per send, press 9 to opt out, opt-out flags persist on the contact
+- **AMD (machine detection)** — different branches for live human vs voicemail
+- **Live monitoring panel** — real-time transcript per active call via Twilio's real-time transcription verb, pulsing status dot, live duration, listen via Twilio Console
+
+### 👥 Contacts
+- **Manual + bulk import** (CSV, URL-based with SSRF guard)
+- **Segments** for tagging + targeted campaigns
+- **Merge duplicates**
+- **E.164 phone normalization** (canonical, deduped across the app)
+- **Separate SMS + voice opt-out flags** per contact
+
+### 🖼️ Media Library
+- **MMS images/videos** stored in Cloudflare R2 (S3-compatible)
+- **Templates** with `{{first_name}}` token substitution
+- **AI image generation** (DALL-E)
+- **Voice samples** stored on the Fly volume
+
+### 📊 Analytics
+- SMS sent / received counts, AI-sent split
+- Call metrics — placed, completed, voicemail vs human
+- 7-day rolling windows surfaced on every agent card
+- Per-campaign drill-in (recipient-level status)
+
+### 💳 Billing (Stripe)
+- **Three tiers**: Free / Sole Prop ($5/mo + $5 setup) / Business Line ($10/mo + $15 setup)
+- **Credit packages** for usage-based SMS/call costs
+- Real Stripe live keys, **webhook idempotency**, fail-closed signature validation
+- Stripe Checkout for subscriptions + one-time line items
+
+### 🌐 Marketing site (same domain)
+- Landing page at `/` (when logged out — gates on auth token)
+- **8 SEO-targeted landing pages** (`/ai-text-agents`, `/sms-marketing-app`, etc.) sharing one `MarketingLayout`
+- Blog (`/blog` + per-post pages, HTML sanitized)
+- Privacy Policy + Terms (TOS gate at signup)
+- GA4 tagging
+
+### 🔐 Security + ops
+- `requireOwner` IDOR guard on `/api`
+- Webhook signature validation (Twilio + Stripe), **fail-closed** in production
+- Rate limiting on hot endpoints (voice upload, contacts import, etc.)
+- SSRF guard on URL-based contact imports
+- Bcrypt'd passwords, bearer-token sessions
+- Single-machine Fly.io deploy + persistent volume for SQLite + voice samples
+- Health checks + `/api/_diag` endpoint surfacing all integration states
+
+## What is NOT (yet) real
+
+- **Single-tenant** — all telephony/inbox/campaign data is bound to `OWNER_ID` (`server/src/lib/auth.ts`). Schema is per-user-keyed but routes hardcode the owner; per-user telephony is a separate, larger build.
+- **No per-recipient retry inside a campaign run.** Transient Twilio failures flip the recipient to `failed` immediately — no in-run backoff. Recovery-on-restart IS in place (refunds undialed recipients, resets stuck `sending` rows).
+- **No in-browser live audio for agent calls yet.** The Live Calls panel ships live transcripts in-app + links to Twilio Console for live audio. True in-app listening needs Media Streams (websocket audio relay).
+- **eSIM was scrapped per request.** Pure softphone — calls/texts go through Twilio over data (Wi-Fi/LTE), not over a SIM-bound carrier voice channel.
+- **RCS via Twilio is outbound-only and gated.** No two-way peer RCS chat; needs an approved RCS Agent via Twilio. Default stays on SMS.
+- **SSE + 30s polling fallback** instead of true WebSockets.
+- **SQLite** — Postgres needed for multi-instance scale.
+- **No OpenAI cost guardrails** yet.
 - **Twilio Voice React Native SDK requires a custom dev build.** Won't run in Expo Go. Use `expo prebuild && expo run:ios` (or `:android`).
 
 ## Setup

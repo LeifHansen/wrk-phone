@@ -20,16 +20,70 @@ const FEATURES = [
       'AI voice agents answer and screen inbound calls, take messages, and book appointments so you never miss a lead — even after hours or on weekends.',
   },
   {
+    icon: '🎙️',
+    title: 'Real voice cloning',
+    body:
+      'Upload a 15-second sample and your AI voice agent answers in YOUR voice via ElevenLabs. No robotic stock voices — callers think they\'re talking to you.',
+  },
+  {
     icon: '📣',
     title: 'AI SMS marketing',
     body:
       'Run AI SMS marketing campaigns: segment contacts, personalize blasts, and let AI follow up automatically. Built-in STOP/HELP and opt-out tracking keep you compliant.',
   },
   {
+    icon: '📲',
+    title: 'AI voice campaigns',
+    body:
+      'Outbound AI voice campaigns — your cloned voice reads your script to a list of contacts. Drop-voicemail mode delivers only to voicemail. Press-9 to opt out, fully TCPA compliant.',
+  },
+  {
+    icon: '🔴',
+    title: 'Live call monitoring',
+    body:
+      'Watch active agent calls in real time — auto-scrolling transcript, live duration counter, status indicator. Listen in via Twilio Console for any call in progress.',
+  },
+  {
     icon: '💬',
     title: 'Shared team inbox',
     body:
       'Every call and text in one threaded inbox. Assign conversations, leave AI on suggest, or let an agent take over when you step away.',
+  },
+  {
+    icon: '🧠',
+    title: 'Smart auto-routing',
+    body:
+      'Define rules so different inbounds hit the right agent automatically — by keyword, AI-detected intent, sender, area code, or time of day. First match wins, sticks to the conversation.',
+  },
+  {
+    icon: '🎓',
+    title: 'AI optimizer + quick train',
+    body:
+      'One-tap optimizer reads your recent traffic and suggests up to 5 specific persona/rule/example patches. Quick-train generates realistic inbounds for you to reply to so the agent learns your voice fast.',
+  },
+  {
+    icon: '🗂️',
+    title: 'Contacts + segments',
+    body:
+      'Import from CSV or your phone, dedupe automatically with E.164 normalization, segment by tag for targeted campaigns. Per-contact SMS and voice opt-out flags tracked separately.',
+  },
+  {
+    icon: '🖼️',
+    title: 'Media library + templates',
+    body:
+      'Reusable SMS templates with name-token substitution, MMS image/video library backed by Cloudflare R2, and on-demand AI image generation for your campaigns.',
+  },
+  {
+    icon: '✅',
+    title: 'A2P 10DLC built in',
+    body:
+      'Two-tier 10DLC registration — sole-proprietor or full business brand — runs as a wizard inside the app. Carrier vetting with manual-console fallback so you\'re never stuck.',
+  },
+  {
+    icon: '📊',
+    title: 'Analytics that mean something',
+    body:
+      'Sent, received, AI-handled, voicemail-vs-human splits, 7-day agent activity on every card. Per-campaign recipient-level drill-down to see exactly what happened.',
   },
   {
     icon: '⚡',
