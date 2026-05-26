@@ -94,7 +94,9 @@ export function Settings() {
                   teardownDevice();
                   api.logout().catch(() => {});
                   auth.token = null;
-                  nav('/login');
+                  // Land on the marketing site (root resolves to <Landing/>
+                  // when there's no auth token), not the login form.
+                  nav('/');
                 }}>Log out</button>
             )}
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', flexWrap: 'wrap' }}>

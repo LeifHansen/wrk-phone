@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
-import { api } from './lib/api';
+import { api, auth } from './lib/api';
 import { Logo } from './components/Logo';
 import { Toaster } from './components/Toast';
 import { Avatar } from './components/Avatar';
@@ -72,8 +72,13 @@ const MARKETING_ROUTES = [
 ];
 
 // Routes rendered without the app sidebar (public marketing + auth + setup).
+// Note: `/` is chromeless ONLY when logged out (Landing); chromed when logged in (Home).
 const CHROMELESS = ['/lp', '/login', '/register', '/welcome', '/setup', ...MARKETING_ROUTES];
-const isChromeless = (p: string) => CHROMELESS.includes(p) || p === '/blog' || p.startsWith('/blog/');
+const isChromeless = (p: string, loggedIn: boolean) =>
+  CHROMELESS.includes(p) ||
+  p === '/blog' ||
+  p.startsWith('/blog/') ||
+  (p === '/' && !loggedIn);
 
 export function App() {
   const [inCall, setInCall] = useState(false);
@@ -82,24 +87,17 @@ export function App() {
   const [acctAvatar, setAcctAvatar] = useState<string | null>(null);
   const nav = useNavigate();
   const loc = useLocation();
+  // Re-evaluated on every render — localStorage is synchronous, so this is
+  // cheap and stays in sync with login/logout without extra state plumbing.
+  const loggedIn = !!auth.token;
 
   // Account avatar shown app-wide in the sidebar; refresh on navigation so a
-  // newly generated one appears everywhere without a full reload.
-  useEffect(() => { api.account().then((a) => setAcctAvatar(a.avatarUrl)).catch(() => {}); }, [loc.pathname]);
-
-  // First-run gate: a visitor with no provisioned line lands on the public
-  // marketing page (not the app). Public/auth/setup paths are left alone so
-  // "Get started" → register → setup still flows.
+  // newly generated one appears everywhere without a full reload. Skipped
+  // when logged out so the marketing landing doesn't fire a 401.
   useEffect(() => {
-    api.activeNumber()
-      .then((s) => {
-        if (!s.isProvisioned && !isChromeless(loc.pathname)) {
-          nav('/lp', { replace: true });
-        }
-      })
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+    if (!loggedIn) { setAcctAvatar(null); return; }
+    api.account().then((a) => setAcctAvatar(a.avatarUrl)).catch(() => {});
+  }, [loc.pathname, loggedIn]);
 
   useEffect(() => {
     onIncoming((call) => {
@@ -112,7 +110,7 @@ export function App() {
     });
   }, []);
 
-  const chromeless = isChromeless(loc.pathname);
+  const chromeless = isChromeless(loc.pathname, loggedIn);
 
   return (
     <div className={'app-shell' + (chromeless ? ' chromeless' : '')}>
@@ -180,7 +178,11 @@ export function App() {
           <Route path="/terms" element={<Terms />} />
           <Route path="/privacy" element={<PrivacyPolicy />} />
           <Route path="/superadmin" element={<Superadmin />} />
-          <Route path="/" element={<Home onCall={(p) => { setPeer(p); setInCall(true); }} />} />
+          {/* Root: marketing Landing for visitors, Home (softphone) once
+              the user is logged in. Keeps wrkphn.com as a real homepage. */}
+          <Route path="/" element={loggedIn
+            ? <Home onCall={(p) => { setPeer(p); setInCall(true); }} />
+            : <Landing />} />
           <Route path="/messages" element={<Inbox />} />
           <Route path="/messages/drafts" element={<Inbox />} />
           {/* /messages/templates kept as a backward-compat alias — old links
