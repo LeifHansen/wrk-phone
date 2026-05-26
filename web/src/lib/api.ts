@@ -151,6 +151,12 @@ export const api = {
 
   // ---- Agent calls (outbound AI voice campaigns) ----
   listAgentCalls: () => req<any[]>('/api/agent-calls'),
+  // Currently-active calls + recent transcript chunks. Polled by the Live
+  // Calls panel — the response is small even at 50 concurrent ringing calls.
+  liveAgentCalls: () => req<{ calls: any[] }>('/api/agent-calls/live'),
+  liveAgentCallTranscript: (sid: string) =>
+    req<{ events: { sequence: number; source: string; text: string; is_final: number; created_at: number }[] }>(
+      `/api/agent-calls/live/${encodeURIComponent(sid)}`),
   getAgentCall: (id: number) => req<{ campaign: any; recipients: any[] }>(`/api/agent-calls/${id}`),
   createAgentCall: (payload: any) => req<{ id: number }>('/api/agent-calls', { method: 'POST', body: JSON.stringify(payload) }),
   // consent must be true — server enforces TCPA acknowledgement before dialing.
@@ -280,17 +286,27 @@ export const api = {
   // calls and auto-upgrades the moment a provider key is added.
   uploadVoiceSample: async (file: File, name: string, style: string) => {
     const buf = await file.arrayBuffer();
+    // file.type can be empty in Safari for some .m4a/.mov files — fall
+    // back to application/octet-stream and pass the filename so the
+    // server can still infer the extension.
+    const ct = file.type || 'application/octet-stream';
     const res = await fetch('/api/voices/upload', {
       method: 'POST',
       headers: {
-        'Content-Type': file.type || 'audio/mpeg',
+        'Content-Type': ct,
         'X-Voice-Name': name,
         'X-Voice-Style': style,
+        'X-Voice-Filename': file.name || '',
         ...(auth.token ? { Authorization: `Bearer ${auth.token}` } : {}),
       },
       body: buf,
     });
-    if (!res.ok) throw new Error(`${res.status} ${await res.text()}`);
+    if (!res.ok) {
+      // Surface body text so the toast tells the user WHY (rate-limited,
+      // too big, unsupported mime, etc.) instead of a bare status code.
+      const text = await res.text().catch(() => '');
+      throw new Error(`${res.status} ${text || res.statusText}`);
+    }
     return res.json() as Promise<{ id: number; name: string; provider: string; tts_voice: string; sample_url: string; cloned: number; note: string }>;
   },
   buyCredits: (packageId: string) =>

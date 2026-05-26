@@ -370,31 +370,40 @@ function VoicePicker({ currentId, currentName, onPick }: {
   const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (!name.trim()) {
-      toast('Name your voice first (e.g. "My voice").', 'err');
+    // Name is auto-filled from the filename if the user didn't type one —
+    // the old "Name your voice first" toast was a needless blocker.
+    let voiceName = name.trim();
+    if (!voiceName) {
+      voiceName = (file.name.replace(/\.[^.]+$/, '') || 'My voice').slice(0, 40);
+    }
+    // Match the server cap (server/src/routes/voices.ts MAX_SAMPLE_BYTES).
+    // Bumped to 25 MB to cover short iPhone .mov clips — the server cap was
+    // bumped in lockstep, so we don't accept-then-reject with a confusing 413.
+    if (file.size > 25 * 1024 * 1024) {
+      toast('Sample is too big — keep it under 25 MB.', 'err');
       e.target.value = '';
       return;
     }
-    // Must match the server cap (server/src/routes/voices.ts MAX_SAMPLE_BYTES).
-    // Was 20 MB on client / 5 MB on server — bigger files got accepted by
-    // the picker then rejected by Express raw-body with a confusing 413.
-    if (file.size > 5 * 1024 * 1024) {
-      toast('Sample is too big — keep it under 5 MB.', 'err');
-      e.target.value = '';
-      return;
-    }
-    if (!/^(audio|video)\//.test(file.type)) {
+    // Some browsers leave `file.type` blank for certain m4a/mov files. We
+    // still accept those — the server infers the extension from the mime
+    // or falls back to mp3, and ElevenLabs auto-detects format.
+    if (file.type && !/^(audio|video)\//.test(file.type)) {
       toast('Pick an audio or video file.', 'err');
       e.target.value = '';
       return;
     }
     setUploading(true);
     try {
-      const v = await api.uploadVoiceSample(file, name.trim(), style.trim());
+      const v = await api.uploadVoiceSample(file, voiceName, style.trim());
       onPick({ id: v.id, name: v.name, tts_voice: v.tts_voice });
       toast(v.note, v.cloned ? 'ok' : 'info');
       setName(''); setStyle(''); load();
-    } catch (e: any) { toast(e.message, 'err'); }
+    } catch (err: any) {
+      // Surface the actual server response (status + body) — the previous
+      // toast often just said "500" with no clue why cloning failed.
+      const raw = String(err?.message || err);
+      toast(`Voice upload failed — ${raw}`, 'err');
+    }
     finally {
       setUploading(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -436,8 +445,8 @@ function VoicePicker({ currentId, currentName, onPick }: {
           {creating ? '…' : 'Create voice'}
         </button>
         <button className="btn lime" onClick={() => fileInputRef.current?.click()}
-          disabled={uploading || !name.trim()}
-          title="Upload a 15–30s clean voice sample (mp3 / wav / m4a / mp4) to clone">
+          disabled={uploading}
+          title="Upload a 15–30s clean voice sample (mp3 / wav / m4a / mp4) to clone. Name auto-fills from the filename if blank.">
           {uploading ? 'Uploading…' : '🎙️ Upload sample'}
         </button>
         <input ref={fileInputRef} type="file" accept="audio/*,video/*"

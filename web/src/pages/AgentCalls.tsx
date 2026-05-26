@@ -5,6 +5,7 @@ import { usePolling } from '../lib/usePolling';
 import { toast } from '../components/Toast';
 import { SubNav } from '../components/SubNav';
 import { SmsAiTools } from '../components/SmsAiTools';
+import { LiveCalls } from '../components/LiveCalls';
 
 // Subtabs are identical to the ones on the Agents page so switching between
 // "Agents" and "Calls" feels like one section, not two unrelated routes.
@@ -134,6 +135,10 @@ export function AgentCalls() {
       </div>
       <SubNav tabs={AGENTS_SUBTABS} />
       <div className="page-body">
+        {/* Live calls — the primary monitoring surface. Renders nothing
+            unless there's at least one initiated/ringing/in-progress call,
+            so it's invisible on idle accounts. */}
+        <LiveCalls />
         <div className="routing-hero" style={{ background: 'var(--yellow)', color: 'var(--ink)' }}>
           <b>⚖️ TCPA notice</b>
           <p style={{ margin: '6px 0 0' }}>

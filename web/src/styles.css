@@ -952,7 +952,9 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 /* ---------- Agents first-visit tour ---------- */
 .tour-card {
   position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
-  z-index: 60; width: min(440px, 92vw);
+  /* must sit ABOVE .modal-backdrop (z-index 99) — otherwise the dim
+     overlay paints over the popup too, greying out the whole UI. */
+  z-index: 1100; width: min(440px, 92vw);
   background: var(--surface); border: var(--border); border-radius: var(--r);
   box-shadow: var(--shadow-lg); padding: 26px 24px 20px; text-align: center;
 }

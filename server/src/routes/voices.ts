@@ -16,10 +16,11 @@ export const VOICE_SAMPLE_DIR = path.join(DATA_DIR, 'voice-samples');
 fs.mkdirSync(VOICE_SAMPLE_DIR, { recursive: true });
 
 // Per-file cap. Voice samples are short (15-30s of audio ≈ 500KB mp3);
-// 5MB covers lossless wav + short m4a + a brief mp4 clip. Anything bigger
-// is almost certainly the wrong file or someone trying to abuse the upload
-// path. Bumpable if a user has a legit need.
-const MAX_SAMPLE_BYTES = 5 * 1024 * 1024;
+// 25MB covers lossless wav, short m4a, and the .mov clips iPhones produce
+// when the user records a quick sample on-device. Anything bigger is
+// almost certainly the wrong file. Client cap is in lockstep so we don't
+// accept-then-reject with a confusing 413.
+const MAX_SAMPLE_BYTES = 25 * 1024 * 1024;
 
 function publicBase(): string {
   return (process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
@@ -163,7 +164,12 @@ voicesRouter.post(
   // and cheap insurance against a stolen-token attacker bombing the volume
   // (or our ElevenLabs spend) with 20MB POSTs.
   rateLimit({ windowMs: 60_000, max: 5, name: 'voice-upload' }),
-  raw({ type: ['audio/*', 'video/*'], limit: MAX_SAMPLE_BYTES }),
+  // Accept blank/unknown mime too — Safari and some Android browsers
+  // leave file.type empty for certain m4a/mov files, in which case the
+  // client falls back to application/octet-stream. Without this, raw()
+  // would skip parsing and req.body would be `{}` → 400 with no useful
+  // error to the user.
+  raw({ type: ['audio/*', 'video/*', 'application/octet-stream'], limit: MAX_SAMPLE_BYTES }),
   async (req, res) => {
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'audio/video body required' });
@@ -173,6 +179,10 @@ voicesRouter.post(
     if (!name) return res.status(400).json({ error: 'X-Voice-Name header required' });
 
     const mime = String(req.header('content-type') || '').toLowerCase();
+    // Optional client-provided original filename — used to recover the
+    // extension when the mime is generic (octet-stream from Safari, etc).
+    const hintedName = String(req.header('x-voice-filename') || '').toLowerCase();
+    const filenameExt = (hintedName.match(/\.([a-z0-9]{2,5})$/) || [, ''])[1];
     // Map mime → file extension for storage + provider upload.
     const extMap: Record<string, string> = {
       'audio/mpeg': 'mp3', 'audio/mp3': 'mp3',
@@ -182,7 +192,11 @@ voicesRouter.post(
       'audio/flac': 'flac',
       'video/mp4': 'mp4', 'video/quicktime': 'mov', 'video/webm': 'webm',
     };
-    const ext = extMap[mime] || (mime.startsWith('video/') ? 'mp4' : 'mp3');
+    // Priority: explicit mime → filename extension → guess from broad type.
+    const ext =
+      extMap[mime] ||
+      (filenameExt && filenameExt.length <= 5 ? filenameExt : null) ||
+      (mime.startsWith('video/') ? 'mp4' : 'mp3');
 
     // Persist. We store JUST the filename in DB and expand to a public URL
     // on read — keeps the row valid whether PUBLIC_BASE_URL is set or not

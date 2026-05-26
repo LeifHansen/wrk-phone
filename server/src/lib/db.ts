@@ -310,6 +310,23 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_call_recipients ON agent_call_recipients(agent_call_id, status);
   CREATE INDEX IF NOT EXISTS idx_agent_call_recipients_sid ON agent_call_recipients(twilio_sid) WHERE twilio_sid IS NOT NULL;
 
+  -- Real-time transcription events from Twilio's <Start><Transcription>
+  -- verb. Each row is a partial-or-final transcript chunk attributed to
+  -- one of the call legs. The Live Calls panel reads from here in real
+  -- time so the user can watch the conversation unfold.
+  CREATE TABLE IF NOT EXISTS live_call_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_sid TEXT NOT NULL,            -- Twilio CallSid (matches recipient row)
+    user_id TEXT NOT NULL,             -- denormalized for the read query's WHERE
+    sequence INTEGER NOT NULL,         -- monotonic per call_sid
+    source TEXT NOT NULL,              -- 'inbound' (callee) | 'outbound' (agent) | 'system'
+    text TEXT NOT NULL,
+    is_final INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_lce_call ON live_call_events(call_sid, sequence);
+  CREATE INDEX IF NOT EXISTS idx_lce_user_recent ON live_call_events(user_id, created_at DESC);
+
   -- Indexes for hot read paths (defined last; all tables exist by here).
   CREATE INDEX IF NOT EXISTS idx_conversations_user_recent ON conversations(user_id, last_message_at DESC);
   CREATE INDEX IF NOT EXISTS idx_campaign_recipients ON campaign_recipients(campaign_id, status);

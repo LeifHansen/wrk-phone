@@ -13,6 +13,50 @@ import { log } from '../lib/log.js';
 export const agentCallsRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
 
+// ---------- live ----------
+// Currently-active calls across ALL of this user's campaigns, with the
+// last ~50 transcript chunks per call. Polled every ~2s by the Live
+// Calls panel so the user can watch the conversation in real time.
+agentCallsRouter.get('/agent-calls/live', (_req, res) => {
+  const calls = db.prepare(
+    `SELECT acr.id AS recipient_id, acr.phone, acr.name,
+            acr.status, acr.twilio_sid, acr.answered_by, acr.duration_sec,
+            ac.id AS campaign_id, ac.name AS campaign_name, ac.script,
+            a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color
+       FROM agent_call_recipients acr
+       JOIN agent_calls ac ON ac.id = acr.agent_call_id
+       LEFT JOIN agents a ON a.id = ac.agent_id
+      WHERE ac.user_id = ?
+        AND acr.status IN ('initiated','ringing','in-progress')
+      ORDER BY acr.id DESC`
+  ).all(USER) as any[];
+  const out = calls.map((c) => {
+    const transcript = c.twilio_sid
+      ? db.prepare(
+          `SELECT sequence, source, text, is_final, created_at
+             FROM live_call_events
+            WHERE call_sid = ? ORDER BY sequence DESC LIMIT 50`
+        ).all(c.twilio_sid).reverse()
+      : [];
+    return { ...c, transcript };
+  });
+  res.json({ calls: out });
+});
+
+// Single-call transcript fetch for the expanded "open" view. Returns
+// every chunk in order — used when the user clicks a row to see the
+// full conversation so far.
+agentCallsRouter.get('/agent-calls/live/:sid', (req, res) => {
+  const sid = String(req.params.sid);
+  const events = db.prepare(
+    `SELECT sequence, source, text, is_final, created_at
+       FROM live_call_events
+      WHERE call_sid = ? AND user_id = ?
+      ORDER BY sequence ASC`
+  ).all(sid, USER);
+  res.json({ events });
+});
+
 // ---------- list ----------
 agentCallsRouter.get('/agent-calls', (_req, res) => {
   const rows = db.prepare(
