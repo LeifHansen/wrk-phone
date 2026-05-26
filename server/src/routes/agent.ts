@@ -1,7 +1,12 @@
 import { Router } from 'express';
-import { db, hydrateAgent, AgentRow } from '../lib/db.js';
+import { db, hydrateAgent, AgentRow,
+         getOrCreateConversation, getActiveNumber, spendCredits, addCredits, getCredits, messageCost, isOptedOut } from '../lib/db.js';
 import { PRESETS, getPreset } from '../lib/presets.js';
 import { draftAgentFromBrief, generateTrainingPrompts, optimizeAgent } from '../lib/agent.js';
+import { normalizePhone } from '../lib/phone.js';
+import { twilioClient, twilioConfig } from '../lib/twilio.js';
+import { openai, OPENAI_MODEL } from '../lib/openai.js';
+import { emit } from '../lib/events.js';
 
 export const agentRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
@@ -257,15 +262,9 @@ agentRouter.post('/agents/:id/initiate-text', async (req, res) => {
   const agent = fetchAgent(id);
   if (!agent) return res.status(404).json({ error: 'agent not found' });
 
-  // Imports kept inline so this route file doesn't grow a tangle of cross
-  // imports — the agent/messaging stack is the bulk of the surface here.
-  const { normalizePhone } = await import('../lib/phone.js');
-  const { getOrCreateConversation, getActiveNumber, spendCredits, addCredits, getCredits, messageCost, isOptedOut, db } = await import('../lib/db.js');
-  const { twilioClient, twilioConfig } = await import('../lib/twilio.js');
-  const { hydrateAgent } = await import('../lib/db.js');
-  const { openai, OPENAI_MODEL } = await import('../lib/openai.js');
-  const { emit } = await import('../lib/events.js');
-
+  // (Helpers used here are now imported at the top of the file — first
+  // version inlined dynamic imports which paid a cold-start hit every
+  // request for no real benefit, since no circular import exists.)
   const to = normalizePhone(String(req.body?.to || ''));
   const brief = String(req.body?.brief || '').trim();
   const name = req.body?.name ? String(req.body.name).trim() : '';

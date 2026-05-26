@@ -360,16 +360,31 @@ tryAddColumn('a2p_registrations', 'otp_verified INTEGER NOT NULL DEFAULT 0');
 // voice and got two of them, and clicking one highlights both" bug — the
 // duplicate row was created silently because there was no constraint.
 // Existing duplicates get collapsed (keep newest, since it's most likely
-// the one the user wanted) before adding the index, otherwise CREATE
-// UNIQUE INDEX would fail on a populated table.
+// the one the user wanted) AND their orphaned sample files unlinked from
+// disk before adding the index — otherwise the previous version of this
+// sweep leaked a sample file per dedup on every boot.
 try {
-  db.exec(`
-    DELETE FROM voices WHERE id IN (
-      SELECT id FROM voices v
-       WHERE id < (SELECT MAX(id) FROM voices v2 WHERE v2.user_id = v.user_id AND v2.name = v.name)
-    );
-    CREATE UNIQUE INDEX IF NOT EXISTS idx_voices_user_name ON voices(user_id, name);
-  `);
+  const orphans = db.prepare(`
+    SELECT id, sample_url FROM voices v
+     WHERE id < (SELECT MAX(id) FROM voices v2 WHERE v2.user_id = v.user_id AND v2.name = v.name)
+  `).all() as { id: number; sample_url: string | null }[];
+  if (orphans.length > 0) {
+    // Lazy fs + path so the import doesn't run on cold start when there
+    // are no duplicates (which is the common case after the first sweep).
+    Promise.resolve().then(async () => {
+      const fs = await import('node:fs');
+      const path = await import('node:path');
+      const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(process.cwd(), 'data'));
+      const VOICE_SAMPLE_DIR = path.join(DATA_DIR, 'voice-samples');
+      for (const o of orphans) {
+        if (!o.sample_url) continue;
+        try { fs.unlinkSync(path.join(VOICE_SAMPLE_DIR, o.sample_url)); } catch { /* already gone */ }
+      }
+    });
+    db.prepare(`DELETE FROM voices WHERE id IN (${orphans.map(() => '?').join(',')})`).run(...orphans.map((o) => o.id));
+    log.warn('db.voices', `dedup: removed ${orphans.length} duplicate voice rows (+ unlinked their sample files)`);
+  }
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_voices_user_name ON voices(user_id, name);`);
 } catch (e) {
   log.warn('db.voices', 'dedup + unique-index failed (will retry next boot)', e);
 }

@@ -38,11 +38,6 @@ export interface ProcessorOptions {
    *  per number which is the safe ceiling for non-10DLC; 33ms (30/sec) is
    *  fine on 10DLC. Set 0 to disable. */
   perLaneMinIntervalMs?: number;
-  /** Optional callback fired after each recipient resolves (success or
-   *  failure). Used to update per-row status, refresh counters, etc. */
-  onResult?: (r: ProcessorResult<any>) => void;
-  /** Optional hook called when a lane goes idle (queue drained). */
-  onLaneIdle?: (from: string) => void;
 }
 
 export interface ProcessorResult<T> {
@@ -118,12 +113,10 @@ export async function processBatch<T>(
           r = { recipient, from, ok: false, error: (err?.message || 'error').slice(0, 500) };
         }
         results.push(r);
-        try { opts.onResult?.(r); } catch { /* don't let a callback kill the loop */ }
       }
     };
 
     await Promise.all(Array.from({ length: workersPerLane }, () => runWorker()));
-    try { opts.onLaneIdle?.(from); } catch { /* swallow */ }
   };
 
   await Promise.all(queues.map((_, i) => runLane(i)));

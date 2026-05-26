@@ -57,45 +57,83 @@ export interface SoleProprietorSubmission {
  * doesn't have TrustHub access yet, which means falling back to the
  * Twilio Console manual flow.
  */
+// Partial-state shape for failure recovery. When Twilio rejects step N,
+// the caller still gets back any SIDs created in steps 1..N-1 so it can
+// persist them on the registration row (no leaked orphan resources on
+// retry, and a future cleanup pass can drop them via the Twilio API).
+export class TrustHubError extends Error {
+  partial: { customerProfileSid?: string; endUserSid?: string; evaluationSid?: string };
+  step: 'customer_profile' | 'end_user' | 'attach' | 'evaluation';
+  constructor(step: TrustHubError['step'], msg: string, partial: TrustHubError['partial']) {
+    super(msg);
+    this.step = step;
+    this.partial = partial;
+  }
+}
+
 export async function submitSoleProprietor(input: SoleProprietorInput): Promise<SoleProprietorSubmission> {
   const tc = twilioClient.trusthub.v1;
+  const partial: TrustHubError['partial'] = {};
 
   // 1. Customer Profile (sole-prop policy)
-  const cp = await tc.customerProfiles.create({
-    friendlyName: `${input.firstName} ${input.lastName} (sole prop)`,
-    email: input.email,
-    policySid: CUSTOMER_PROFILE_POLICY_SID,
-  });
-  log.info('trusthub', `customer profile created: ${cp.sid}`);
+  let cp;
+  try {
+    cp = await tc.customerProfiles.create({
+      friendlyName: `${input.firstName} ${input.lastName} (sole prop)`,
+      email: input.email,
+      policySid: CUSTOMER_PROFILE_POLICY_SID,
+    });
+    partial.customerProfileSid = cp.sid;
+    log.info('trusthub', `customer profile created: ${cp.sid}`);
+  } catch (e: any) {
+    throw new TrustHubError('customer_profile', e.message || String(e), partial);
+  }
 
   // 2. End User (authorized representative) — mobile phone here is what
   //    Twilio uses to send the OTP. Format MUST be E.164.
-  const eu = await tc.endUsers.create({
-    friendlyName: `${input.firstName} ${input.lastName}`,
-    type: 'authorized_representative_1',
-    attributes: {
-      first_name: input.firstName,
-      last_name: input.lastName,
-      email: input.email,
-      phone_number: input.mobilePhone,
-      job_position: 'Owner',
-    },
-  });
-  log.info('trusthub', `end user created: ${eu.sid}`);
+  let eu;
+  try {
+    eu = await tc.endUsers.create({
+      friendlyName: `${input.firstName} ${input.lastName}`,
+      type: 'authorized_representative_1',
+      attributes: {
+        first_name: input.firstName,
+        last_name: input.lastName,
+        email: input.email,
+        phone_number: input.mobilePhone,
+        job_position: 'Owner',
+      },
+    });
+    partial.endUserSid = eu.sid;
+    log.info('trusthub', `end user created: ${eu.sid}`);
+  } catch (e: any) {
+    throw new TrustHubError('end_user', e.message || String(e), partial);
+  }
 
   // 3. Attach the EndUser as an item on the Customer Profile
-  await tc.customerProfiles(cp.sid).customerProfilesEntityAssignments.create({
-    objectSid: eu.sid,
-  });
-  log.info('trusthub', `end user ${eu.sid} attached to profile ${cp.sid}`);
+  try {
+    await tc.customerProfiles(cp.sid).customerProfilesEntityAssignments.create({
+      objectSid: eu.sid,
+    });
+    log.info('trusthub', `end user ${eu.sid} attached to profile ${cp.sid}`);
+  } catch (e: any) {
+    throw new TrustHubError('attach', e.message || String(e), partial);
+  }
 
   // 4. Evaluate — this is the step that triggers Twilio to send the OTP
   //    to the mobile_phone on the EndUser. The user will get a text
-  //    within seconds.
-  const evalResult = await tc.customerProfiles(cp.sid).customerProfilesEvaluations.create({
-    policySid: CUSTOMER_PROFILE_POLICY_SID,
-  });
-  log.info('trusthub', `evaluation queued: ${evalResult.sid} status=${evalResult.status}`);
+  //    within seconds. This is also the step that fails today with
+  //    "Invalid regulation" on accounts without the right policy access.
+  let evalResult;
+  try {
+    evalResult = await tc.customerProfiles(cp.sid).customerProfilesEvaluations.create({
+      policySid: CUSTOMER_PROFILE_POLICY_SID,
+    });
+    partial.evaluationSid = evalResult.sid;
+    log.info('trusthub', `evaluation queued: ${evalResult.sid} status=${evalResult.status}`);
+  } catch (e: any) {
+    throw new TrustHubError('evaluation', e.message || String(e), partial);
+  }
 
   return {
     customerProfileSid: cp.sid,

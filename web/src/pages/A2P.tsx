@@ -45,18 +45,23 @@ export function A2P() {
     catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
 
-  // Subscribe to the matching plan based on tier — sole_prop charges $5/mo,
-  // a2p charges $10/mo. Both unlock the same paid-tier features (number
-  // purchase, higher throughput); sole_prop just costs less and requires
-  // a manual identity verification step in Twilio Console.
+  // Subscribe to the matching tier FIRST — sole_prop=$5/mo, a2p=$10/mo.
+  // /a2p/submit is gated on an active subscription, so calling it BEFORE
+  // checkout gives the user a 402 the first time they try. Subscribe
+  // first; if Stripe returns a real Checkout URL we redirect there and
+  // the user lands on /admin?sub=1 post-payment to re-submit. If Stripe
+  // is in dev/stub mode (no real key configured) we get an immediate
+  // {url:null, status:'dev'} response and can submit the package inline.
   const submit = async () => {
     setBusy(true);
     try {
-      const r = await api.a2pSubmit(profile, pkg);
-      setStatus(r); setStep('status');
       const planId = profile.brandType === 'standard' ? 'a2p' : 'sole_prop';
       const sub = await api.subscribe(planId);
       if (sub.url) { window.location.href = sub.url; return; }
+      // dev / stub Stripe path — subscription is already recorded, finish
+      // the registration synchronously.
+      const r = await api.a2pSubmit(profile, pkg);
+      setStatus(r); setStep('status');
     } catch (e: any) { toast(e.message, 'err'); } finally { setBusy(false); }
   };
 

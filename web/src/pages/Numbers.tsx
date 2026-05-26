@@ -26,8 +26,13 @@ export function Numbers() {
     api.listNumbers().then(setData).catch(() => {});
     api.billingSubs().then((b) => {
       setPlans(b.plans);
+      // EITHER tier unlocks number purchase — server-side gating in
+      // numbers.ts already allows both, this client check had been left
+      // hard-coded to 'a2p' so sole-prop subscribers still saw the upsell.
       const sub = (b.subscriptions || []).find(
-        (s: any) => s.plan === 'a2p' && (s.status === 'active' || s.status === 'dev'),
+        (s: any) =>
+          (s.plan === 'a2p' || s.plan === 'sole_prop') &&
+          (s.status === 'active' || s.status === 'dev'),
       );
       setHasBusinessLine(!!sub);
     }).catch(() => {});

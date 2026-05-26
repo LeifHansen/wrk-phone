@@ -135,15 +135,13 @@ voiceRouter.post('/voice/dial-status', (req, res) => {
     if (dialStatus === 'completed') {
       const peer = direction === 'in' ? from : to;
       const ourNumber = direction === 'in' ? to : from;
-      // resolveInboundOwner is built for inbound webhooks — it returns null
-      // when no account exclusively owns the number AND there's no prior
-      // conversation on it. That's correct for inbound on a SHARED toll-free
-      // (we can't tell whose number it is). But for OUTBOUND from the
-      // softphone, the call CAME from this account by definition — fall
-      // back to OWNER_ID so single-user prod always logs. (Multi-tenant
-      // outbound would need a CallSid→user map at /voice/outbound time;
-      // out of scope.)
-      const owner = resolveInboundOwner(ourNumber, peer) || (direction === 'out' ? USER : null);
+      // Outbound from the softphone is always THIS account's call (single-
+      // user prod). Skip the resolveInboundOwner lookup entirely — it's
+      // built for inbound webhooks and would always return null on a shared
+      // toll-free, wasting a DB read on every completed outbound call.
+      // (Multi-tenant outbound would need a CallSid→user map at /voice/
+      // outbound time; out of scope.)
+      const owner = direction === 'out' ? USER : resolveInboundOwner(ourNumber, peer);
       if (owner) {
         db.prepare(
           'INSERT INTO calls (user_id, peer_phone, direction, duration_sec, twilio_sid, started_at) VALUES (?, ?, ?, ?, ?, ?)'

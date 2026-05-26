@@ -364,8 +364,11 @@ function VoicePicker({ currentId, currentName, onPick }: {
       e.target.value = '';
       return;
     }
-    if (file.size > 20 * 1024 * 1024) {
-      toast('Sample is too big — keep it under 20 MB.', 'err');
+    // Must match the server cap (server/src/routes/voices.ts MAX_SAMPLE_BYTES).
+    // Was 20 MB on client / 5 MB on server — bigger files got accepted by
+    // the picker then rejected by Express raw-body with a confusing 413.
+    if (file.size > 5 * 1024 * 1024) {
+      toast('Sample is too big — keep it under 5 MB.', 'err');
       e.target.value = '';
       return;
     }

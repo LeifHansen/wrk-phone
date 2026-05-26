@@ -200,7 +200,9 @@ voicesRouter.post(
     // sample_url is dropped from disk so we don't accumulate orphaned files.
     const prior = db.prepare(`SELECT sample_url FROM voices WHERE user_id = ? AND name = ?`).get(USER, name) as { sample_url: string | null } | undefined;
     if (prior?.sample_url) {
-      try { fs.unlinkSync(path.join(VOICE_SAMPLE_DIR, prior.sample_url)); } catch { /* already gone */ }
+      // Async + ignore-failures so we don't block the upload response on
+      // an EBUSY / ENOENT from the previous sample's file handle.
+      await fs.promises.unlink(path.join(VOICE_SAMPLE_DIR, prior.sample_url)).catch(() => {});
     }
     db.prepare(
       `INSERT INTO voices (user_id, name, provider, tts_voice, style, sample_url, cloned, created_at)
@@ -225,16 +227,18 @@ voicesRouter.post(
   },
 );
 
-voicesRouter.delete('/voices/:id', (req, res) => {
+voicesRouter.delete('/voices/:id', async (req, res) => {
+  const id = Number(req.params.id);
   // Best-effort cleanup of the sample file. The DB row is the source of truth.
   const row = db.prepare(`SELECT sample_url FROM voices WHERE id = ? AND user_id = ?`)
-    .get(Number(req.params.id), USER) as { sample_url: string | null } | undefined;
+    .get(id, USER) as { sample_url: string | null } | undefined;
   if (row?.sample_url) {
-    try {
-      // sample_url is a bare filename — no URL parsing needed.
-      fs.unlinkSync(path.join(VOICE_SAMPLE_DIR, row.sample_url));
-    } catch { /* file already gone is fine */ }
+    await fs.promises.unlink(path.join(VOICE_SAMPLE_DIR, row.sample_url)).catch(() => {});
   }
-  db.prepare(`DELETE FROM voices WHERE id = ? AND user_id = ?`).run(Number(req.params.id), USER);
+  // Null out any agent references so the agent doesn't end up pointing at
+  // a deleted voice id (UI then falls back to a Polly preset cleanly).
+  db.prepare(`UPDATE agents SET voice_id = NULL, voice_name = NULL, tts_voice = NULL WHERE voice_id = ? AND user_id = ?`)
+    .run(id, USER);
+  db.prepare(`DELETE FROM voices WHERE id = ? AND user_id = ?`).run(id, USER);
   res.json({ ok: true });
 });

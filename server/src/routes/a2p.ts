@@ -4,7 +4,7 @@ import { twilioClient, twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
 import { OWNER_ID as USER, getUserId } from '../lib/auth.js';
-import { submitSoleProprietor, verifySoleProprietorOtp, submitCustomerProfileForReview } from '../lib/trusthub.js';
+import { submitSoleProprietor, verifySoleProprietorOtp, submitCustomerProfileForReview, TrustHubError } from '../lib/trusthub.js';
 
 export const a2pRouter = Router();
 
@@ -34,20 +34,25 @@ a2pRouter.post('/a2p/draft', async (req, res) => {
 //    the package so nothing is lost if the account isn't ISV-enabled.
 a2pRouter.post('/a2p/submit', async (req, res) => {
   // Submitting a 10DLC brand/campaign registration is part of the paid
-  // Business Line add-on — it carries real Twilio vetting cost. Drafting
-  // (/a2p/draft) stays free as a preview.
-  if (!hasActiveSubscription(getUserId(req), 'a2p')) {
+  // tiers (sole_prop OR a2p) — both carry real Twilio vetting costs.
+  // Drafting (/a2p/draft) stays free as a preview.
+  // The "upgrade" hint in the 402 body branches on which tier the form
+  // selected so the client pushes the user to the matching Stripe flow.
+  const uid = getUserId(req);
+  const brandType = req.body?.profile?.brandType === 'standard' ? 'standard' : 'sole_prop';
+  const requiredPlan = brandType === 'standard' ? 'a2p' : 'sole_prop';
+  if (!hasActiveSubscription(uid, 'a2p') && !hasActiveSubscription(uid, 'sole_prop')) {
     return res.status(402).json({
-      error: 'A2P 10DLC registration requires the Business Line add-on.',
-      upgrade: 'a2p',
+      error: brandType === 'standard'
+        ? 'A2P 10DLC registration requires the Business Line add-on ($10/mo + $15 setup).'
+        : 'Sole Proprietor registration requires the Sole Prop tier ($5/mo + $5 setup).',
+      upgrade: requiredPlan,
     });
   }
   const profile = req.body?.profile || {};
   const pkg = req.body?.package || {};
-  // Brand type drives validation. Sole proprietor is the low-friction path
-  // (no EIN; personal identity + mobile OTP). Standard/registered business
-  // is scaffolded for later (requires EIN + legal entity).
-  const brandType = profile.brandType === 'standard' ? 'standard' : 'sole_prop';
+  // (brandType resolved above for the gating check — reuse it for the
+  //  per-tier required-fields validation below.)
   if (brandType === 'standard') {
     if (!profile.legalName || !profile.ein) {
       return res.status(400).json({ error: 'legalName and ein are required for a standard brand' });
@@ -118,16 +123,27 @@ a2pRouter.post('/a2p/submit', async (req, res) => {
     // account's available regulations — Twilio rotates these per account
     // type / region); 401/403 (TrustHub API not enabled on the account);
     // 422 (missing required attribute like business_industry).
+    //
+    // CRITICAL: when the failure happens mid-flow (e.g. evaluation step
+    // failed but customer-profile + end-user already created on Twilio's
+    // side), we capture the partial SIDs here so the row still records
+    // them. Otherwise every retry leaks more orphan Twilio resources.
+    if (e instanceof TrustHubError) {
+      customerProfileSid = e.partial.customerProfileSid ?? null;
+      endUserSid = e.partial.endUserSid ?? null;
+      evaluationSid = e.partial.evaluationSid ?? null;
+    }
     status = 'manual';
     const code = e.code || e.status || 'err';
     const detail = e.message || String(e);
+    const stepNote = e instanceof TrustHubError ? ` (failed at: ${e.step})` : '';
     note =
-      `Twilio rejected the automated submission (${code}: ${detail}). ` +
+      `Twilio rejected the automated submission (${code}: ${detail})${stepNote}. ` +
       `Most common cause: this Twilio account isn't enabled for ISV / TrustHub APIs, ` +
       `OR the sole-prop policy SID differs for this account type. ` +
       `Workaround: file the registration manually in Twilio Console → Messaging → ` +
       `Regulatory Compliance — your saved package has everything pre-filled.`;
-    log.warn('a2p/submit', 'trusthub submission failed', { code, detail, profile });
+    log.warn('a2p/submit', 'trusthub submission failed', { code, detail, step: (e as any).step, partial: (e as any).partial });
   }
 
   db.prepare(
