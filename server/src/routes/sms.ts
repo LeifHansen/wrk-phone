@@ -108,7 +108,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
       const { reply, safeToAutoSend } = await generateReply(owner, convId, body);
       const safetyBlocked = SAFETY_REGEX.test(body) ? 1 : 0;
       const cost = messageCost(reply, false);
-      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(owner, cost)) {
+      if (effectiveMode === 'auto' && reply && safeToAutoSend && spendCredits(owner, cost, 'sms_out', { conversationId: convId, agentId: agent.id, auto: true })) {
         const agentNum = (agent as any).send_number;
         // Track what was actually delivered so we (a) don't queue a row that
         // wasn't sent, (b) don't double-send (out-of-band + TwiML), and
@@ -140,7 +140,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
           emit({ kind: 'message:new', conversationId: convId, direction: 'out' });
         } else {
           // Truly nothing went out — refund the credit we just spent.
-          addCredits(owner, cost);
+          addCredits(owner, cost, 'refund', { conversationId: convId, reason: 'agent_send_path_failed' });
         }
       } else if (reply) {
         // Suggestion (either suggest mode, or auto + sensitive)
@@ -175,8 +175,9 @@ smsRouter.post('/sms/send', async (req, res) => {
     return res.status(409).json({ error: 'This contact has opted out (replied STOP). Messaging them is not allowed.' });
   }
   const cost = messageCost(body, !!mediaUrl);
-  if (!spendCredits(USER, cost)) {
-    return res.status(402).json({ error: `Not enough credits. This message costs ${cost} (balance ${getCredits(USER)}).`, cost });
+  const spendAction = mediaUrl ? 'mms_out' : 'sms_out';
+  if (!spendCredits(USER, cost, spendAction, { to, hasMedia: !!mediaUrl, length: body.length })) {
+    return res.status(402).json({ error: `Not enough tokens. This message costs ${cost} (balance ${getCredits(USER)}).`, cost });
   }
   // Send FROM the sending user's selected shared-pool number (keeps their
   // chosen local area code). Explicit `from` so Twilio honors that number.
@@ -192,7 +193,7 @@ smsRouter.post('/sms/send', async (req, res) => {
     if (cb) params.statusCallback = cb;
     msg = await twilioClient.messages.create(params);
   } catch (err: any) {
-    addCredits(USER, cost); // refund — the send itself failed, nothing went out
+    addCredits(USER, cost, 'refund', { to, reason: 'twilio_send_threw', code: err.code }); // refund — the send itself failed, nothing went out
     const from = String(fromNum || '');
     log.error('sms.send', `outbound send failed from ${from} to ${to}`, { code: err.code, message: err.message, moreInfo: err.moreInfo });
     const isTollFree = /^\+1(800|833|844|855|866|877|888)\d{7}$/.test(from);

@@ -33,7 +33,7 @@ export function recoverInterruptedCampaigns(): void {
       ).all(c.id) as { id: number }[];
       const cost = messageCost(String(c.template), !!c.media_url);
       const refunded = refundable.length * cost;
-      if (refunded > 0) addCredits(c.user_id, refunded);
+      if (refunded > 0) addCredits(c.user_id, refunded, 'refund', { campaignId: c.id, reason: 'boot_recovery', unsentRecipients: refundable.length });
       db.prepare(`UPDATE campaigns SET status = 'draft' WHERE id = ?`).run(c.id);
       log.warn('campaigns.recover',
         `campaign ${c.id} ("${c.name}") was 'sending' at boot — refunded ${refunded} credits for ${refundable.length} unsent recipients and reset to draft`);
@@ -122,9 +122,11 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
   // fits (campaign runs to completion) or it doesn't start — no half-sent
   // campaign that aborts mid-loop on a transient balance dip. The campaign
   // stays 'draft' so it can be re-sent after a top-up.
-  if (reserve > 0 && !spendCredits(USER, reserve)) {
+  // billable count = total recipients minus opt-outs (matches `reserve`).
+  const billableCount = work.filter((w) => !w.optedOut).length;
+  if (reserve > 0 && !spendCredits(USER, reserve, campaign.media_url ? 'mms_out' : 'sms_out', { campaignId: id, recipients: billableCount, reserve: true })) {
     return res.status(402).json({
-      error: `Not enough credits for this campaign. Needs ${reserve}, balance ${getCredits(USER)}.`,
+      error: `Not enough tokens for this campaign. Needs ${reserve}, balance ${getCredits(USER)}.`,
       needed: reserve,
     });
   }
@@ -184,7 +186,7 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
             db.prepare(`UPDATE campaigns SET sent_count = ? WHERE id = ?`).run(sent, id);
           }
         } catch (err: any) {
-          addCredits(USER, cost); // refund — this row never went out
+          addCredits(USER, cost, 'refund', { campaignId: id, recipientId: r.id, reason: 'twilio_send_failed' }); // refund — this row never went out
           db.prepare(
             `UPDATE campaign_recipients SET status = 'failed', error = ? WHERE id = ?`
           ).run((err.message || 'error').slice(0, 500), r.id);

@@ -313,9 +313,9 @@ agentRouter.post('/agents/:id/initiate-text', async (req, res) => {
   // turns on autopilot before the SMS goes out, so the recipient's reply
   // lands on a thread that auto-responds.
   const cost = messageCost(opening, false);
-  if (!spendCredits(USER, cost)) {
+  if (!spendCredits(USER, cost, 'sms_out', { to, agentInitiated: true, agentId: id })) {
     return res.status(402).json({
-      error: `Not enough credits. This message costs ${cost} (balance ${getCredits(USER)}).`,
+      error: `Not enough tokens. This message costs ${cost} (balance ${getCredits(USER)}).`,
       cost,
     });
   }
@@ -326,7 +326,7 @@ agentRouter.post('/agents/:id/initiate-text', async (req, res) => {
   try {
     msg = await twilioClient.messages.create({ to, body: opening, from: fromNum });
   } catch (err: any) {
-    addCredits(USER, cost); // refund — nothing went out
+    addCredits(USER, cost, 'refund', { to, reason: 'agent_initiate_send_failed', code: err.code }); // refund — nothing went out
     return res.status(500).json({ error: `Send failed: ${err.message}`, code: err.code });
   }
 

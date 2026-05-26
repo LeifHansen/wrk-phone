@@ -208,17 +208,24 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
             return (
               <div key={c.id} className="contact-row"
                 onClick={() => (editSeg ? toggleMember(c) : setPicked(c))}>
-                {editSeg && (
-                  <input type="checkbox" readOnly checked={inEditSeg(c)}
-                    style={{ width: 20, height: 20, accentColor: 'var(--ink)' }} />
-                )}
-                <div className="c-av">{(c.name || c.phone).replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#'}</div>
-                <div className="c-body">
-                  <div className="c-name">{display}</div>
-                  <div className="c-sub">{c.name ? pretty(c.phone) : ''}{c.segments.map((s) => ` · ${s.name}`).join('')}</div>
+                {/* Top row — identity. Sub line truncates if long; buttons
+                    moved to their own row below so they never overlap. */}
+                <div className="c-top">
+                  {editSeg && (
+                    <input type="checkbox" readOnly checked={inEditSeg(c)}
+                      style={{ width: 20, height: 20, accentColor: 'var(--ink)' }} />
+                  )}
+                  <div className="c-av">{(c.name || c.phone).replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#'}</div>
+                  <div className="c-body">
+                    <div className="c-name">{display}</div>
+                    <div className="c-sub">{c.name ? pretty(c.phone) : ''}{c.segments.map((s) => ` · ${s.name}`).join('')}</div>
+                  </div>
+                  {!editSeg && <span className="c-chev" aria-hidden="true">›</span>}
                 </div>
                 {!editSeg && (
-                  <div className="c-quick">
+                  // Second row — actions. Full-width, never clobbers the
+                  // contact info no matter how long the name / segment list.
+                  <div className="c-actions-row">
                     <button className="btn lime btn-icon" aria-label={`Call ${display}`}
                       onClick={(e) => { e.stopPropagation(); call(c); }}>
                       <IconPhone size={18} />
@@ -228,9 +235,8 @@ export function Contacts({ onCall }: { onCall: (peer: string) => void }) {
                       <IconMessage size={18} />
                     </button>
                     {/* AgentInitiate self-renders ONLY when there's at least
-                        one auto-mode agent — otherwise the row stays unchanged. */}
+                        one auto-mode agent — otherwise this slot is empty. */}
                     <AgentInitiate to={{ phone: c.phone, name: c.name }} compact />
-                    <span className="c-chev" aria-hidden="true">›</span>
                   </div>
                 )}
               </div>

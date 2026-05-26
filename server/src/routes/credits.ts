@@ -1,6 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import Stripe from 'stripe';
-import { getCredits, addCredits, recordSubscription, setSubscriptionStatusByStripeId } from '../lib/db.js';
+import { getCredits, addCredits, getLedger, recordSubscription, setSubscriptionStatusByStripeId } from '../lib/db.js';
 
 export const creditsRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
@@ -32,6 +32,15 @@ creditsRouter.get('/credits', (_req, res) => {
   });
 });
 
+// Token ledger — every grant + spend, most recent first. Powers the
+// Tokens page's "where did my tokens go" view + spend-by-action chart.
+// Default 200 rows; pass ?limit= to override (capped at 1000 to keep
+// the response tame on heavy accounts).
+creditsRouter.get('/credits/ledger', (req, res) => {
+  const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200));
+  res.json({ entries: getLedger(USER, limit) });
+});
+
 // Free package (or no Stripe configured) → grant immediately. Clearly a stub.
 creditsRouter.post('/credits/purchase', (req, res) => {
   const pkg = PACKAGES.find((p) => p.id === String(req.body?.packageId));
@@ -39,7 +48,7 @@ creditsRouter.post('/credits/purchase', (req, res) => {
   if (pkg.price > 0 && stripe) {
     return res.status(409).json({ error: 'Paid package — use /credits/checkout.' });
   }
-  const balance = addCredits(USER, pkg.credits);
+  const balance = addCredits(USER, pkg.credits, 'topup', { packageId: pkg.id, stub: true });
   res.json({ ok: true, added: pkg.credits, balance, stub: true });
 });
 
@@ -48,12 +57,12 @@ creditsRouter.post('/credits/checkout', async (req, res) => {
   const pkg = PACKAGES.find((p) => p.id === String(req.body?.packageId));
   if (!pkg) return res.status(400).json({ error: 'unknown package' });
   if (pkg.price === 0) {
-    const balance = addCredits(USER, pkg.credits);
+    const balance = addCredits(USER, pkg.credits, 'topup', { packageId: pkg.id, free: true });
     return res.json({ url: null, stub: true, balance });
   }
   if (!stripe) {
     // Dev fallback so the flow is testable without Stripe keys.
-    const balance = addCredits(USER, pkg.credits);
+    const balance = addCredits(USER, pkg.credits, 'topup', { packageId: pkg.id, stub: true });
     return res.json({ url: null, stub: true, balance, note: 'STRIPE_SECRET_KEY not set — credited without charge.' });
   }
   const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
@@ -113,7 +122,7 @@ export function stripeWebhookHandler(req: Request, res: Response) {
     const s = event.data.object as Stripe.Checkout.Session;
     const uid = s.metadata?.userId || USER;
     const credits = Number(s.metadata?.credits || 0);
-    if (credits > 0) addCredits(uid, credits);
+    if (credits > 0) addCredits(uid, credits, 'topup', { stripeSession: s.id, packageId: s.metadata?.packageId });
     // Subscription checkout (numbers $2/mo, A2P line $10/mo) also lands here.
     if (s.mode === 'subscription' && s.metadata?.plan) {
       recordSubscription(uid, s.metadata.plan, s.metadata.ref || null, 'active',

@@ -688,10 +688,15 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .seg-chip { border: var(--border); background: var(--surface); padding: 7px 12px;
   font-family: var(--pixel); font-size: 8px; cursor: pointer; }
 .seg-chip.on { background: var(--lime); }
-.contact-list { display: flex; flex-direction: column; gap: 8px; }
-.contact-row { display: flex; align-items: center; gap: 12px; cursor: pointer;
-  border: var(--border); border-radius: var(--r); background: var(--surface); padding: 12px 14px; }
+.contact-list { display: flex; flex-direction: column; gap: 10px; }
+/* Two-row layout: identity on top, actions below. Previously the
+   action buttons sat inline and overlapped long names / segment lists
+   on narrow viewports. The column layout gives every contact a
+   predictable height regardless of content. */
+.contact-row { display: flex; flex-direction: column; gap: 10px; cursor: pointer;
+  border: var(--border); border-radius: var(--r); background: var(--surface); padding: 14px 16px; }
 .contact-row:hover { background: var(--surface-2); }
+.c-top { display: flex; align-items: center; gap: 12px; min-width: 0; }
 .c-av { width: 40px; height: 40px; border: var(--border); border-radius: 8px;
   display: flex; align-items: center; justify-content: center;
   font-family: var(--pixel); font-size: 12px; background: var(--surface-2); flex-shrink: 0; }
@@ -699,9 +704,11 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .c-name { font-weight: 700; font-size: 14px; }
 .c-sub { font-size: 12px; color: var(--muted); margin-top: 2px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.c-chev { font-family: var(--pixel); font-size: 12px; color: var(--muted); }
-/* Per-row quick-action buttons */
-.c-quick { display: flex; align-items: center; gap: 6px; }
+.c-chev { font-family: var(--pixel); font-size: 12px; color: var(--muted); flex-shrink: 0; }
+/* Action row: full width below identity, buttons right-aligned so the
+   call/text/agent cluster reads like a "what do you want to do" toolbar. */
+.c-actions-row { display: flex; align-items: center; gap: 8px;
+  justify-content: flex-end; padding-left: 52px; /* visually align past avatar */ }
 .btn.btn-icon {
   width: 34px; height: 34px; padding: 0; border-radius: 8px;
   display: inline-flex; align-items: center; justify-content: center;

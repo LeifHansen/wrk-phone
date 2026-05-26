@@ -310,6 +310,48 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_agent_call_recipients ON agent_call_recipients(agent_call_id, status);
   CREATE INDEX IF NOT EXISTS idx_agent_call_recipients_sid ON agent_call_recipients(twilio_sid) WHERE twilio_sid IS NOT NULL;
 
+  -- Token ledger — every grant + spend (SMS, MMS, voice call, AI text
+  -- reply, voice cloning synth, allowance reset, Stripe top-up) writes
+  -- one row. The user's current balance lives on app_settings.credits
+  -- (1 token = 1 credit = $0.01, unchanged math). The ledger is the
+  -- forensic record for "where did my tokens go" + the abuse detection
+  -- signal for "this user just burned 5,000 tokens in a minute".
+  CREATE TABLE IF NOT EXISTS token_ledger (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    action TEXT NOT NULL,              -- 'sms_out'|'mms_out'|'voice_out'|'ai_text'|'voice_clone'|'image_gen'|'topup'|'allowance_reset'|'refund'
+    amount INTEGER NOT NULL,           -- negative = spend, positive = grant
+    balance_after INTEGER NOT NULL,
+    meta_json TEXT,                    -- e.g. {"messageId":123,"openaiTokens":487,"stripeSession":"cs_..."}
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_token_ledger_user_recent ON token_ledger(user_id, created_at DESC);
+
+  -- Invite codes — beta gate. Each code may be single-use (default) or
+  -- multi-use (e.g. an evangelist's referral code with max_uses=10). A
+  -- code burns on successful signup, not on attempt, so typos don't
+  -- waste invites.
+  CREATE TABLE IF NOT EXISTS invite_codes (
+    code TEXT PRIMARY KEY,
+    max_uses INTEGER NOT NULL DEFAULT 1,
+    used_count INTEGER NOT NULL DEFAULT 0,
+    created_by TEXT,
+    expires_at INTEGER,
+    note TEXT,
+    created_at INTEGER NOT NULL
+  );
+
+  -- Waitlist — public "request invite" form. You manually review +
+  -- promote rows to invite codes for the most promising signups.
+  CREATE TABLE IF NOT EXISTS waitlist (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    name TEXT,
+    use_case TEXT,
+    created_at INTEGER NOT NULL,
+    invited_at INTEGER
+  );
+
   -- Real-time transcription events from Twilio's <Start><Transcription>
   -- verb. Each row is a partial-or-final transcript chunk attributed to
   -- one of the call legs. The Live Calls panel reads from here in real
@@ -411,6 +453,14 @@ try {
 // `provider:id`, e.g. `elevenlabs:abc123`), not a generic Polly preset.
 tryAddColumn('voices', 'sample_url TEXT');
 tryAddColumn('voices', 'cloned INTEGER NOT NULL DEFAULT 0');
+
+// Phase 1 — token economy. Each subscription tier ships with a monthly
+// token allowance that gets credited automatically on the billing
+// anniversary (handled by the reset cron in lib/tokens.ts). Stored on
+// the subscription row so different tiers (sole_prop, a2p) can carry
+// different allowances without a hard-coded lookup.
+tryAddColumn('subscriptions', 'monthly_token_allowance INTEGER NOT NULL DEFAULT 0');
+tryAddColumn('subscriptions', 'tokens_reset_at INTEGER');
 // Agent calls: voicemail-only mode — drop a voicemail without leaving a
 // message on a live human pickup. Twilio AMD classifies the answer; if
 // human, the call apologizes briefly and hangs up; if voicemail, the
@@ -738,23 +788,115 @@ export function getActiveNumber(userId: string): string {
   return s.active_number || process.env.TWILIO_DEFAULT_FROM_NUMBER || '';
 }
 
-// ---- credits ----
+// ---- tokens (aliased internally as "credits" for backward compat) ----
+// User-facing copy says "tokens" everywhere as of Phase 1 of the
+// roadmap; the column kept the legacy `credits` name so the migration
+// is purely additive (no data rewrite).
+//
+// Action labels used in the ledger meta. Keep them open-ended (string)
+// so new actions don't need a schema change; the listed set is what
+// the UI knows how to render in the spend chart.
+export type TokenAction =
+  | 'sms_out'
+  | 'mms_out'
+  | 'voice_out'
+  | 'ai_text'
+  | 'voice_clone'
+  | 'image_gen'
+  | 'topup'
+  | 'allowance_reset'
+  | 'refund'
+  | 'manual_grant';
+
 export function getCredits(userId: string): number {
   return getAppSettings(userId).credits ?? 0;
 }
-export function addCredits(userId: string, amount: number): number {
+// Internal — writes a ledger entry. Called by every grant/spend path so
+// the ledger never gets out of sync with the balance column.
+function writeLedger(
+  userId: string,
+  action: TokenAction,
+  amount: number,
+  balanceAfter: number,
+  meta?: Record<string, unknown>,
+): void {
+  try {
+    db.prepare(
+      `INSERT INTO token_ledger (user_id, action, amount, balance_after, meta_json, created_at)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+    ).run(
+      userId,
+      action,
+      amount,
+      balanceAfter,
+      meta ? JSON.stringify(meta) : null,
+      Date.now(),
+    );
+  } catch (e) {
+    // Never let ledger failure break a real spend — log + continue.
+    log.error('db.tokens', 'ledger write failed', e);
+  }
+}
+/**
+ * Grant tokens. Logs an entry with the given action (e.g. 'topup',
+ * 'allowance_reset', 'refund'). Returns the new balance.
+ */
+export function addCredits(
+  userId: string,
+  amount: number,
+  action: TokenAction = 'manual_grant',
+  meta?: Record<string, unknown>,
+): number {
   getAppSettings(userId);
   db.prepare(`UPDATE app_settings SET credits = credits + ?, updated_at = ? WHERE user_id = ?`)
     .run(amount, Date.now(), userId);
-  return getCredits(userId);
+  const bal = getCredits(userId);
+  writeLedger(userId, action, amount, bal, meta);
+  return bal;
 }
-/** Atomically spend credits. Returns true if spent, false if insufficient. */
-export function spendCredits(userId: string, amount: number): boolean {
+/**
+ * Atomically spend tokens. Returns true if spent, false if insufficient.
+ * On success, writes a ledger entry with the given action + meta.
+ */
+export function spendCredits(
+  userId: string,
+  amount: number,
+  action: TokenAction = 'manual_grant',
+  meta?: Record<string, unknown>,
+): boolean {
   getAppSettings(userId);
   const r = db.prepare(
     `UPDATE app_settings SET credits = credits - ?, updated_at = ? WHERE user_id = ? AND credits >= ?`
   ).run(amount, Date.now(), userId, amount);
-  return r.changes > 0;
+  if (r.changes > 0) {
+    writeLedger(userId, action, -amount, getCredits(userId), meta);
+    return true;
+  }
+  return false;
+}
+/**
+ * Recent ledger entries (most recent first). Used by the Tokens page
+ * to show "where did my tokens go" + the spend chart aggregation.
+ */
+export function getLedger(
+  userId: string,
+  limit = 200,
+): { id: number; action: TokenAction; amount: number; balance_after: number; meta: Record<string, unknown> | null; created_at: number }[] {
+  const rows = db.prepare(
+    `SELECT id, action, amount, balance_after, meta_json, created_at
+       FROM token_ledger
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT ?`,
+  ).all(userId, limit) as any[];
+  return rows.map((r) => ({
+    id: r.id,
+    action: r.action,
+    amount: r.amount,
+    balance_after: r.balance_after,
+    meta: r.meta_json ? (() => { try { return JSON.parse(r.meta_json); } catch { return null; } })() : null,
+    created_at: r.created_at,
+  }));
 }
 /** SMS = 1 credit / 160-char segment (min 1). MMS = flat 3 credits. */
 export function messageCost(body: string, hasMedia: boolean): number {

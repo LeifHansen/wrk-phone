@@ -170,9 +170,9 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
   const quietHours = isInQuietHours(USER);
   const billable = work.filter((w) => !w.optedOut && !quietHours);
   const reserve = billable.length * perCallCost;
-  if (reserve > 0 && !spendCredits(USER, reserve)) {
+  if (reserve > 0 && !spendCredits(USER, reserve, 'voice_out', { campaignId: id, recipients: billable.length, reserve: true })) {
     return res.status(402).json({
-      error: `Not enough credits. Needs ${reserve}, balance ${getCredits(USER)}.`,
+      error: `Not enough tokens. Needs ${reserve}, balance ${getCredits(USER)}.`,
       needed: reserve,
     });
   }
@@ -215,7 +215,7 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
   if (!base || senderNumbers.length === 0) {
     log.error('agent-calls.send',
       `cannot dial: missing ${!base ? 'PUBLIC_BASE_URL' : 'from-number'} (id=${id})`);
-    addCredits(USER, reserve);
+    addCredits(USER, reserve, 'refund', { campaignId: id, reason: 'config_missing' });
     db.prepare(`UPDATE agent_calls SET status = 'failed' WHERE id = ?`).run(id);
     return res.status(500).json({ error: 'no public base URL or sender number configured' });
   }
@@ -261,7 +261,7 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
             db.prepare(`UPDATE agent_calls SET placed_count = ? WHERE id = ?`).run(placed, id);
           }
         } catch (err: any) {
-          addCredits(USER, perCallCost); // refund — never dialed
+          addCredits(USER, perCallCost, 'refund', { campaignId: id, recipientId: r.id, reason: 'dial_failed' }); // refund — never dialed
           db.prepare(
             `UPDATE agent_call_recipients SET status = 'failed', error = ? WHERE id = ?`
           ).run((err.message || 'error').slice(0, 500), r.id);
@@ -301,7 +301,7 @@ export function recoverInterruptedAgentCalls(): void {
           WHERE agent_call_id = ? AND status = 'pending' AND twilio_sid IS NULL`
       ).get(c.id) as { n: number };
       const refund = (refundable?.n || 0) * voiceCallCost();
-      if (refund > 0) addCredits(c.user_id, refund);
+      if (refund > 0) addCredits(c.user_id, refund, 'refund', { campaignId: c.id, reason: 'boot_recovery', undialedRecipients: refundable?.n || 0 });
       db.prepare(`UPDATE agent_calls SET status = 'draft' WHERE id = ?`).run(c.id);
       log.warn('agent-calls.recover',
         `campaign ${c.id} ("${c.name}") was 'sending' at boot — refunded ${refund} credits for ${refundable?.n || 0} undialed recipients and reset to draft`);
