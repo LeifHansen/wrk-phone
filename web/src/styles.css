@@ -212,6 +212,22 @@ code, pre { font-family: var(--mono); font-size: 12px; }
 .btn.ghost { background: var(--surface); }
 .btn.lg { padding: 15px 22px; font-size: 11px; }
 
+/* Small square icon-only button (e.g. ✨ generate-AI-avatar). Same
+   shadow/hover feel as .btn but compact so it doesn't dominate a row
+   alongside primary actions. */
+.icon-btn {
+  width: 34px; height: 34px;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--ink);
+  border: var(--border); border-radius: var(--r);
+  font-size: 16px; line-height: 1; cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition: transform .06s, box-shadow .06s;
+}
+.icon-btn:hover { transform: translate(-1px,-1px); box-shadow: 5px 5px 0 var(--ink); }
+.icon-btn:active { transform: translate(3px,3px); box-shadow: 0 0 0 var(--ink); }
+.icon-btn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: var(--shadow-sm); }
+
 /* ---------- inputs ---------- */
 .input, .textarea {
   width: 100%; background: var(--surface); color: var(--ink);

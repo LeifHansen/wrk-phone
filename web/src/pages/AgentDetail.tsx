@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Agent, COLOR_BG, COLOR_FG, api } from '../lib/api';
 import { toast } from '../components/Toast';
 import { IconPencil } from '../components/Icons';
+import { NameAvatar } from '../components/NameAvatar';
 
 const MODES = [
   { key: 'off',     label: 'Off',     blurb: 'No AI replies.' },
@@ -104,20 +105,8 @@ export function AgentDetail() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap' }}>
             {(merged as any).avatar_url
               ? <img src={(merged as any).avatar_url} alt="" style={{ width: 64, height: 64, border: 'var(--border)', borderRadius: 8, objectFit: 'cover' }} />
-              : <div className="swatch" style={{ width: 64, height: 64, background: COLOR_BG[merged.color], border: 'var(--border)', borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 30 }}>{merged.emoji}</div>}
-            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-              <button className="btn pink" disabled={avatarBusy} onClick={async () => {
-                setAvatarBusy(true);
-                toast('Generating avatar… (~10s)', 'info');
-                try {
-                  const r = await api.genAvatar('agent', aid);
-                  if (!r?.url) throw new Error('no image returned');
-                  setAgent((p) => p ? ({ ...p, avatar_url: `${r.url}?t=${Date.now()}` } as any) : p);
-                  toast('Avatar generated ✓');
-                } catch (e: any) {
-                  toast(`Avatar failed: ${String(e.message || e).replace(/^\d+\s*/, '')}`, 'err');
-                } finally { setAvatarBusy(false); }
-              }}>{avatarBusy ? 'Generating…' : '✨ Generate AI avatar'}</button>
+              : <NameAvatar name={merged.name} size={64} />}
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
               <label className="btn" style={{ cursor: 'pointer', opacity: avatarBusy ? 0.6 : 1 }}>
                 {avatarBusy ? '…' : '📤 Upload your own'}
                 <input
@@ -146,6 +135,28 @@ export function AgentDetail() {
                   }}
                 />
               </label>
+              {/* AI generate is a small icon-only button now — most users
+                  start with the auto initials avatar and never touch this. */}
+              <button
+                className="icon-btn"
+                title="Generate AI avatar"
+                aria-label="Generate AI avatar"
+                disabled={avatarBusy}
+                onClick={async () => {
+                  setAvatarBusy(true);
+                  toast('Generating avatar… (~10s)', 'info');
+                  try {
+                    const r = await api.genAvatar('agent', aid);
+                    if (!r?.url) throw new Error('no image returned');
+                    setAgent((p) => p ? ({ ...p, avatar_url: `${r.url}?t=${Date.now()}` } as any) : p);
+                    toast('Avatar generated ✓');
+                  } catch (e: any) {
+                    toast(`Avatar failed: ${String(e.message || e).replace(/^\d+\s*/, '')}`, 'err');
+                  } finally { setAvatarBusy(false); }
+                }}
+              >
+                {avatarBusy ? '…' : '✨'}
+              </button>
             </div>
           </div>
         </div>

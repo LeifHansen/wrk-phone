@@ -3,6 +3,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { ensureDevice, teardownDevice } from '../lib/voice';
 import { api, auth } from '../lib/api';
 import { toast } from '../components/Toast';
+import { NameAvatar } from '../components/NameAvatar';
 
 // Dev diagnostics (webhook plumbing, raw connection state) are hidden from
 // normal users. Toggle by running `localStorage.wrk_dev = '1'` in the console.
@@ -102,11 +103,8 @@ export function Settings() {
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 0', flexWrap: 'wrap' }}>
               {avatar
                 ? <img src={avatar} alt="" style={{ width: 64, height: 64, borderRadius: '50%', border: 'var(--border)', objectFit: 'cover' }} />
-                : <div style={{ width: 64, height: 64, borderRadius: '50%', border: 'var(--border)', background: 'var(--surface-2)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>👤</div>}
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button className="btn pink" onClick={genAvatar} disabled={genning || uploading}>
-                  {genning ? 'Generating…' : '✨ Generate AI avatar'}
-                </button>
+                : <NameAvatar name={me?.email?.split('@')[0] || 'You'} size={64} round />}
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 <label className="btn" style={{ cursor: 'pointer', opacity: uploading || genning ? 0.6 : 1 }}>
                   {uploading ? 'Uploading…' : '📤 Upload your own'}
                   <input
@@ -117,6 +115,17 @@ export function Settings() {
                     onChange={(e) => { uploadAvatar(e.target.files?.[0]); e.target.value = ''; }}
                   />
                 </label>
+                {/* AI generate shrunk to icon-only — the name-seeded fallback
+                    above is usually fine, so this is now an opt-in flourish. */}
+                <button
+                  className="icon-btn"
+                  title="Generate AI avatar"
+                  aria-label="Generate AI avatar"
+                  onClick={genAvatar}
+                  disabled={genning || uploading}
+                >
+                  {genning ? '…' : '✨'}
+                </button>
               </div>
             </div>
           </div>

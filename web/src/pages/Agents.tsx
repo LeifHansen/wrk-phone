@@ -52,7 +52,7 @@ export function Agents() {
               <Link key={a.id} to={`/agents/${a.id}`} className="agent-card" style={{ textDecoration: 'none', color: 'inherit' }}>
                 <Avatar
                   url={(a as any).avatar_url}
-                  emoji={a.is_default ? undefined : a.emoji}
+                  name={a.is_default ? undefined : a.name}
                   icon={a.is_default ? <IconAgent /> : undefined}
                   color={a.color}
                   size={56}

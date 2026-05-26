@@ -1,14 +1,17 @@
 import { useState } from 'react';
 import { COLOR_BG, COLOR_FG } from '../lib/api';
+import { NameAvatar } from './NameAvatar';
 
-// One avatar everywhere: shows the generated image when present, else a
-// colored tile with the emoji or first letter. Used for agents + account.
+// One avatar everywhere: shows the generated image when present, else
+// (in priority order) the supplied icon → a name-seeded NameAvatar →
+// the legacy emoji/letter swatch. Used for agents + account.
 export function Avatar({
-  url, emoji, label, icon, color = 'lime', size = 44, round = false,
+  url, emoji, label, name, icon, color = 'lime', size = 44, round = false,
 }: {
   url?: string | null;
   emoji?: string | null;
   label?: string | null;
+  name?: string | null;          // when set + no url/icon, used for the gradient fallback
   icon?: React.ReactNode;
   color?: string;
   size?: number;
@@ -37,6 +40,11 @@ export function Avatar({
         <span style={{ width: size * 0.52, height: size * 0.52, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{icon}</span>
       </div>
     );
+  }
+  // Auto-generated avatar from the name — same look as the dedicated
+  // NameAvatar component so list rows and detail screens match exactly.
+  if (name && name.trim()) {
+    return <NameAvatar name={name} size={size} round={round} />;
   }
   const fallback = emoji || (label || '?').replace(/[^A-Za-z0-9]/g, '').slice(0, 1).toUpperCase() || '#';
   return (
