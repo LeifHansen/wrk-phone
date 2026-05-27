@@ -292,19 +292,12 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', async (req, res) => {
     const goodbyeCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'goodbye', 'Thanks, goodbye.') };
     const wrongNumberCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'wrongnum', 'Sorry, wrong number. Goodbye.') };
 
-    // Real-time transcription so the Live Calls panel can stream the
-     // conversation as it happens. The `<Start>` verb is non-blocking —
-     // it spins up a background transcription pipeline that posts chunks
-     // to /agent-call-transcript as Twilio recognizes speech.
-     const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
-     if (base) {
-       const start = twiml.start();
-       start.transcription({
-         statusCallbackUrl: `${base}/api/voice/agent-call-transcript`,
-         track: 'both_tracks',
-         partialResults: true,
-       } as any);
-     }
+    // (Real-time transcription via <Start><Transcription> was removed —
+    // that verb requires Twilio Voice Intelligence to be enabled on the
+    // account. On accounts WITHOUT it, Twilio rejects the TwiML response
+    // and the entire agent call fails. The Live Calls panel falls back
+    // to showing status + duration only until Media Streams is wired
+    // in Phase 4 — see Issue #18.)
 
     if (voicemailOnly && !isMachine) {
       // DROP-VOICEMAIL on human pickup: brief apology + hangup. We can't redial
