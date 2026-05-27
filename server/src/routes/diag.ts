@@ -110,3 +110,115 @@ diagRouter.get('/_diag', async (_req, res) => {
   const allOk = Object.values(checks).every((c) => c.ok);
   res.status(allOk ? 200 : 503).json({ allOk, checks });
 });
+
+// GET /api/_diag/twilio-repair — emergency one-shot for "I fucked up
+// my Twilio creds in Fly and now nothing works."
+//
+// 1. Lists every phone number owned by the active Twilio account
+//    (so the user knows what to set TWILIO_DEFAULT_FROM_NUMBER to)
+// 2. Lists every TwiML App
+// 3. If NO TwiML App exists, CREATES one pointing at PUBLIC_BASE_URL
+//    (so TWILIO_TWIML_APP_SID gets a fresh, valid value)
+// 4. Returns the exact `fly secrets set` commands the user should run
+//
+// Read-only on the Twilio side except for the (idempotent) TwiML-app
+// create-when-missing path. Safe to call repeatedly.
+diagRouter.get('/_diag/twilio-repair', async (_req, res) => {
+  const base = (process.env.PUBLIC_BASE_URL || '').replace(/\/$/, '');
+  try {
+    // Verify auth works at all before doing anything else.
+    await twilioClient.api.v2010.accounts(twilioConfig.accountSid).fetch();
+  } catch (e: any) {
+    return res.status(503).json({
+      error: 'Cannot reach Twilio with current credentials.',
+      detail: e.message,
+      hint: 'Check TWILIO_ACCOUNT_SID, TWILIO_API_KEY_SID, TWILIO_API_KEY_SECRET in Fly secrets.',
+    });
+  }
+
+  let numbers: { phoneNumber: string; sid: string; voice: boolean; sms: boolean }[] = [];
+  try {
+    const list = await twilioClient.incomingPhoneNumbers.list({ limit: 1000 });
+    numbers = list.map((n) => ({
+      phoneNumber: n.phoneNumber,
+      sid: n.sid,
+      voice: !!(n as any).capabilities?.voice,
+      sms: !!(n as any).capabilities?.sms,
+    }));
+  } catch (e: any) {
+    return res.status(503).json({ error: `Could not list numbers: ${e.message}` });
+  }
+
+  let twimlApps: { sid: string; friendlyName: string; voiceUrl: string }[] = [];
+  try {
+    const apps = await twilioClient.applications.list({ limit: 100 });
+    twimlApps = apps.map((a) => ({ sid: a.sid, friendlyName: a.friendlyName || '', voiceUrl: a.voiceUrl || '' }));
+  } catch (e: any) {
+    return res.status(503).json({ error: `Could not list TwiML apps: ${e.message}` });
+  }
+
+  // Auto-create a TwiML app if none exists OR none point at the current
+  // PUBLIC_BASE_URL. Cheap, idempotent — one TwiML app costs nothing.
+  let createdAppSid: string | null = null;
+  const voiceUrl = base ? `${base}/api/voice/outbound` : '';
+  const matching = twimlApps.find((a) => a.voiceUrl === voiceUrl);
+  if (!matching && base) {
+    try {
+      const app = await twilioClient.applications.create({
+        friendlyName: 'WrkPhn (auto-repair)',
+        voiceUrl,
+        voiceMethod: 'POST',
+      });
+      createdAppSid = app.sid;
+      twimlApps.unshift({ sid: app.sid, friendlyName: app.friendlyName || '', voiceUrl: app.voiceUrl || '' });
+    } catch (e: any) {
+      return res.status(503).json({ error: `Could not create TwiML app: ${e.message}` });
+    }
+  }
+
+  // Recommendations: prefer the first SMS+voice-capable number for default-
+  // from, and the just-created (or matching) TwiML app.
+  const recommendedNumber = numbers.find((n) => n.voice && n.sms) || numbers[0];
+  const recommendedApp = matching || twimlApps[0];
+
+  // Current state vs recommended.
+  const fromNumberOk = !!recommendedNumber && twilioConfig.defaultFrom === recommendedNumber.phoneNumber;
+  const twimlAppOk = !!recommendedApp && twilioConfig.twimlAppSid === recommendedApp.sid;
+
+  const commands: string[] = [];
+  if (recommendedNumber && !fromNumberOk) {
+    commands.push(`fly secrets set TWILIO_DEFAULT_FROM_NUMBER=${recommendedNumber.phoneNumber} --app wrk-phone`);
+  }
+  if (recommendedApp && !twimlAppOk) {
+    commands.push(`fly secrets set TWILIO_TWIML_APP_SID=${recommendedApp.sid} --app wrk-phone`);
+  }
+  if (commands.length > 1) {
+    // Combine into a single deploy.
+    const merged = commands
+      .map((c) => c.replace(/^fly secrets set /, '').replace(/ --app wrk-phone$/, ''))
+      .join(' ');
+    commands.length = 0;
+    commands.push(`fly secrets set ${merged} --app wrk-phone`);
+  }
+
+  res.json({
+    publicBaseUrl: base || '(not set!)',
+    current: {
+      defaultFromNumber: twilioConfig.defaultFrom || null,
+      twimlAppSid: twilioConfig.twimlAppSid || null,
+      fromNumberOk,
+      twimlAppOk,
+    },
+    recommended: {
+      defaultFromNumber: recommendedNumber?.phoneNumber || null,
+      twimlAppSid: recommendedApp?.sid || null,
+      createdTwimlAppForYou: createdAppSid,
+    },
+    ownedNumbers: numbers,
+    twimlApps,
+    fixItCommands: commands,
+    note: commands.length
+      ? 'Run the command(s) above to fix the broken creds. Fly will redeploy automatically.'
+      : 'Twilio creds look correct already. If something else is broken, share the exact error.',
+  });
+});

@@ -101,9 +101,10 @@ billingRouter.post('/billing/subscribe', async (req, res) => {
   recordSubscription(USER, planId, ref, 'pending');
   const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
   try {
-    // A one-time price_data line item in a subscription-mode checkout is
-    // billed on the FIRST invoice only — that's how the setup fee rides along
-    // with the recurring charge in a single checkout.
+    // line_items in subscription mode MUST all be recurring — Stripe rejects
+    // any one-time price_data here with "You cannot combine one-time payments
+    // and subscriptions in the same Checkout Session." Setup fees go via
+    // subscription_data.invoice_items below (the supported pattern).
     const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{
       quantity: 1,
       price_data: {
@@ -113,24 +114,52 @@ billingRouter.post('/billing/subscribe', async (req, res) => {
         product_data: { name: `WrkPhn — ${plan.label}` },
       },
     }];
-    if (plan.setupFee) {
-      lineItems.push({
-        quantity: 1,
-        price_data: {
-          currency: 'usd',
-          unit_amount: plan.setupFee * 100,
-          product_data: { name: `WrkPhn — ${plan.label} (one-time setup)` },
-        },
-      });
-    }
-    const session = await stripe.checkout.sessions.create({
+
+    const sessionParams: Stripe.Checkout.SessionCreateParams = {
       mode: 'subscription',
       line_items: lineItems,
       success_url: `${base}/admin?sub=1`,
       cancel_url: `${base}/admin?sub=canceled`,
       metadata: { userId: USER, plan: planId, ref: ref || '' },
       subscription_data: { metadata: { userId: USER, plan: planId, ref: ref || '' } },
-    });
+    };
+
+    // One-time setup fee: ride along on the first invoice via Stripe's
+    // invoice-items mechanism. Requires a real Price (Stripe doesn't accept
+    // ad-hoc price_data on invoice items the way it does on line_items),
+    // so we create or reuse a Price scoped to a Product with a stable
+    // lookup_key. This keeps the setup-fee SKUs idempotent across calls.
+    if (plan.setupFee) {
+      try {
+        const lookupKey = `wrkphn_setup_${planId}_${plan.setupFee}usd`;
+        const existing = await stripe.prices.list({ lookup_keys: [lookupKey], limit: 1 });
+        let priceId: string;
+        if (existing.data[0]) {
+          priceId = existing.data[0].id;
+        } else {
+          const product = await stripe.products.create({
+            name: `WrkPhn — ${plan.label} (one-time setup)`,
+          });
+          const price = await stripe.prices.create({
+            product: product.id,
+            currency: 'usd',
+            unit_amount: plan.setupFee * 100,
+            lookup_key: lookupKey,
+          });
+          priceId = price.id;
+        }
+        (sessionParams.subscription_data as any).invoice_items = [
+          { price: priceId, quantity: 1 },
+        ];
+      } catch (e: any) {
+        // Setup fee plumbing failed — log it but DON'T block the checkout.
+        // The user still gets billed monthly; we'll catch up on the setup
+        // fee later or eat it. Better than a hard 500 with no recourse.
+        log.warn('billing/subscribe', `setup-fee invoice-item attach failed: ${e.message}`);
+      }
+    }
+
+    const session = await stripe.checkout.sessions.create(sessionParams);
     res.json({ url: session.url });
   } catch (e: any) {
     log.error('billing/subscribe', 'checkout create failed', e);
