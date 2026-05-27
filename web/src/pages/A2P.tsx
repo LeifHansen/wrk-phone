@@ -219,24 +219,177 @@ export function A2P() {
         )}
 
         {step === 'status' && status && (
-          <div className="cond-card">
-            <div className="opt-hero" style={{ background: status.status === 'approved' ? 'var(--lime)' : 'var(--yellow)' }}>
-              <h2 style={{ margin: 0 }}>{String(status.status || '').toUpperCase()}</h2>
-              <p style={{ margin: '8px 0 0' }}>{status.note}</p>
-            </div>
-
-            {/* OTP entry — only renders when Twilio is waiting for the
-                verification code we just texted to the user's mobile. */}
-            {status.status === 'otp_pending' && <OtpStep onVerified={(s) => setStatus(s)} />}
-
-            <p style={{ color: 'var(--muted)', fontSize: 13, marginTop: 12 }}>
-              Carrier vetting is async (hours–days). This page auto-refreshes the status.
-            </p>
-            <button className="btn ghost" onClick={() => api.a2pStatus().then(setStatus)}>Refresh status</button>
-          </div>
+          <StatusCard status={status} pkg={pkg || status.package} onRefresh={() => api.a2pStatus().then(setStatus)} />
         )}
       </div>
     </>
+  );
+}
+
+// ----- Status card -----
+//
+// Renders the registration outcome AND, when relevant, the manual-filing
+// fallback that's always going to exist for accounts without TrustHub /
+// ISV access. The old version rendered just the raw status string in
+// the page's script font ("MANUAL" → "manuac" visually) which
+// frustrated users into thinking it was a typo. This version:
+//   - Uses a plain sans-serif heading for the status word so it's readable
+//   - Maps each status to a friendly title + tone (yellow=needs you,
+//     lime=done, blue=in progress)
+//   - For 'manual': deep-links to the right Twilio Console section AND
+//     shows the saved package as copy-paste ready text so the user has
+//     everything they need to file in one click
+function StatusCard({
+  status,
+  pkg,
+  onRefresh,
+}: {
+  status: any;
+  pkg: any;
+  onRefresh: () => void;
+}) {
+  const s = String(status.status || 'unknown').toLowerCase();
+  const tone =
+    s === 'approved' || s === 'in_review' ? 'var(--lime)'
+    : s === 'manual' || s === 'otp_pending' ? 'var(--yellow)'
+    : s === 'rejected' || s === 'failed' ? 'var(--red)'
+    : 'var(--blue)';
+  const title =
+    s === 'approved' ? 'Approved'
+    : s === 'in_review' ? 'In review by carriers'
+    : s === 'otp_pending' ? 'Verify your mobile'
+    : s === 'manual' ? 'File the registration manually'
+    : s === 'rejected' ? 'Rejected'
+    : s === 'failed' ? 'Submission failed'
+    : status.status;
+  const isManual = s === 'manual';
+  const consoleUrl = 'https://console.twilio.com/us1/develop/messaging/services';
+  const regulatoryUrl = 'https://console.twilio.com/us1/develop/sms/regulatory-compliance/profiles';
+  return (
+    <div className="cond-card">
+      <div style={{
+        background: tone,
+        color: 'var(--ink)',
+        padding: '18px 20px',
+        border: '2px solid var(--ink)',
+        borderRadius: 10,
+      }}>
+        {/* Plain sans heading so "MANUAL" doesn't look like a typo in the
+            page's display script font. */}
+        <div style={{ fontFamily: 'var(--pixel)', fontSize: 11, letterSpacing: 1.5, marginBottom: 6 }}>
+          STATUS · {s.toUpperCase().replace(/_/g, ' ')}
+        </div>
+        <div style={{ fontFamily: 'system-ui, -apple-system, sans-serif', fontSize: 22, fontWeight: 800 }}>
+          {title}
+        </div>
+        <p style={{ margin: '10px 0 0', fontSize: 14, lineHeight: 1.5 }}>{status.note}</p>
+      </div>
+
+      {/* OTP entry — only renders when Twilio is waiting for the
+          verification code we just texted to the user's mobile. */}
+      {s === 'otp_pending' && <OtpStep onVerified={(fresh) => onRefresh()} />}
+
+      {/* Manual-filing helper: actionable links + the saved package so
+          the user can complete the filing in Twilio Console without
+          re-typing anything. */}
+      {isManual && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 14 }}>
+            <a className="btn lime" href={regulatoryUrl} target="_blank" rel="noopener noreferrer">
+              Open Twilio Regulatory Compliance ↗
+            </a>
+            <a className="btn ghost" href={consoleUrl} target="_blank" rel="noopener noreferrer">
+              Messaging Services ↗
+            </a>
+          </div>
+          {pkg && <PackagePreview pkg={pkg} profile={status.profile} />}
+          <p style={{ color: 'var(--muted)', fontSize: 12, marginTop: 10 }}>
+            Why manual? Twilio doesn't expose this brand type via API on your account.
+            Once you file in the Console, the carrier vet runs in the background (hours–days).
+          </p>
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 14 }}>
+        <button className="btn ghost" onClick={onRefresh}>Refresh status</button>
+        <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+          Carrier vetting is async — hours to days.
+        </span>
+      </div>
+    </div>
+  );
+}
+
+// Renders the AI-drafted A2P package alongside the user's profile data
+// in a copy-friendly layout. Each field has its own copy button so the
+// user can fill in the Twilio Console form one click at a time.
+function PackagePreview({ pkg, profile }: { pkg: any; profile?: any }) {
+  if (!pkg) return null;
+  const rows: { label: string; value: string }[] = [
+    profile?.legalName && { label: 'Legal name', value: profile.legalName },
+    profile?.ein && { label: 'EIN', value: profile.ein },
+    profile?.firstName && { label: 'First name', value: profile.firstName },
+    profile?.lastName && { label: 'Last name', value: profile.lastName },
+    profile?.email && { label: 'Email', value: profile.email },
+    profile?.mobilePhone && { label: 'Mobile phone', value: profile.mobilePhone },
+    profile?.address && { label: 'Address', value: profile.address },
+    profile?.website && { label: 'Website', value: profile.website },
+    pkg.vertical && { label: 'Vertical', value: pkg.vertical },
+    pkg.useCaseCategory && { label: 'Use case', value: pkg.useCaseCategory },
+    pkg.campaignDescription && { label: 'Campaign description', value: pkg.campaignDescription },
+    pkg.messageFlow && { label: 'Opt-in flow', value: pkg.messageFlow },
+    pkg.helpMessage && { label: 'HELP response', value: pkg.helpMessage },
+    pkg.stopMessage && { label: 'STOP response', value: pkg.stopMessage },
+  ].filter(Boolean) as { label: string; value: string }[];
+  const samples: string[] = Array.isArray(pkg.messageSamples) ? pkg.messageSamples : [];
+  const copy = async (v: string) => {
+    try {
+      await navigator.clipboard.writeText(v);
+      toast('Copied', 'ok');
+    } catch { toast('Could not copy — select and copy manually', 'err'); }
+  };
+  return (
+    <div style={{ background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 10, padding: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+        <h3 style={{ margin: 0, fontSize: 14, fontFamily: 'system-ui, sans-serif', fontWeight: 800 }}>
+          Your saved registration package
+        </h3>
+        <span style={{ color: 'var(--muted)', fontSize: 11 }}>Click any field to copy</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {rows.map((r) => (
+          <button key={r.label}
+            onClick={() => copy(r.value)}
+            style={{
+              textAlign: 'left', background: 'var(--surface)', color: 'var(--ink)',
+              border: '1px solid var(--border-color, #ccc)', borderRadius: 6, padding: '8px 10px',
+              cursor: 'pointer', fontFamily: 'inherit', fontSize: 13,
+            }}>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 0.5 }}>{r.label}</div>
+            <div style={{ marginTop: 2, wordBreak: 'break-word' }}>{r.value}</div>
+          </button>
+        ))}
+        {samples.length > 0 && (
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 700, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: 0.5, margin: '6px 0 4px' }}>
+              Sample messages
+            </div>
+            {samples.map((m, i) => (
+              <button key={i} onClick={() => copy(m)}
+                style={{
+                  display: 'block', width: '100%', textAlign: 'left',
+                  background: 'var(--surface)', color: 'var(--ink)',
+                  border: '1px solid var(--border-color, #ccc)', borderRadius: 6,
+                  padding: '8px 10px', cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 13, marginBottom: 6, wordBreak: 'break-word',
+                }}>
+                {m}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 

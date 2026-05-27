@@ -153,7 +153,10 @@ a2pRouter.post('/a2p/submit', async (req, res) => {
             note = ?, updated_at = ?
       WHERE id = ?`
   ).run(status, brandSid, customerProfileSid, endUserSid, evaluationSid, note, Date.now(), id);
-  res.json({ id, status, note, brandSid, customerProfileSid, endUserSid });
+  // Return profile + package alongside the status so the client's
+  // StatusCard can render the manual-filing helper (copy-paste fields,
+  // sample messages) without a separate /a2p/status round-trip.
+  res.json({ id, status, note, brandSid, customerProfileSid, endUserSid, profile, package: pkg });
 });
 
 // POST /api/a2p/verify-otp  { code }
