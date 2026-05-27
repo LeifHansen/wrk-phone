@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import twilio from 'twilio';
 import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation, getActiveNumber, setVoiceOptOut } from '../lib/db.js';
-import { generateVoiceGreeting } from '../lib/agent.js';
+import { generateVoiceGreeting, generateLiveVoiceOpening, generateLiveVoiceReply } from '../lib/agent.js';
 import { twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { emit } from '../lib/events.js';
@@ -83,23 +83,45 @@ voiceRouter.post('/voice/outbound', (req, res) => {
 });
 
 
-// Inbound: Twilio number's Voice webhook -> ring the softphone client
+// Inbound: Twilio number's Voice webhook
+//
+// Routing decision:
+//   1. If the owner has an agent with voice_mode='auto' assigned to the
+//      conversation (or as default) — skip the softphone entirely and
+//      have the AI answer the call live (/voice/inbound-agent).
+//   2. Otherwise → ring the softphone client. If unanswered, fall
+//      through to the voicemail greeting (which uses the AI to
+//      generate the greeting text but still records to voicemail).
+//
+// Cold call to a shared number with no owner = reject.
 voiceRouter.post('/voice/inbound', (req, res) => {
   const fromNumber = String(req.body.From || '');
-  // The account that owns the dialed number rings. For a shared toll-free,
-  // disambiguated by the caller's prior thread. A cold call to a shared number
-  // is unattributable → reject it.
   const owner = resolveInboundOwner(String(req.body.To || ''), fromNumber);
   const twiml = new VoiceResponse();
   if (!owner) {
     twiml.reject();
     return res.type('text/xml').send(twiml.toString());
   }
-  // `action` fires when the softphone-side dial leg ends — gives us the
-  // DialCallStatus / DialCallDuration we need to log inbound calls in the
-  // analytics-feeding `calls` table. Without it the table stays empty.
-  // Twilio fetches the action URL with a fresh body, so the inbound-vs-
-  // outbound bookkeeping is preserved via the query-string flag.
+  // Pick the agent that would handle THIS call (conversation-pinned if the
+  // caller has a thread, else the user's default agent).
+  let agent: any = null;
+  if (fromNumber) {
+    const conv = db.prepare(
+      'SELECT id FROM conversations WHERE user_id = ? AND peer_phone = ?'
+    ).get(owner, fromNumber) as { id: number } | undefined;
+    if (conv) agent = getAgentForConversation(owner, conv.id);
+  }
+  if (!agent) agent = getDefaultAgent(owner);
+
+  // Live-answer AI path. Hand the whole call to /voice/inbound-agent
+  // which runs a Gather → AI → Say loop. Cheap to fall through to the
+  // softphone path if anything goes wrong.
+  if (agent && (agent as any).voice_mode === 'auto') {
+    twiml.redirect({ method: 'POST' }, `/api/voice/inbound-agent?agentId=${(agent as any).id}`);
+    return res.type('text/xml').send(twiml.toString());
+  }
+
+  // Default path: ring softphone, fall through to voicemail.
   const dial = twiml.dial({
     timeout: 25,
     answerOnBridge: true,
@@ -108,8 +130,171 @@ voiceRouter.post('/voice/inbound', (req, res) => {
     method: 'POST',
   });
   dial.client(owner);
-  // If client doesn't answer, fall through to voicemail
   twiml.redirect({ method: 'POST' }, '/api/voice/voicemail-greeting');
+  res.type('text/xml').send(twiml.toString());
+});
+
+// ---- Live-answer AI voice agent ----
+// When voice_mode='auto', the AI picks up the call directly and runs
+// a turn-by-turn conversation. State is rehydrated from live_call_turns
+// on every callback (Twilio doesn't carry state between webhook hits).
+//
+// Loop:
+//   1. /voice/inbound-agent      → AI greets, opens a Gather for speech
+//   2. /voice/inbound-agent-turn → AI replies to caller speech, loops
+//
+// End conditions:
+//   - >12 turns (cap to keep AI conversations short + budget reasonable)
+//   - "goodbye"/"thanks bye" detected → final reply then hangup
+//   - Empty SpeechResult three times → assume disconnect, hangup
+const MAX_TURNS = 12;
+
+voiceRouter.post('/voice/inbound-agent', async (req, res) => {
+  const twiml = new VoiceResponse();
+  try {
+    const callSid = String(req.body.CallSid || '');
+    const fromNumber = String(req.body.From || '');
+    const owner = resolveInboundOwner(String(req.body.To || ''), fromNumber);
+    const agentId = Number(req.query.agentId);
+    if (!owner || !agentId) {
+      twiml.say('Sorry, this line is not available right now. Please try again later.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+    const agent = db.prepare(
+      `SELECT * FROM agents WHERE id = ? AND user_id = ?`
+    ).get(agentId, owner) as any;
+    if (!agent) {
+      twiml.say('Sorry, this line is not available right now.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+    const opening = await generateLiveVoiceOpening(agent);
+    // Persist the opening as the agent's first turn so the next webhook
+    // has full context when the caller responds.
+    if (callSid) {
+      db.prepare(
+        `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
+         VALUES (?, ?, ?, 'agent', ?, ?)`
+      ).run(callSid, owner, agent.id, opening, Date.now());
+    }
+    const voice = agent.tts_voice || 'Polly.Joanna-Neural';
+    const ctx = { userId: owner, cacheKey: hashKey(voice, 'opening', opening) };
+    await speak(twiml, voice, opening, ctx);
+    // Open a Gather. speechTimeout='auto' lets Twilio detect end of speech.
+    const gather = twiml.gather({
+      input: ['speech'] as any,
+      speechTimeout: 'auto',
+      action: `/api/voice/inbound-agent-turn?agentId=${agent.id}`,
+      method: 'POST',
+      // Don't wait forever for the caller to start speaking after greeting.
+      timeout: 6,
+    });
+    // If the caller doesn't say anything, the call drops here.
+    // After Gather completes (or times out without speech), this fires:
+    twiml.say('I didn\'t catch that. Goodbye.');
+    twiml.hangup();
+  } catch (e) {
+    log.error('voice/inbound-agent', 'opening threw', e);
+    twiml.say('Sorry, something went wrong. Please try again.');
+    twiml.hangup();
+  }
+  res.type('text/xml').send(twiml.toString());
+});
+
+voiceRouter.post('/voice/inbound-agent-turn', async (req, res) => {
+  const twiml = new VoiceResponse();
+  try {
+    const callSid = String(req.body.CallSid || '');
+    const owner = resolveInboundOwner(String(req.body.To || ''), String(req.body.From || ''));
+    const agentId = Number(req.query.agentId);
+    const callerSaid = String(req.body.SpeechResult || '').trim();
+
+    if (!owner || !agentId || !callSid) {
+      twiml.say('Sorry, this call cannot continue.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+    const agent = db.prepare(
+      `SELECT * FROM agents WHERE id = ? AND user_id = ?`
+    ).get(agentId, owner) as any;
+    if (!agent) {
+      twiml.say('Sorry, this line is not available.');
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // Persist whatever the caller said (even if empty — silence has meaning
+    // for the end-condition counter).
+    if (callerSaid) {
+      db.prepare(
+        `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
+         VALUES (?, ?, ?, 'caller', ?, ?)`
+      ).run(callSid, owner, agent.id, callerSaid, Date.now());
+    }
+
+    // Rehydrate full conversation history for this call.
+    const turns = db.prepare(
+      `SELECT role, text FROM live_call_turns WHERE call_sid = ? ORDER BY id ASC`
+    ).all(callSid) as { role: 'caller' | 'agent'; text: string }[];
+
+    // End condition: turn cap.
+    const agentTurns = turns.filter((t) => t.role === 'agent').length;
+    if (agentTurns >= MAX_TURNS) {
+      const goodbye = 'I have to let you go now. Take care.';
+      const voice = agent.tts_voice || 'Polly.Joanna-Neural';
+      await speak(twiml, voice, goodbye, { userId: owner, cacheKey: hashKey(voice, 'goodbye') });
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // End condition: caller said goodbye-ish.
+    const said = callerSaid.toLowerCase();
+    const callerGoodbye = /(^|\b)(bye|goodbye|thanks bye|gotta go|i'?ll let you go|talk to you later|take care)(\b|$)/.test(said);
+
+    // Generate AI reply (history excludes the just-appended caller turn,
+    // which is passed separately as callerSaid).
+    const historyWithoutLast = turns.slice(0, callerSaid ? turns.length - 1 : turns.length);
+    let reply = '';
+    try {
+      reply = await generateLiveVoiceReply(agent, historyWithoutLast, callerSaid || '...');
+    } catch (e) {
+      log.error('voice/inbound-agent-turn', 'reply generation failed', e);
+      reply = 'I\'m sorry, I missed that. Could you say it again?';
+    }
+    if (!reply) reply = 'I\'m sorry, I didn\'t catch that. Could you say it again?';
+
+    // Persist the AI's reply so the next turn sees it in history.
+    db.prepare(
+      `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
+       VALUES (?, ?, ?, 'agent', ?, ?)`
+    ).run(callSid, owner, agent.id, reply, Date.now());
+
+    const voice = agent.tts_voice || 'Polly.Joanna-Neural';
+    const ctx = { userId: owner, cacheKey: hashKey(voice, 'turn', String(turns.length), reply.slice(0, 40)) };
+    await speak(twiml, voice, reply, ctx);
+
+    if (callerGoodbye) {
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    // Next turn — another Gather.
+    const gather = twiml.gather({
+      input: ['speech'] as any,
+      speechTimeout: 'auto',
+      action: `/api/voice/inbound-agent-turn?agentId=${agent.id}`,
+      method: 'POST',
+      timeout: 8,
+    });
+    // If the caller goes silent, end the call gracefully.
+    twiml.say('Sounds like you\'re away. I\'ll let you go. Take care.');
+    twiml.hangup();
+  } catch (e) {
+    log.error('voice/inbound-agent-turn', 'handler threw', e);
+    twiml.say('Sorry, something went wrong. Goodbye.');
+    twiml.hangup();
+  }
   res.type('text/xml').send(twiml.toString());
 });
 

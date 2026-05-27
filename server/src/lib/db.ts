@@ -352,6 +352,23 @@ db.exec(`
     invited_at INTEGER
   );
 
+  -- Live voice-agent call turns. When an inbound call hits an agent
+  -- with voice_mode='auto', we run the call as a turn-by-turn AI
+  -- conversation. Each (caller speech, agent reply) pair is appended
+  -- here keyed by Twilio CallSid so subsequent TwiML requests can
+  -- rehydrate the conversation history (Twilio doesn't carry state
+  -- between webhook hits — every callback is stateless).
+  CREATE TABLE IF NOT EXISTS live_call_turns (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    call_sid TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    agent_id INTEGER,
+    role TEXT NOT NULL CHECK(role IN ('caller','agent')),
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_live_call_turns_sid ON live_call_turns(call_sid, id);
+
   -- Real-time transcription events from Twilio's <Start><Transcription>
   -- verb. Each row is a partial-or-final transcript chunk attributed to
   -- one of the call legs. The Live Calls panel reads from here in real

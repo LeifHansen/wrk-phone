@@ -71,6 +71,73 @@ export async function generateReply(
   return { reply, safeToAutoSend, agent };
 }
 
+/**
+ * LIVE voice-agent reply. Used by /voice/inbound-agent when the assigned
+ * agent has voice_mode='auto' — the AI picks up the call directly and
+ * has a real conversation instead of falling through to voicemail.
+ *
+ * Returns a 1-2 sentence reply tuned for spoken delivery (short clauses,
+ * no markdown, no special characters). End conditions live with the
+ * caller (turn count cap, "goodbye" detection).
+ */
+export async function generateLiveVoiceReply(
+  agent: AgentRow,
+  history: { role: 'caller' | 'agent'; text: string }[],
+  callerSaid: string,
+): Promise<string> {
+  const a = hydrateAgent(agent);
+  const sys =
+    `You are "${a.name}", answering a phone call as a live voice agent on a work line. ` +
+    `Voice/persona: ${a.persona || 'warm, professional, helpful'}. ` +
+    `Speak in ONE OR TWO short sentences max — this is spoken aloud, not text. ` +
+    `No emoji. No markdown. No bullet points. No URLs. ` +
+    `Never say you're an AI unless directly asked. ` +
+    `If asked something you don't know, take a message politely. ` +
+    `If the caller says goodbye / thanks / "I'll let you go" — end with a short goodbye. ` +
+    (a.instructions ? `Additional instructions: ${a.instructions}` : '');
+  const messages = [
+    { role: 'system' as const, content: sys },
+    ...history.map((h) => ({
+      role: (h.role === 'caller' ? 'user' : 'assistant') as 'user' | 'assistant',
+      content: h.text,
+    })),
+    { role: 'user' as const, content: callerSaid },
+  ];
+  const completion = await openai.chat.completions.create({
+    model: MODEL,
+    messages,
+    temperature: 0.6,
+    max_tokens: 100,
+  });
+  const reply = completion.choices[0]?.message?.content?.trim() || '';
+  // Strip any accidental punctuation that reads weird aloud.
+  return reply.replace(/[*_`#]/g, '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Greeting the live voice agent opens the call with. Distinct from the
+ * voicemail greeting (which is left when nobody answers).
+ */
+export async function generateLiveVoiceOpening(agent: AgentRow): Promise<string> {
+  const a = hydrateAgent(agent);
+  try {
+    const completion = await openai.chat.completions.create({
+      model: MODEL,
+      messages: [
+        { role: 'system', content: 'Generate a short opening line (under 12 words) for a live voice agent answering a phone call. No emoji. Friendly, professional. Mention you can help with what they need.' },
+        { role: 'user', content: `Voice/persona: ${a.persona || 'warm, professional'}.` },
+      ],
+      temperature: 0.5,
+      max_tokens: 30,
+    });
+    const line = completion.choices[0]?.message?.content?.trim().replace(/[*_`#]/g, '');
+    if (line) return line;
+  } catch {
+    /* fall through to deterministic greeting */
+  }
+  return `Hi, you've reached ${a.name}. How can I help?`;
+}
+
 export async function generateVoiceGreeting(agent: AgentRow): Promise<string> {
   const a = hydrateAgent(agent);
   if (a.voice_mode === 'off') {
