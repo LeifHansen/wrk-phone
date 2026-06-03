@@ -53,7 +53,7 @@ export const VOICE_PRESETS = [
   { name: 'Iris',  style: 'bright, casual',        tts_voice: 'Polly.Salli-Neural' },
 ];
 
-function pickTtsForStyle(style: string): string {
+export function pickTtsForStyle(style: string): string {
   const s = (style || '').toLowerCase();
   if (/deep|confident|authoritative|serious/.test(s)) return 'Polly.Matthew-Neural';
   if (/calm|professional|soft/.test(s))                return 'Polly.Kendra-Neural';

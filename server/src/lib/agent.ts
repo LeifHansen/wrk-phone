@@ -84,16 +84,24 @@ export async function generateLiveVoiceReply(
   agent: AgentRow,
   history: { role: 'caller' | 'agent'; text: string }[],
   callerSaid: string,
+  opts: { goal?: string } = {},
 ): Promise<string> {
   const a = hydrateAgent(agent);
+  // `goal` is set for OUTBOUND agent calls — the script/purpose the agent is
+  // calling about. It keeps a two-way outbound conversation on-topic instead
+  // of drifting like a generic inbound answerer.
+  const goalBlock = opts.goal
+    ? `You placed this OUTBOUND call to accomplish the following — keep the conversation on this purpose, answer the person's questions about it, and wrap up naturally once it's handled: "${opts.goal}". `
+    : '';
   const sys =
-    `You are "${a.name}", answering a phone call as a live voice agent on a work line. ` +
+    `You are "${a.name}", ${opts.goal ? 'making a phone call' : 'answering a phone call'} as a live voice agent on a work line. ` +
     `Voice/persona: ${a.persona || 'warm, professional, helpful'}. ` +
+    goalBlock +
     `Speak in ONE OR TWO short sentences max — this is spoken aloud, not text. ` +
     `No emoji. No markdown. No bullet points. No URLs. ` +
     `Never say you're an AI unless directly asked. ` +
     `If asked something you don't know, take a message politely. ` +
-    `If the caller says goodbye / thanks / "I'll let you go" — end with a short goodbye. ` +
+    `If the other person says goodbye / thanks / "I'll let you go" — end with a short goodbye. ` +
     (a.instructions ? `Additional instructions: ${a.instructions}` : '');
   const messages = [
     { role: 'system' as const, content: sys },

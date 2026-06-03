@@ -18,9 +18,6 @@ export function AgentInitiate({ to, compact = false }: { to: InitiateRecipient; 
   const [chosenAgent, setChosenAgent] = useState<Agent | null>(null);
   const [brief, setBrief] = useState('');
   const [busy, setBusy] = useState(false);
-  // For Agent Call we collect TCPA consent the same way the campaigns flow
-  // does — automated voice carries real legal exposure.
-  const [callConsent, setCallConsent] = useState(false);
   const nav = useNavigate();
 
   useEffect(() => {
@@ -32,10 +29,10 @@ export function AgentInitiate({ to, compact = false }: { to: InitiateRecipient; 
   if (autoAgents.length === 0) return null;
 
   const open = (m: 'text' | 'call') => {
-    setMode(m); setBrief(''); setCallConsent(false);
+    setMode(m); setBrief('');
     setChosenAgent(autoAgents.length === 1 ? autoAgents[0] : null);
   };
-  const close = () => { setMode(null); setChosenAgent(null); setBrief(''); setBusy(false); setCallConsent(false); };
+  const close = () => { setMode(null); setChosenAgent(null); setBrief(''); setBusy(false); };
 
   const submitText = async () => {
     if (!chosenAgent || !brief.trim() || busy) return;
@@ -52,19 +49,19 @@ export function AgentInitiate({ to, compact = false }: { to: InitiateRecipient; 
 
   const submitCall = async () => {
     if (!chosenAgent || !brief.trim() || busy) return;
-    if (!callConsent) { toast('Acknowledge TCPA consent to place an automated call.', 'err'); return; }
     setBusy(true);
     try {
       // Reuse the existing agent-calls flow as a 1-recipient campaign so the
-      // call inherits all the safety rails (atomic credit reservation, quiet
-      // hours, opt-out, recovery sweep, TwiML opt-out keypress).
+      // call inherits the safety rails (atomic credit reservation, quiet
+      // hours, recovery sweep). The call itself is a live two-way AI
+      // conversation — see /voice/agent-call-twiml.
       const c = await api.createAgentCall({
         name: `Quick call: ${to.name || to.phone}`,
         agentId: chosenAgent.id,
         script: brief.trim(),
         recipients: [{ phone: to.phone, name: to.name || undefined }],
       });
-      await api.sendAgentCall(c.id, true);
+      await api.sendAgentCall(c.id);
       toast(`🤖 ${chosenAgent.name} is dialing ${to.name || to.phone}…`, 'ok');
       close();
       nav('/agents/calls');
@@ -120,25 +117,14 @@ export function AgentInitiate({ to, compact = false }: { to: InitiateRecipient; 
             <p className="hint" style={{ marginTop: 4 }}>
               {mode === 'text'
                 ? `${chosenAgent?.name || 'The agent'} will draft the opening text in their voice and autopilot any replies.`
-                : `${chosenAgent?.name || 'The agent'} will dial and read this aloud. Keep it under ~75 words (≈30 seconds spoken).`}
+                : `${chosenAgent?.name || 'The agent'} will dial and hold a live two-way conversation. The opener above is what it leads with.`}
             </p>
-
-            {mode === 'call' && (
-              <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginTop: 14, padding: 12,
-                              background: 'var(--yellow)', border: '2px solid var(--ink)', borderRadius: 8 }}>
-                <input type="checkbox" checked={callConsent} onChange={(e) => setCallConsent(e.target.checked)}
-                  style={{ marginTop: 3, width: 18, height: 18 }} />
-                <span style={{ fontSize: 13, lineHeight: 1.45 }}>
-                  I have prior express written consent from this recipient to receive automated voice calls (TCPA).
-                </span>
-              </label>
-            )}
 
             <div style={{ display: 'flex', gap: 8, marginTop: 16 }}>
               <button className="btn ghost lg" onClick={close} style={{ flex: 1 }}>Cancel</button>
               <button className="btn lg" style={{ flex: 1, background: 'var(--purple)', color: '#fff' }}
                 onClick={mode === 'text' ? submitText : submitCall}
-                disabled={busy || !chosenAgent || !brief.trim() || (mode === 'call' && !callConsent)}>
+                disabled={busy || !chosenAgent || !brief.trim()}>
                 {busy
                   ? 'Working…'
                   : mode === 'text' ? `Send via ${chosenAgent?.name || 'agent'}` : `Place call via ${chosenAgent?.name || 'agent'}`}

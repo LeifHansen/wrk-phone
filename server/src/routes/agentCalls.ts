@@ -137,7 +137,6 @@ agentCallsRouter.post('/agent-calls', (req, res) => {
 });
 
 // ---------- send ----------
-// body: { consent: true }  — required: user MUST acknowledge TCPA consent
 agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
   const id = Number(req.params.id);
   const campaign = db.prepare(
@@ -146,12 +145,6 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
   if (!campaign) return res.status(404).json({ error: 'not found' });
   if (campaign.status === 'sending' || campaign.status === 'done') {
     return res.status(409).json({ error: `already ${campaign.status}` });
-  }
-  // TCPA gate: refuse to dial without explicit acknowledged consent.
-  if (req.body?.consent !== true) {
-    return res.status(400).json({
-      error: 'You must acknowledge TCPA consent before sending automated voice calls.',
-    });
   }
   const agent = db.prepare(`SELECT * FROM agents WHERE id = ?`).get(campaign.agent_id) as any;
   if (!agent) return res.status(400).json({ error: 'agent missing' });
@@ -189,22 +182,7 @@ agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
     }
   }
 
-  // Persist the consent acknowledgement WITH the status flip — that's the
-  // audit trail you'll want if a recipient ever complains.
-  db.prepare(
-    `UPDATE agent_calls
-        SET status = 'sending',
-            consent_acknowledged = 1,
-            consent_acknowledged_at = ?,
-            consent_acknowledged_ip = ?,
-            consent_acknowledged_ua = ?
-      WHERE id = ?`
-  ).run(
-    Date.now(),
-    String(req.ip || req.headers['x-forwarded-for'] || '').slice(0, 64),
-    String(req.headers['user-agent'] || '').slice(0, 200),
-    id,
-  );
+  db.prepare(`UPDATE agent_calls SET status = 'sending' WHERE id = ?`).run(id);
   // Round-robin across every active sender number the account owns. Many
   // users have just one; multi-number accounts (10DLC + locals) get the
   // multiplier for free.

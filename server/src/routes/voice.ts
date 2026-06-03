@@ -1,30 +1,84 @@
 import { Router } from 'express';
 import twilio from 'twilio';
-import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation, getActiveNumber, setVoiceOptOut } from '../lib/db.js';
+import { db, getDefaultAgent, getOrCreateConversation, getAgentForConversation, getActiveNumber } from '../lib/db.js';
 import { generateVoiceGreeting, generateLiveVoiceOpening, generateLiveVoiceReply } from '../lib/agent.js';
 import { twilioConfig } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { emit } from '../lib/events.js';
 import { isElevenLabsVoice, synthesizeElevenLabs } from '../lib/tts.js';
+import { pickTtsForStyle } from './voices.js';
 import crypto from 'node:crypto';
 
 // Render `text` as either Twilio `<Say>` (Polly path) or pre-synthesized
-// `<Play>` audio (ElevenLabs cloned-voice path). Falls back to Polly if the
-// ElevenLabs synthesis fails — the call still works, just in the default
-// voice instead of the cloned one.
+// `<Play>` audio (ElevenLabs cloned-voice path). Falls back to a Polly voice
+// if the ElevenLabs synthesis fails — the call still works, just in a neural
+// preset instead of the cloned voice. `fallback` is the style-matched Polly
+// voice (see resolveVoice) so a cloned-voice agent doesn't silently collapse
+// to the same default woman's voice for every agent on synth failure.
 async function speak(
   parent: any,
   voice: string,
   text: string,
   ctx: { userId: string; cacheKey: string },
+  fallback = 'Polly.Joanna-Neural',
 ): Promise<void> {
   if (isElevenLabsVoice(voice)) {
     const url = await synthesizeElevenLabs(text, voice, ctx.userId, ctx.cacheKey);
     if (url) { parent.play({}, url); return; }
     // fall through → Polly as a safety net
   }
-  const pollyVoice = (voice && voice.startsWith('Polly.')) ? voice : 'Polly.Joanna-Neural';
+  const pollyVoice = (voice && voice.startsWith('Polly.')) ? voice : fallback;
   parent.say({ voice: pollyVoice }, text);
+}
+
+// Resolve the concrete TTS voice for an agent + a sensible Polly fallback.
+//
+// Why this exists: agents store `tts_voice` directly when the user picks a
+// voice, but (a) the auto-created Default agent has none, and (b) a cloned
+// `elevenlabs:` voice produces nothing when no ELEVENLABS_API_KEY is set or a
+// synth call fails. Both cases previously fell back to Polly.Joanna for EVERY
+// agent — hence "default woman's voice no matter which agent". We now resolve
+// the voice through the linked `voices` row when the agent's tts_voice is
+// blank, and derive the Polly fallback from that voice's saved style so the
+// fallback at least varies per agent.
+function resolveVoice(opts: {
+  tts_voice?: string | null;
+  voice_id?: number | null;
+  user_id: string;
+}): { voice: string; fallback: string } {
+  let voice = (opts.tts_voice || '').trim();
+  let style = '';
+  if (opts.voice_id) {
+    const v = db.prepare(
+      `SELECT tts_voice, style FROM voices WHERE id = ? AND user_id = ?`
+    ).get(opts.voice_id, opts.user_id) as { tts_voice: string; style: string } | undefined;
+    if (v) {
+      if (!voice && v.tts_voice) voice = v.tts_voice;
+      style = v.style || '';
+    }
+  }
+  if (!voice) voice = 'Polly.Joanna-Neural';
+  const fallback = voice.startsWith('Polly.') ? voice : pickTtsForStyle(style);
+  return { voice, fallback };
+}
+
+// Append a chunk to the Live Calls feed so the user can watch a two-way agent
+// conversation unfold in real time. `source`: 'outbound' = the agent speaking,
+// 'inbound' = the person on the other end. Best-effort — never throws into a
+// TwiML handler.
+function appendCallEvent(callSid: string, userId: string, source: 'inbound' | 'outbound' | 'system', text: string): void {
+  try {
+    if (!callSid || !text) return;
+    const last = db.prepare(
+      `SELECT COALESCE(MAX(sequence), 0) AS m FROM live_call_events WHERE call_sid = ?`
+    ).get(callSid) as { m: number };
+    db.prepare(
+      `INSERT INTO live_call_events (call_sid, user_id, sequence, source, text, is_final, created_at)
+       VALUES (?, ?, ?, ?, ?, 1, ?)`
+    ).run(callSid, userId, (last?.m || 0) + 1, source, text, Date.now());
+  } catch (e) {
+    log.warn('voice', 'appendCallEvent failed', e);
+  }
 }
 
 // Stable hash for the TTS cache key — text + voice id together so a tweak
@@ -143,11 +197,12 @@ voiceRouter.post('/voice/inbound', (req, res) => {
 //   1. /voice/inbound-agent      → AI greets, opens a Gather for speech
 //   2. /voice/inbound-agent-turn → AI replies to caller speech, loops
 //
-// End conditions:
-//   - >12 turns (cap to keep AI conversations short + budget reasonable)
+// End conditions (the call runs as long as the conversation naturally does):
 //   - "goodbye"/"thanks bye" detected → final reply then hangup
-//   - Empty SpeechResult three times → assume disconnect, hangup
-const MAX_TURNS = 12;
+//   - caller goes silent → graceful closer then hangup
+//   - MAX_TURNS is only a runaway safety bound (stuck-loop / cost guard), set
+//     high so normal conversations are never cut off mid-thread.
+const MAX_TURNS = 50;
 
 voiceRouter.post('/voice/inbound-agent', async (req, res) => {
   const twiml = new VoiceResponse();
@@ -177,10 +232,11 @@ voiceRouter.post('/voice/inbound-agent', async (req, res) => {
         `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
          VALUES (?, ?, ?, 'agent', ?, ?)`
       ).run(callSid, owner, agent.id, opening, Date.now());
+      appendCallEvent(callSid, owner, 'outbound', opening);
     }
-    const voice = agent.tts_voice || 'Polly.Joanna-Neural';
+    const { voice, fallback } = resolveVoice({ tts_voice: agent.tts_voice, voice_id: (agent as any).voice_id, user_id: owner });
     const ctx = { userId: owner, cacheKey: hashKey(voice, 'opening', opening) };
-    await speak(twiml, voice, opening, ctx);
+    await speak(twiml, voice, opening, ctx, fallback);
     // Open a Gather. speechTimeout='auto' lets Twilio detect end of speech.
     const gather = twiml.gather({
       input: ['speech'] as any,
@@ -224,6 +280,8 @@ voiceRouter.post('/voice/inbound-agent-turn', async (req, res) => {
       return res.type('text/xml').send(twiml.toString());
     }
 
+    const { voice, fallback } = resolveVoice({ tts_voice: agent.tts_voice, voice_id: (agent as any).voice_id, user_id: owner });
+
     // Persist whatever the caller said (even if empty — silence has meaning
     // for the end-condition counter).
     if (callerSaid) {
@@ -231,6 +289,7 @@ voiceRouter.post('/voice/inbound-agent-turn', async (req, res) => {
         `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
          VALUES (?, ?, ?, 'caller', ?, ?)`
       ).run(callSid, owner, agent.id, callerSaid, Date.now());
+      appendCallEvent(callSid, owner, 'inbound', callerSaid);
     }
 
     // Rehydrate full conversation history for this call.
@@ -242,8 +301,7 @@ voiceRouter.post('/voice/inbound-agent-turn', async (req, res) => {
     const agentTurns = turns.filter((t) => t.role === 'agent').length;
     if (agentTurns >= MAX_TURNS) {
       const goodbye = 'I have to let you go now. Take care.';
-      const voice = agent.tts_voice || 'Polly.Joanna-Neural';
-      await speak(twiml, voice, goodbye, { userId: owner, cacheKey: hashKey(voice, 'goodbye') });
+      await speak(twiml, voice, goodbye, { userId: owner, cacheKey: hashKey(voice, 'goodbye') }, fallback);
       twiml.hangup();
       return res.type('text/xml').send(twiml.toString());
     }
@@ -269,10 +327,10 @@ voiceRouter.post('/voice/inbound-agent-turn', async (req, res) => {
       `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
        VALUES (?, ?, ?, 'agent', ?, ?)`
     ).run(callSid, owner, agent.id, reply, Date.now());
+    appendCallEvent(callSid, owner, 'outbound', reply);
 
-    const voice = agent.tts_voice || 'Polly.Joanna-Neural';
     const ctx = { userId: owner, cacheKey: hashKey(voice, 'turn', String(turns.length), reply.slice(0, 40)) };
-    await speak(twiml, voice, reply, ctx);
+    await speak(twiml, voice, reply, ctx, fallback);
 
     if (callerGoodbye) {
       twiml.hangup();
@@ -415,104 +473,103 @@ voiceRouter.post('/voice/voicemail-transcription', (req, res) => {
 });
 
 // ============================================================
-// AGENT CALLS — outbound TwiML, keypress opt-out, status callback
+// AGENT CALLS — outbound live two-way AI conversation, status callback
 // ============================================================
 
-// TwiML Twilio fetches when an outbound agent-call connects. Resolves the
-// script + agent voice from the recipient id baked into the URL, then plays
-// the message inside a <Gather> so the recipient can press 9 to opt out.
-// If Twilio's AMD classifies the call as "machine" we play a shorter
-// voicemail-friendly take (no Gather — voicemails don't press keys).
+// Look up everything an agent-call TwiML handler needs from a recipient id:
+// the recipient, the campaign script, and the FULL agent row (so the AI reply
+// generator gets persona/instructions/examples and the voice resolves
+// correctly). Returns null if the recipient/campaign/agent chain is broken.
+function loadAgentCallContext(recipientId: number): {
+  rec: { phone: string; name: string | null; script: string; user_id: string; voicemail_only: number; agent_id: number };
+  agent: any;
+} | null {
+  const rec = db.prepare(
+    `SELECT acr.phone, acr.name, ac.script, ac.user_id, ac.voicemail_only, ac.agent_id
+       FROM agent_call_recipients acr
+       JOIN agent_calls ac ON ac.id = acr.agent_call_id
+      WHERE acr.id = ?`
+  ).get(recipientId) as any;
+  if (!rec) return null;
+  const agent = db.prepare(`SELECT * FROM agents WHERE id = ?`).get(rec.agent_id) as any;
+  if (!agent) return null;
+  return { rec, agent };
+}
+
+// TwiML Twilio fetches when an outbound agent-call connects.
+//
+//   - Machine pickup (or voicemail-only mode): leave the script as a single
+//     voicemail message — you can't have a conversation with an answering
+//     machine.
+//   - Live human: GREET with the script, then open a speech <Gather> that
+//     hands control to /voice/agent-call-turn, which runs a real back-and-forth
+//     AI conversation (same engine as the inbound live-answer agent). There is
+//     NO "press 9 to opt out" notice — the call is a normal conversation.
 voiceRouter.post('/voice/agent-call-twiml/:recipientId', async (req, res) => {
   const twiml = new VoiceResponse();
   try {
     const recipientId = Number(req.params.recipientId);
-    const row = db.prepare(
-      `SELECT acr.id, acr.phone, acr.name, ac.script, ac.user_id, ac.voicemail_only,
-              a.name AS agent_name, a.tts_voice
-         FROM agent_call_recipients acr
-         JOIN agent_calls ac ON ac.id = acr.agent_call_id
-         JOIN agents a ON a.id = ac.agent_id
-        WHERE acr.id = ?`
-    ).get(recipientId) as any;
-    if (!row) {
+    const ctxRow = loadAgentCallContext(recipientId);
+    if (!ctxRow) {
       twiml.say('This call cannot be completed.');
       return res.type('text/xml').send(twiml.toString());
     }
-    const voice = row.tts_voice || 'Polly.Joanna-Neural';
-    // Honor a voice opt-out recorded between queue-time and dial-time
-    // (e.g. recipient pressed 9 on a prior call seconds earlier).
-    const optedRow = db.prepare(
-      `SELECT voice_opted_out FROM contacts WHERE user_id = ? AND phone = ?`
-    ).get(row.user_id, row.phone) as any;
-    if (optedRow?.voice_opted_out) {
-      twiml.hangup();
-      return res.type('text/xml').send(twiml.toString());
-    }
+    const { rec, agent } = ctxRow;
+    const callSid = String(req.body.CallSid || '');
+    const { voice, fallback } = resolveVoice({ tts_voice: agent.tts_voice, voice_id: agent.voice_id, user_id: rec.user_id });
+
     // Twilio AnsweredBy values: human, machine_start, machine_end_beep,
     // machine_end_silence, machine_end_other, fax, unknown.
     // - Regular agent call: treat machine* as voicemail, everything else as
-    //   a live human (matches the prior behavior).
+    //   a live human.
     // - voicemail_only: treat ANYTHING that isn't a confirmed human as a
-    //   machine so we don't apologize+hangup on unclassified pickups. Better
-    //   to occasionally leave a voicemail on a fax than to burn a paid call.
+    //   machine so we don't hang up on unclassified pickups.
     const answeredBy = String(req.body.AnsweredBy || '');
-    const voicemailOnly = !!row.voicemail_only;
-    const isMachine = voicemailOnly
-      ? answeredBy !== 'human'
-      : answeredBy.startsWith('machine');
+    const voicemailOnly = !!rec.voicemail_only;
+    const isMachine = voicemailOnly ? answeredBy !== 'human' : answeredBy.startsWith('machine');
 
-    const greetName = row.name ? `, ${row.name}` : '';
-    const intro = `Hi${greetName}, this is ${row.agent_name}. ${row.script}`;
-    // TTS rendering context. cacheKey scopes per recipient + branch so we
-    // don't reuse the human-branch MP3 on the voicemail branch (slightly
-    // different text), and Twilio webhook retries reuse the same MP3 once
-    // it's been rendered the first time.
+    const greetName = rec.name ? `, ${rec.name}` : '';
+    const intro = `Hi${greetName}, this is ${agent.name}. ${rec.script}`;
     const ttsCtx = (label: string) => ({
-      userId: row.user_id as string,
+      userId: rec.user_id as string,
       cacheKey: hashKey(voice, label, intro, String(recipientId)),
     });
-    const optOutPrompt = 'Press 9 if you would like to be removed from our calls. Otherwise, goodbye.';
-    const optOutCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'optout', optOutPrompt) };
-    const goodbyeCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'goodbye', 'Thanks, goodbye.') };
-    const wrongNumberCtx = { userId: row.user_id as string, cacheKey: hashKey(voice, 'wrongnum', 'Sorry, wrong number. Goodbye.') };
-
-    // (Real-time transcription via <Start><Transcription> was removed —
-    // that verb requires Twilio Voice Intelligence to be enabled on the
-    // account. On accounts WITHOUT it, Twilio rejects the TwiML response
-    // and the entire agent call fails. The Live Calls panel falls back
-    // to showing status + duration only until Media Streams is wired
-    // in Phase 4 — see Issue #18.)
+    const goodbyeCtx = { userId: rec.user_id as string, cacheKey: hashKey(voice, 'goodbye', 'Thanks, goodbye.') };
 
     if (voicemailOnly && !isMachine) {
-      // DROP-VOICEMAIL on human pickup: brief apology + hangup. We can't redial
-      // straight to voicemail (Twilio doesn't expose carrier-side RVM), but
-      // the next attempt — or the recipient calling back — will land on
-      // voicemail naturally. The recipient's number is NOT auto-opted-out.
+      // Drop-voicemail mode: hang up on live human pickup. We can't redial
+      // straight to voicemail (Twilio doesn't expose carrier-side RVM); the
+      // next attempt — or the recipient calling back — lands on voicemail.
       twiml.pause({ length: 1 });
-      await speak(twiml, voice, 'Sorry, wrong number. Goodbye.', wrongNumberCtx);
       twiml.hangup();
     } else if (isMachine) {
-      // Voicemail path (always for voicemail-only; fallback for regular
-      // calls when Twilio AMD detects a machine). Just leave the script.
+      // Voicemail path — just leave the script, then hang up.
       twiml.pause({ length: 1 });
-      await speak(twiml, voice, intro, ttsCtx('intro'));
-      await speak(twiml, voice, 'Thanks, goodbye.', goodbyeCtx);
+      await speak(twiml, voice, intro, ttsCtx('intro'), fallback);
+      await speak(twiml, voice, 'Thanks, goodbye.', goodbyeCtx, fallback);
       twiml.hangup();
     } else {
-      // Live human path on a regular agent call: deliver message inside a
-      // Gather so the recipient can press 9 to opt out. Timeout=3 keeps the
-      // call short after the message ends if they don't press anything.
-      const gather = twiml.gather({
-        numDigits: 1,
-        timeout: 3,
-        action: `/api/voice/agent-call-keypress?recipientId=${recipientId}`,
+      // Live human → open a real two-way AI conversation. Seed the script as
+      // the agent's first turn so /voice/agent-call-turn has full context when
+      // the person responds.
+      if (callSid) {
+        db.prepare(
+          `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
+           VALUES (?, ?, ?, 'agent', ?, ?)`
+        ).run(callSid, rec.user_id, rec.agent_id, intro, Date.now());
+        appendCallEvent(callSid, rec.user_id, 'outbound', intro);
+      }
+      twiml.pause({ length: 1 });
+      await speak(twiml, voice, intro, ttsCtx('intro'), fallback);
+      twiml.gather({
+        input: ['speech'] as any,
+        speechTimeout: 'auto',
+        action: `/api/voice/agent-call-turn?recipientId=${recipientId}`,
         method: 'POST',
+        timeout: 7,
       });
-      gather.pause({ length: 1 });
-      await speak(gather, voice, intro, ttsCtx('intro'));
-      gather.pause({ length: 1 });
-      await speak(gather, voice, optOutPrompt, optOutCtx);
+      // No response after the opening → brief closer, then hang up.
+      await speak(twiml, voice, 'Thanks for your time. Take care.', { userId: rec.user_id, cacheKey: hashKey(voice, 'closer') }, fallback);
       twiml.hangup();
     }
     res.type('text/xml').send(twiml.toString());
@@ -523,40 +580,88 @@ voiceRouter.post('/voice/agent-call-twiml/:recipientId', async (req, res) => {
   }
 });
 
-// Recipient pressed a key during the agent's message. "9" = opt out;
-// anything else = just hang up (don't burn a third Twilio request).
-voiceRouter.post('/voice/agent-call-keypress', async (req, res) => {
+// One turn of a live OUTBOUND agent conversation. Mirrors
+// /voice/inbound-agent-turn: rehydrate the transcript from live_call_turns,
+// generate the agent's next line (kept on the campaign script's purpose via
+// the `goal` option), speak it, then re-open a <Gather> for the next turn.
+// Ends on a spoken goodbye, on silence, or at the MAX_TURNS safety bound.
+voiceRouter.post('/voice/agent-call-turn', async (req, res) => {
   const twiml = new VoiceResponse();
   try {
     const recipientId = Number(req.query.recipientId);
-    const digit = String(req.body.Digits || '');
-    if (digit === '9' && recipientId) {
-      // Pull the agent's voice along with the opt-out info so the goodbye
-      // line is in the cloned voice when applicable.
-      const row = db.prepare(
-        `SELECT acr.phone, ac.user_id, a.tts_voice
-           FROM agent_call_recipients acr
-           JOIN agent_calls ac ON ac.id = acr.agent_call_id
-           JOIN agents a ON a.id = ac.agent_id
-          WHERE acr.id = ?`
-      ).get(recipientId) as any;
-      if (row) {
-        setVoiceOptOut(row.user_id, row.phone, true);
-        const voice = row.tts_voice || 'Polly.Joanna-Neural';
-        const text = 'You have been removed from our list. Goodbye.';
-        await speak(twiml, voice, text, {
-          userId: row.user_id,
-          cacheKey: hashKey(voice, 'optout-confirm', text),
-        });
-      }
+    const callSid = String(req.body.CallSid || '');
+    const callerSaid = String(req.body.SpeechResult || '').trim();
+    const ctxRow = loadAgentCallContext(recipientId);
+    if (!ctxRow || !callSid) {
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
     }
+    const { rec, agent } = ctxRow;
+    const { voice, fallback } = resolveVoice({ tts_voice: agent.tts_voice, voice_id: agent.voice_id, user_id: rec.user_id });
+
+    if (callerSaid) {
+      db.prepare(
+        `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
+         VALUES (?, ?, ?, 'caller', ?, ?)`
+      ).run(callSid, rec.user_id, rec.agent_id, callerSaid, Date.now());
+      appendCallEvent(callSid, rec.user_id, 'inbound', callerSaid);
+    }
+
+    const turns = db.prepare(
+      `SELECT role, text FROM live_call_turns WHERE call_sid = ? ORDER BY id ASC`
+    ).all(callSid) as { role: 'caller' | 'agent'; text: string }[];
+
+    // Safety bound only — normal conversations end on goodbye/silence below.
+    const agentTurns = turns.filter((t) => t.role === 'agent').length;
+    if (agentTurns >= MAX_TURNS) {
+      await speak(twiml, voice, 'I have to let you go now. Take care.', { userId: rec.user_id, cacheKey: hashKey(voice, 'goodbye') }, fallback);
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    const said = callerSaid.toLowerCase();
+    const callerGoodbye = /(^|\b)(bye|goodbye|thanks bye|gotta go|i'?ll let you go|talk to you later|take care|not interested)(\b|$)/.test(said);
+
+    const historyWithoutLast = turns.slice(0, callerSaid ? turns.length - 1 : turns.length);
+    let reply = '';
+    try {
+      reply = await generateLiveVoiceReply(agent, historyWithoutLast, callerSaid || '...', { goal: rec.script });
+    } catch (e) {
+      log.error('voice/agent-call-turn', 'reply generation failed', e);
+      reply = 'I\'m sorry, I missed that. Could you say it again?';
+    }
+    if (!reply) reply = 'I\'m sorry, I didn\'t catch that. Could you say it again?';
+
+    db.prepare(
+      `INSERT INTO live_call_turns (call_sid, user_id, agent_id, role, text, created_at)
+       VALUES (?, ?, ?, 'agent', ?, ?)`
+    ).run(callSid, rec.user_id, rec.agent_id, reply, Date.now());
+    appendCallEvent(callSid, rec.user_id, 'outbound', reply);
+
+    const ctx = { userId: rec.user_id, cacheKey: hashKey(voice, 'turn', String(turns.length), reply.slice(0, 40)) };
+    await speak(twiml, voice, reply, ctx, fallback);
+
+    if (callerGoodbye) {
+      twiml.hangup();
+      return res.type('text/xml').send(twiml.toString());
+    }
+
+    twiml.gather({
+      input: ['speech'] as any,
+      speechTimeout: 'auto',
+      action: `/api/voice/agent-call-turn?recipientId=${recipientId}`,
+      method: 'POST',
+      timeout: 8,
+    });
+    // Caller went quiet → graceful close.
+    await speak(twiml, voice, 'Alright, I\'ll let you go. Take care.', { userId: rec.user_id, cacheKey: hashKey(voice, 'silent-close') }, fallback);
     twiml.hangup();
-    res.type('text/xml').send(twiml.toString());
   } catch (e) {
-    log.error('voice/agent-call-keypress', 'handler threw', e);
+    log.error('voice/agent-call-turn', 'handler threw', e);
+    twiml.say('Sorry, something went wrong. Goodbye.');
     twiml.hangup();
-    res.type('text/xml').send(twiml.toString());
   }
+  res.type('text/xml').send(twiml.toString());
 });
 
 // Twilio real-time transcription callback (configured in TwiML via
