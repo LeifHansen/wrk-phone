@@ -53,7 +53,6 @@ export function AgentCalls() {
   // picks up, the call apologizes briefly and hangs up — the user can then
   // try again later (or the recipient calls back to voicemail naturally).
   const [voicemailOnly, setVoicemailOnly] = useState(false);
-  const [consent, setConsent] = useState(false);
   const [busy, setBusy] = useState(false);
   const [openDetailId, setOpenDetailId] = useState<number | null>(null);
   const [detail, setDetail] = useState<{ campaign: any; recipients: any[] } | null>(null);
@@ -102,7 +101,6 @@ export function AgentCalls() {
       setName(''); setAgentId(null); setScript('');
       setRecipientsRaw(''); setTarget('all'); setSegId(null);
       setVoicemailOnly(false);
-      setConsent(false);
       load();
       toast(`Draft created (#${out.id}). Click it to review and send.`, 'ok');
     } catch (e: any) { toast(e.message, 'err'); }
@@ -110,13 +108,9 @@ export function AgentCalls() {
   };
 
   const send = async (id: number) => {
-    if (!consent) {
-      toast('You must check the TCPA consent box to send.', 'err');
-      return;
-    }
     if (!confirm('Place automated calls to every recipient now? This cannot be undone.')) return;
     try {
-      await api.sendAgentCall(id, true);
+      await api.sendAgentCall(id);
       toast('Calls queued. Watch live status below.', 'ok');
       load();
       // Re-fetch the open detail
@@ -139,14 +133,6 @@ export function AgentCalls() {
             unless there's at least one initiated/ringing/in-progress call,
             so it's invisible on idle accounts. */}
         <LiveCalls />
-        <div className="routing-hero" style={{ background: 'var(--yellow)', color: 'var(--ink)' }}>
-          <b>⚖️ TCPA notice</b>
-          <p style={{ margin: '6px 0 0' }}>
-            Automated voice calls require <b>prior express written consent</b> in the US.
-            You'll acknowledge consent per send. Recipients can press <code>9</code> to opt out;
-            their number is then permanently excluded from future agent calls.
-          </p>
-        </div>
 
         {showNew && (
           <div className="cond-card" style={{ display: 'grid', gap: 12, marginBottom: 18 }}>
@@ -250,19 +236,6 @@ export function AgentCalls() {
 
             {openDetailId === c.id && (
               <div style={{ marginTop: 14, paddingTop: 14, borderTop: '2px solid var(--surface-2)' }}>
-                {c.status === 'draft' && (
-                  <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 14, padding: 12,
-                                  background: 'var(--yellow)', border: '2px solid var(--ink)', borderRadius: 8 }}>
-                    <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)}
-                      style={{ marginTop: 4, width: 18, height: 18 }} />
-                    <span style={{ fontSize: 13, lineHeight: 1.45 }}>
-                      <b>I confirm I have prior express written consent</b> from each
-                      recipient on this list to receive automated voice calls (TCPA, 47 U.S.C. § 227).
-                      I understand this acknowledgment is logged with my IP and user-agent.
-                    </span>
-                  </label>
-                )}
-
                 {detail && detail.campaign.id === c.id ? (
                   <div>
                     <div className="sa-label" style={{ marginBottom: 8 }}>RECIPIENTS ({detail.recipients.length})</div>

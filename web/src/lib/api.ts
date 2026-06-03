@@ -159,9 +159,8 @@ export const api = {
       `/api/agent-calls/live/${encodeURIComponent(sid)}`),
   getAgentCall: (id: number) => req<{ campaign: any; recipients: any[] }>(`/api/agent-calls/${id}`),
   createAgentCall: (payload: any) => req<{ id: number }>('/api/agent-calls', { method: 'POST', body: JSON.stringify(payload) }),
-  // consent must be true — server enforces TCPA acknowledgement before dialing.
-  sendAgentCall: (id: number, consent: boolean) =>
-    req(`/api/agent-calls/${id}/send`, { method: 'POST', body: JSON.stringify({ consent }) }),
+  sendAgentCall: (id: number) =>
+    req(`/api/agent-calls/${id}/send`, { method: 'POST', body: JSON.stringify({}) }),
   // contacts
   listContacts: (q?: string, segmentId?: number) => {
     const p = new URLSearchParams();

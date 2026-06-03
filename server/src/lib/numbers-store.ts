@@ -231,14 +231,17 @@ export function ownerForNumber(e164: string): string | null {
  *     number alone is ambiguous. Disambiguate by the contact: if exactly one
  *     account already has a conversation with this peer ON THIS number, the
  *     inbound is a reply to that thread → route there.
- *  3. UNATTRIBUTABLE → null. Cold inbound (no prior thread) or a collision
- *     (multiple accounts both have a thread with this contact on a shared
- *     number) can't be assigned to anyone — per product decision the inbound
- *     is dropped. Callers MUST treat null as "ignore this webhook."
+ *  3. SINGLE-LINE FALLBACK → OWNER_ID. In the current single shared line model
+ *     (see CLAUDE.md) every Twilio number belongs to the one owner, so a cold
+ *     inbound (a brand-new contact texting/calling a number with no prior
+ *     thread) MUST land in the owner's inbox — otherwise new leads get silently
+ *     dropped and the agent never replies. We only take this fallback when the
+ *     line genuinely isn't multi-tenant: if two or more distinct accounts own
+ *     active numbers, a cold inbound on a shared number is ambiguous and we
+ *     drop it (return null) rather than misattribute it.
  *
  * Existing conversations are backfilled with our_number at migration time, so
- * a reply to an established thread always hits step 2 — only genuinely cold
- * inbound returns null.
+ * a reply to an established thread always hits step 2.
  */
 export function resolveInboundOwner(toNumber: string, fromPeer?: string): string | null {
   const dialed = (toNumber || '').trim();
@@ -253,8 +256,16 @@ export function resolveInboundOwner(toNumber: string, fromPeer?: string): string
        WHERE our_number = ? AND peer_phone = ? AND user_id IS NOT NULL`
     ).all(dialed, peer) as { user_id: string }[];
     if (matches.length === 1) return matches[0].user_id;
+    if (matches.length > 1) return null; // genuine collision — ambiguous, drop
   }
-  // 3. Cold inbound or collision — unattributable, drop it.
+  // 3. Single-line fallback: route cold inbound to the owner unless the system
+  //    is actually serving multiple number-owning tenants.
+  const owners = db.prepare(
+    `SELECT COUNT(DISTINCT user_id) AS n FROM account_numbers
+     WHERE status = 'active' AND user_id IS NOT NULL`
+  ).get() as { n: number };
+  if ((owners?.n || 0) <= 1) return OWNER_ID;
+  // Multi-tenant + unattributable cold inbound — can't assign it, drop it.
   return null;
 }
 
