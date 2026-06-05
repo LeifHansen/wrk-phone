@@ -332,6 +332,12 @@ export function AgentDetail() {
   );
 }
 
+// mm:ss for the live recording timer.
+function fmtSecs(s: number): string {
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, '0')}`;
+}
+
 function VoicePicker({ currentId, currentName, onPick }: {
   // Selection state — currentId is the source of truth for custom voices
   // (unique per row), currentName is used to highlight a preset (presets
@@ -348,8 +354,27 @@ function VoicePicker({ currentId, currentName, onPick }: {
   const [style, setStyle] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // In-app mic recording. Preferred over file upload — the user records a
+  // 15–30s sample right here and we POST the captured audio to the same
+  // /api/voices/upload endpoint a file upload uses (a recorded Blob is wrapped
+  // in a File). recordedBlobRef holds the finished take pending Save/Discard.
+  const MAX_RECORD_SECS = 60;
+  const [recording, setRecording] = useState(false);
+  const [recordSecs, setRecordSecs] = useState(0);
+  const [recordedUrl, setRecordedUrl] = useState<string | null>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const streamRef = useRef<MediaStream | null>(null);
+  const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const recordedBlobRef = useRef<Blob | null>(null);
+
   const load = () => api.listVoices().then(setData).catch(() => {});
   useEffect(() => { load(); }, []);
+  // Release the mic + any object URL if the user navigates away mid-take.
+  useEffect(() => () => {
+    if (timerRef.current) clearInterval(timerRef.current);
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+  }, []);
 
   const create = async () => {
     if (!name.trim()) return;
@@ -362,36 +387,17 @@ function VoicePicker({ currentId, currentName, onPick }: {
     finally { setCreating(false); }
   };
 
-  // Voice-sample upload. The user picks an audio file (mp3/wav/m4a) or a
-  // short video clip; we extract the audio bytes and POST them as raw body.
-  // If the server has a cloning provider wired (ELEVENLABS_API_KEY) we get
-  // back a real cloned voice; otherwise it falls back to a Polly preset and
-  // the sample is saved for later use.
-  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    // Name is auto-filled from the filename if the user didn't type one —
-    // the old "Name your voice first" toast was a needless blocker.
-    let voiceName = name.trim();
-    if (!voiceName) {
-      voiceName = (file.name.replace(/\.[^.]+$/, '') || 'My voice').slice(0, 40);
-    }
+  // Shared upload path for BOTH a picked file and an in-app recording. If the
+  // server has a cloning provider wired (ELEVENLABS_API_KEY) we get back a
+  // real cloned voice; otherwise it saves the sample and falls back to a Polly
+  // preset — the voice still works on calls and auto-upgrades when a key lands.
+  const uploadSample = async (file: File, fallbackName: string) => {
     // Match the server cap (server/src/routes/voices.ts MAX_SAMPLE_BYTES).
-    // Bumped to 25 MB to cover short iPhone .mov clips — the server cap was
-    // bumped in lockstep, so we don't accept-then-reject with a confusing 413.
     if (file.size > 25 * 1024 * 1024) {
       toast('Sample is too big — keep it under 25 MB.', 'err');
-      e.target.value = '';
       return;
     }
-    // Some browsers leave `file.type` blank for certain m4a/mov files. We
-    // still accept those — the server infers the extension from the mime
-    // or falls back to mp3, and ElevenLabs auto-detects format.
-    if (file.type && !/^(audio|video)\//.test(file.type)) {
-      toast('Pick an audio or video file.', 'err');
-      e.target.value = '';
-      return;
-    }
+    const voiceName = (name.trim() || fallbackName || 'My voice').slice(0, 40);
     setUploading(true);
     try {
       const v = await api.uploadVoiceSample(file, voiceName, style.trim());
@@ -399,15 +405,112 @@ function VoicePicker({ currentId, currentName, onPick }: {
       toast(v.note, v.cloned ? 'ok' : 'info');
       setName(''); setStyle(''); load();
     } catch (err: any) {
-      // Surface the actual server response (status + body) — the previous
-      // toast often just said "500" with no clue why cloning failed.
-      const raw = String(err?.message || err);
-      toast(`Voice upload failed — ${raw}`, 'err');
-    }
-    finally {
+      // Surface the actual server response (status + body) — a bare "500" with
+      // no clue why cloning failed is useless.
+      toast(`Voice upload failed — ${String(err?.message || err)}`, 'err');
+    } finally {
       setUploading(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
     }
+  };
+
+  // File-upload path. Name auto-fills from the filename if the user didn't type
+  // one. Some browsers leave file.type blank for m4a/mov — we still accept it;
+  // the server infers the extension.
+  const onFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.type && !/^(audio|video)\//.test(file.type)) {
+      toast('Pick an audio or video file.', 'err');
+      e.target.value = '';
+      return;
+    }
+    const fallback = (file.name.replace(/\.[^.]+$/, '') || 'My voice').slice(0, 40);
+    await uploadSample(file, fallback);
+    if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  // Pick a recording container the browser actually supports. Safari only does
+  // audio/mp4; Chrome/Firefox prefer audio/webm. The server maps each mime to
+  // a file extension and ElevenLabs auto-detects the format.
+  const pickRecordMime = (): string => {
+    if (typeof MediaRecorder === 'undefined') return '';
+    for (const m of ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/ogg']) {
+      if (MediaRecorder.isTypeSupported(m)) return m;
+    }
+    return '';
+  };
+
+  const stopMicStream = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+    streamRef.current?.getTracks().forEach((t) => t.stop());
+    streamRef.current = null;
+  };
+
+  const startRecording = async () => {
+    if (typeof MediaRecorder === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
+      toast('Recording isn’t supported in this browser — upload a file instead.', 'err');
+      return;
+    }
+    // Clear any prior take before starting a new one (also handles Re-record).
+    if (recordedUrl) { URL.revokeObjectURL(recordedUrl); setRecordedUrl(null); }
+    recordedBlobRef.current = null;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      streamRef.current = stream;
+      const mime = pickRecordMime();
+      const rec = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+      chunksRef.current = [];
+      rec.ondataavailable = (ev) => { if (ev.data.size > 0) chunksRef.current.push(ev.data); };
+      rec.onstop = () => {
+        const type = rec.mimeType || mime || 'audio/webm';
+        const blob = new Blob(chunksRef.current, { type });
+        recordedBlobRef.current = blob;
+        setRecordedUrl(URL.createObjectURL(blob));
+        stopMicStream();
+        setRecording(false);
+      };
+      mediaRecorderRef.current = rec;
+      rec.start();
+      setRecording(true);
+      setRecordSecs(0);
+      timerRef.current = setInterval(() => {
+        setRecordSecs((s) => {
+          const next = s + 1;
+          if (next >= MAX_RECORD_SECS) stopRecording(); // auto-stop at the cap
+          return next;
+        });
+      }, 1000);
+    } catch (err: any) {
+      stopMicStream();
+      setRecording(false);
+      toast(
+        err?.name === 'NotAllowedError'
+          ? 'Microphone permission denied. Allow mic access, then try again.'
+          : `Couldn’t start recording — ${err?.message || err}`,
+        'err',
+      );
+    }
+  };
+
+  const stopRecording = () => {
+    const rec = mediaRecorderRef.current;
+    if (rec && rec.state !== 'inactive') rec.stop();
+  };
+
+  const saveRecording = async () => {
+    const blob = recordedBlobRef.current;
+    if (!blob) return;
+    const ext = blob.type.includes('mp4') ? 'm4a' : blob.type.includes('ogg') ? 'ogg' : 'webm';
+    const file = new File([blob], `recording.${ext}`, { type: blob.type || 'audio/webm' });
+    await uploadSample(file, 'My voice');
+    discardRecording();
+  };
+
+  const discardRecording = () => {
+    if (recordedUrl) URL.revokeObjectURL(recordedUrl);
+    setRecordedUrl(null);
+    recordedBlobRef.current = null;
+    setRecordSecs(0);
   };
 
   if (!data) return <p className="hint">Loading voices…</p>;
@@ -444,17 +547,46 @@ function VoicePicker({ currentId, currentName, onPick }: {
         <button className="btn pink" onClick={create} disabled={creating || !name.trim()}>
           {creating ? '…' : 'Create voice'}
         </button>
+      </div>
+
+      {/* Voice sample — record right here (preferred), or upload a file. */}
+      <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+        {!recording ? (
+          <button className="btn" style={{ background: 'var(--red)', color: '#fff' }}
+            onClick={startRecording} disabled={uploading || !!recordedUrl}
+            title="Record a 15–30s voice sample with your mic to clone.">
+            🔴 Record sample
+          </button>
+        ) : (
+          <button className="btn" style={{ background: 'var(--ink)', color: '#fff' }} onClick={stopRecording}>
+            ⏹ Stop · {fmtSecs(recordSecs)}
+          </button>
+        )}
+        <span style={{ color: 'var(--muted)', fontSize: 12 }}>or</span>
         <button className="btn lime" onClick={() => fileInputRef.current?.click()}
-          disabled={uploading}
-          title="Upload a 15–30s clean voice sample (mp3 / wav / m4a / mp4) to clone. Name auto-fills from the filename if blank.">
-          {uploading ? 'Uploading…' : '🎙️ Upload sample'}
+          disabled={uploading || recording}
+          title="Upload a 15–30s clean voice sample (mp3 / wav / m4a / mp4) to clone.">
+          {uploading ? 'Uploading…' : '🎙️ Upload file'}
         </button>
         <input ref={fileInputRef} type="file" accept="audio/*,video/*"
           onChange={onFile} style={{ display: 'none' }} />
       </div>
+
+      {/* Preview the take before committing it. */}
+      {recordedUrl && !recording && (
+        <div style={{ display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <audio controls src={recordedUrl} style={{ height: 36, maxWidth: '100%' }} />
+          <button className="btn pink" onClick={saveRecording} disabled={uploading}>
+            {uploading ? 'Saving…' : '✓ Save & clone'}
+          </button>
+          <button className="btn ghost" onClick={startRecording} disabled={uploading}>Re-record</button>
+          <button className="btn ghost" onClick={discardRecording} disabled={uploading}>Discard</button>
+        </div>
+      )}
+
       <p className="hint" style={{ marginTop: 8 }}>
         Tip: 15–30 seconds of clean speech, single speaker, low background noise.
-        Don't upload a voice you don't have rights to use.
+        Record straight from your mic or upload a file. Don't use a voice you don't have rights to.
       </p>
     </div>
   );
