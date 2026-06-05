@@ -238,7 +238,7 @@ voiceRouter.post('/voice/inbound-agent', async (req, res) => {
     const ctx = { userId: owner, cacheKey: hashKey(voice, 'opening', opening) };
     await speak(twiml, voice, opening, ctx, fallback);
     // Open a Gather. speechTimeout='auto' lets Twilio detect end of speech.
-    const gather = twiml.gather({
+    twiml.gather({
       input: ['speech'] as any,
       speechTimeout: 'auto',
       action: `/api/voice/inbound-agent-turn?agentId=${agent.id}`,
@@ -338,7 +338,7 @@ voiceRouter.post('/voice/inbound-agent-turn', async (req, res) => {
     }
 
     // Next turn — another Gather.
-    const gather = twiml.gather({
+    twiml.gather({
       input: ['speech'] as any,
       speechTimeout: 'auto',
       action: `/api/voice/inbound-agent-turn?agentId=${agent.id}`,
@@ -662,51 +662,6 @@ voiceRouter.post('/voice/agent-call-turn', async (req, res) => {
     twiml.hangup();
   }
   res.type('text/xml').send(twiml.toString());
-});
-
-// Twilio real-time transcription callback (configured in TwiML via
-// <Start><Transcription statusCallbackUrl=…/>). Twilio posts partial
-// and final transcript chunks as the call progresses. We persist each
-// chunk to live_call_events so the Live Calls panel can replay/poll.
-voiceRouter.post('/voice/agent-call-transcript', (req, res) => {
-  try {
-    const sid = String(req.body.CallSid || '');
-    if (!sid) return res.sendStatus(204);
-    // Track is 'inbound_track' (caller / callee) or 'outbound_track' (agent
-    // side). Normalize to the friendlier UI labels.
-    const track = String(req.body.Track || '').toLowerCase();
-    const source =
-      track.includes('inbound') ? 'inbound'
-      : track.includes('outbound') ? 'outbound'
-      : 'system';
-    const text = String(
-      req.body.TranscriptionData
-        ? (() => { try { return JSON.parse(req.body.TranscriptionData).transcript || ''; } catch { return ''; } })()
-        : (req.body.TranscriptionText || ''),
-    ).trim();
-    if (!text) return res.sendStatus(204);
-    const isFinal = String(req.body.Final || req.body.IsFinal || 'false').toLowerCase() === 'true' ? 1 : 0;
-    // Look up the owning user via the recipient row so the live feed can
-    // filter to the right account.
-    const recipient = db.prepare(
-      `SELECT ac.user_id FROM agent_call_recipients acr
-         JOIN agent_calls ac ON ac.id = acr.agent_call_id
-        WHERE acr.twilio_sid = ?`
-    ).get(sid) as { user_id?: string } | undefined;
-    const userId = recipient?.user_id || 'unknown';
-    // Sequence — monotonic per call, used by the client to dedupe and to
-    // request only NEW events on a poll.
-    const last = db.prepare(
-      `SELECT COALESCE(MAX(sequence), 0) AS m FROM live_call_events WHERE call_sid = ?`
-    ).get(sid) as { m: number };
-    db.prepare(
-      `INSERT INTO live_call_events (call_sid, user_id, sequence, source, text, is_final, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`
-    ).run(sid, userId, (last?.m || 0) + 1, source, text, isFinal, Date.now());
-  } catch (e) {
-    log.error('voice/agent-call-transcript', 'handler threw', e);
-  }
-  res.sendStatus(204);
 });
 
 // Twilio call-lifecycle callback. We get one POST per status change

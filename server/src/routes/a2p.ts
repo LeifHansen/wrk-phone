@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db, hasActiveSubscription } from '../lib/db.js';
-import { twilioClient, twilioConfig } from '../lib/twilio.js';
+import { twilioClient } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { openai, OPENAI_MODEL as MODEL } from '../lib/openai.js';
 import { OWNER_ID as USER, getUserId } from '../lib/auth.js';

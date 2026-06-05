@@ -268,11 +268,11 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_templates_user ON templates(user_id, updated_at DESC);
 
   -- Outbound AI voice calls. The "Call with Agent" feature: pick an agent,
-  -- write a script, pick recipients, dial them automatically and have the
-  -- agent deliver the message in its voice. Mirrors the campaigns flow.
-  -- TCPA NOTE: the create endpoint requires explicit consent acknowledgement
-  -- before sending; consent timestamp + IP/user-agent are stored here for
-  -- the audit trail you'll want if a recipient ever complains.
+  -- write a script, pick recipients, dial them automatically. On a live human
+  -- the agent holds a two-way conversation (the script is its opener); on a
+  -- machine it leaves the script as voicemail. Mirrors the campaigns flow.
+  -- NOTE: the consent_acknowledged* columns are legacy (an earlier in-app TCPA
+  -- gate, since removed). Kept for historical audit rows; no longer written.
   CREATE TABLE IF NOT EXISTS agent_calls (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL,
@@ -369,10 +369,10 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_live_call_turns_sid ON live_call_turns(call_sid, id);
 
-  -- Real-time transcription events from Twilio's <Start><Transcription>
-  -- verb. Each row is a partial-or-final transcript chunk attributed to
-  -- one of the call legs. The Live Calls panel reads from here in real
-  -- time so the user can watch the conversation unfold.
+  -- Live agent-call feed. Each row is one spoken turn (the agent's line or the
+  -- caller's recognized speech) written by the voice handlers as a call
+  -- progresses. The Live Calls panel reads from here in real time so the user
+  -- can watch the conversation unfold.
   CREATE TABLE IF NOT EXISTS live_call_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     call_sid TEXT NOT NULL,            -- Twilio CallSid (matches recipient row)
@@ -948,16 +948,9 @@ export function isOptedOut(userId: string, phone: string): boolean {
 }
 
 // ---- Voice opt-out (separate from SMS opt-out) ----
-// TCPA treats SMS and voice as distinct channels. A recipient who pressed
-// "9" during an agent call (or a sender we manually flagged) gets recorded
-// here and is excluded from future automated call campaigns regardless of
-// their SMS opt-in state.
-export function setVoiceOptOut(userId: string, phone: string, optedOut: boolean) {
-  db.prepare(
-    `INSERT INTO contacts (user_id, phone, name, voice_opted_out) VALUES (?, ?, '', ?)
-     ON CONFLICT(user_id, phone) DO UPDATE SET voice_opted_out = ?`
-  ).run(userId, phone, optedOut ? 1 : 0, optedOut ? 1 : 0);
-}
+// Voice and SMS are distinct channels, so a contact flagged voice_opted_out is
+// excluded from automated call campaigns regardless of SMS opt-in state. Read
+// as a defensive pre-dial filter in the agent-calls send path.
 export function isVoiceOptedOut(userId: string, phone: string): boolean {
   const r = db.prepare(`SELECT voice_opted_out FROM contacts WHERE user_id = ? AND phone = ?`).get(userId, phone) as any;
   return !!r?.voice_opted_out;
