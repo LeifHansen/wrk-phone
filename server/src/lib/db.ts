@@ -799,6 +799,14 @@ export function setActiveNumber(userId: string, number: string, sid: string) {
   ).run(number, sid, Date.now(), userId);
 }
 
+/** Drop the account back to the shared default line (e.g. after its purchased
+ *  number is released on subscription cancel). */
+export function clearActiveNumber(userId: string) {
+  db.prepare(
+    `UPDATE app_settings SET active_number = NULL, active_number_sid = NULL, updated_at = ? WHERE user_id = ?`
+  ).run(Date.now(), userId);
+}
+
 // The number to send/call FROM: the user's provisioned number, else env default.
 export function getActiveNumber(userId: string): string {
   const s = getAppSettings(userId);

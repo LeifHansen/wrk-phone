@@ -1,6 +1,9 @@
 import { Router, type Request, type Response } from 'express';
 import Stripe from 'stripe';
 import { getCredits, addCredits, getLedger, recordSubscription, setSubscriptionStatusByStripeId } from '../lib/db.js';
+import { numberForStripeSub, ownerForNumber } from '../lib/numbers-store.js';
+import { purchaseAndProvision, releaseNumberForStripeSub } from './numbers.js';
+import { log } from '../lib/log.js';
 
 export const creditsRouter = Router();
 import { OWNER_ID as USER } from '../lib/auth.js';
@@ -89,7 +92,7 @@ creditsRouter.post('/credits/checkout', async (req, res) => {
 
 // Stripe webhook — credits the account after a confirmed payment.
 // Mounted in index.ts with express.raw() BEFORE express.json (signature needs raw body).
-export function stripeWebhookHandler(req: Request, res: Response) {
+export async function stripeWebhookHandler(req: Request, res: Response) {
   if (!stripe) return res.status(503).send('stripe not configured');
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
   // STRIPE_WEBHOOK_INSECURE is a DEV-ONLY escape hatch. Hard-refuse it in
@@ -125,12 +128,40 @@ export function stripeWebhookHandler(req: Request, res: Response) {
     if (credits > 0) addCredits(uid, credits, 'topup', { stripeSession: s.id, packageId: s.metadata?.packageId });
     // Subscription checkout (numbers $2/mo, A2P line $10/mo) also lands here.
     if (s.mode === 'subscription' && s.metadata?.plan) {
-      recordSubscription(uid, s.metadata.plan, s.metadata.ref || null, 'active',
-        typeof s.subscription === 'string' ? s.subscription : undefined);
+      const stripeSubId = typeof s.subscription === 'string' ? s.subscription : undefined;
+      recordSubscription(uid, s.metadata.plan, s.metadata.ref || null, 'active', stripeSubId);
+      // Paid number purchase: buy + provision the line now that payment is
+      // real. Guarded for Stripe's at-least-once delivery — if this sub (or
+      // the exact number) is already fulfilled, don't buy a second number.
+      if (s.metadata.plan === 'number' && s.metadata.ref) {
+        const alreadyFulfilled =
+          (stripeSubId && numberForStripeSub(stripeSubId)) ||
+          ownerForNumber(s.metadata.ref) === uid;
+        if (!alreadyFulfilled) {
+          try {
+            const r = await purchaseAndProvision(uid, s.metadata.ref, {
+              makeDefault: s.metadata.makeDefault !== '0',
+              stripeSubId: stripeSubId || null,
+            });
+            log.info('credits/webhook', `number purchase fulfilled: ${r.phoneNumber} for ${uid}`);
+          } catch (e: any) {
+            // Don't 4xx/5xx — Stripe would retry, and a retry can't fix an
+            // unavailable number but CAN double-purchase a half-fulfilled
+            // one. Log loudly for manual follow-up instead.
+            log.error('credits/webhook', `number purchase FAILED for ${uid} (${s.metadata.ref}) — paid but not provisioned, needs manual follow-up`, e);
+          }
+        }
+      }
     }
   } else if (event.type === 'customer.subscription.deleted') {
     const sub = event.data.object as Stripe.Subscription;
     setSubscriptionStatusByStripeId(sub.id, 'canceled');
+    // Cancel → release: stop paying Twilio for a line nobody is paying us for.
+    try {
+      await releaseNumberForStripeSub(sub.id);
+    } catch (e: any) {
+      log.error('credits/webhook', `number release failed for sub ${sub.id}`, e);
+    }
   } else if (event.type === 'customer.subscription.updated') {
     const sub = event.data.object as Stripe.Subscription;
     setSubscriptionStatusByStripeId(sub.id, sub.status === 'active' ? 'active' : sub.status);

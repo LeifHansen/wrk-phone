@@ -253,8 +253,11 @@ export const api = {
       `/api/numbers/search?${q.toString()}`
     );
   },
+  // With Stripe configured the server returns { url } — redirect there to pay
+  // ($2 setup + $2/mo); the number is provisioned by the webhook after
+  // checkout. Without Stripe (dev) it returns the provisioned number directly.
   buyNumber: (phoneNumber: string) =>
-    req<{ ok: boolean; number: string; attachedToService: boolean; warnings: string[] }>(
+    req<{ ok: boolean; url?: string | null; number?: string; attachedToService?: boolean; warnings?: string[]; note?: string }>(
       '/api/numbers/buy', { method: 'POST', body: JSON.stringify({ phoneNumber }) }
     ),
   activeNumber: () =>
@@ -324,7 +327,7 @@ export const api = {
   claimNumber: () => req<{ ok: boolean; number: string; sid: string; alreadyHad: boolean }>(
     '/api/numbers/claim', { method: 'POST' }),
   buyAdditional: (phoneNumber: string) =>
-    req<{ ok: boolean; number: string; monthly: number; warnings: string[] }>(
+    req<{ ok: boolean; url?: string | null; number?: string; monthly?: number; warnings?: string[]; note?: string }>(
       '/api/numbers/buy-additional', { method: 'POST', body: JSON.stringify({ phoneNumber }) }),
   // A2P 10DLC
   a2pDraft: (businessDescription: string) =>

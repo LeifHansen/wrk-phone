@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
 import { api } from '../lib/api';
 import { toast } from '../components/Toast';
 
@@ -13,8 +12,6 @@ type Found = { phoneNumber: string; friendlyName: string; locality: string; regi
 export function Numbers() {
   const [data, setData] = useState<any>(null);
   const [plans, setPlans] = useState<any>(null);
-  const [hasBusinessLine, setHasBusinessLine] = useState(false);
-  const [subscribing, setSubscribing] = useState(false);
 
   // search/buy state
   const [areaCode, setAreaCode] = useState('');
@@ -24,36 +21,31 @@ export function Numbers() {
 
   const load = () => {
     api.listNumbers().then(setData).catch(() => {});
-    api.billingSubs().then((b) => {
-      setPlans(b.plans);
-      // EITHER tier unlocks number purchase — server-side gating in
-      // numbers.ts already allows both, this client check had been left
-      // hard-coded to 'a2p' so sole-prop subscribers still saw the upsell.
-      const sub = (b.subscriptions || []).find(
-        (s: any) =>
-          (s.plan === 'a2p' || s.plan === 'sole_prop') &&
-          (s.status === 'active' || s.status === 'dev'),
-      );
-      setHasBusinessLine(!!sub);
-    }).catch(() => {});
+    api.billingSubs().then((b) => setPlans(b.plans)).catch(() => {});
   };
   useEffect(load, []);
 
-  const mine = data?.numbers?.[0];
-  const a2p = plans?.a2p;
+  // Returning from Stripe checkout. Success means payment cleared — the
+  // webhook provisions the number moments later, so refresh again shortly
+  // instead of making the user reload by hand.
+  useEffect(() => {
+    const q = new URLSearchParams(window.location.search);
+    const purchase = q.get('purchase');
+    if (!purchase) return;
+    window.history.replaceState({}, '', window.location.pathname);
+    if (purchase === 'success') {
+      toast('Payment received — setting up your number…', 'info');
+      const t = setTimeout(load, 4000);
+      return () => clearTimeout(t);
+    }
+    if (purchase === 'canceled') toast('Checkout canceled — no charge.', 'info');
+  }, []);
 
-  const startSubscribe = async () => {
-    setSubscribing(true);
-    try {
-      const r = await api.subscribe('a2p');
-      if (r.url) { window.location.href = r.url; return; }
-      // No-Stripe dev fallback — the plan is recorded immediately.
-      toast(r.note || 'Business Line activated.', 'info');
-      load();
-    } catch (e: any) {
-      toast(e.message || 'Could not start checkout', 'err');
-    } finally { setSubscribing(false); }
-  };
+  const mine = data?.numbers?.[0];
+  const numberPlan = plans?.number;
+  const priceLine = numberPlan
+    ? `$${numberPlan.monthly}/mo${numberPlan.setupFee ? ` + $${numberPlan.setupFee} one-time setup` : ''}`
+    : '$2/mo + $2 one-time setup';
 
   const search = async () => {
     const ac = areaCode.trim();
@@ -71,8 +63,11 @@ export function Numbers() {
   const buy = async (phoneNumber: string) => {
     setBuying(phoneNumber);
     try {
-      await api.buyNumber(phoneNumber);
-      toast(`${pretty(phoneNumber)} is now your line.`, 'info');
+      const r = await api.buyNumber(phoneNumber);
+      // Paid flow: hand off to Stripe checkout; the webhook finishes the
+      // purchase + campaign assignment after payment.
+      if (r.url) { window.location.href = r.url; return; }
+      toast(`${pretty(r.number || phoneNumber)} is now your line.`, 'info');
       setResults(null); setAreaCode('');
       load();
     } catch (e: any) {
@@ -106,79 +101,49 @@ export function Numbers() {
           )}
         </div>
 
-        {!hasBusinessLine ? (
-          // ─── Upsell: two tiers, both unlock buying your own number ───
-          <div className="cond-card">
-            <h3 style={{ margin: '0 0 6px' }}>Want your own local number?</h3>
-            <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
-              Pick a registered line. Both tiers unlock buying your own local
-              number with carrier-grade deliverability. The shared toll-free
-              pool stays free for low-volume / pay-as-you-go use.
-            </p>
-            <div style={{ display: 'grid', gap: 10, marginBottom: 14 }}>
-              <div style={{ background: 'var(--surface-2)', border: '2px solid var(--ink)', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700 }}>Sole Proprietor — $5/mo + $5 setup</div>
-                <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
-                  Cheaper. Best for solos. ~3,000 msgs/day. One-time mobile-OTP
-                  verification step in Twilio Console after checkout.
-                </div>
-              </div>
-              <div style={{ background: 'var(--lime)', border: '2px solid var(--ink)', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontWeight: 700 }}>Business Line — $10/mo + $15 setup</div>
-                <div style={{ fontSize: 12, color: 'var(--ink)', marginTop: 4 }}>
-                  Recommended. For LLC/corp with an EIN. Fully automated
-                  registration. ~200,000 msgs/day. Best US carrier deliverability.
-                </div>
-              </div>
-            </div>
-            <Link to="/a2p" className="btn lg" style={{ textDecoration: 'none', display: 'inline-block' }}>
-              Pick a tier →
-            </Link>
+        {/* ─── Search + buy a dedicated local number ─── */}
+        <div className="cond-card">
+          <h3 style={{ margin: '0 0 6px' }}>Get your own number — {priceLine}</h3>
+          <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
+            Search by area code and pick a local number. It joins our registered
+            marketing campaign automatically — full carrier deliverability, no
+            registration steps — and becomes your sending line.
+          </p>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
+            <input
+              className="input"
+              placeholder="Area code (e.g. 206)"
+              inputMode="numeric"
+              maxLength={3}
+              value={areaCode}
+              onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, ''))}
+              onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
+              style={{ flex: 1 }}
+            />
+            <button className="btn" onClick={search} disabled={searching}>
+              {searching ? 'Searching…' : 'Search'}
+            </button>
           </div>
-        ) : (
-          // ─── Unlocked: search + buy a local number ───
-          <div className="cond-card">
-            <h3 style={{ margin: '0 0 6px' }}>Get your own number</h3>
-            <p style={{ color: 'var(--muted)', fontSize: 13, margin: '0 0 12px' }}>
-              Search by area code and pick a local 10DLC number. It joins your
-              registered campaign automatically.
-            </p>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-              <input
-                className="input"
-                placeholder="Area code (e.g. 206)"
-                inputMode="numeric"
-                maxLength={3}
-                value={areaCode}
-                onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, ''))}
-                onKeyDown={(e) => { if (e.key === 'Enter') search(); }}
-                style={{ flex: 1 }}
-              />
-              <button className="btn" onClick={search} disabled={searching}>
-                {searching ? 'Searching…' : 'Search'}
-              </button>
-            </div>
-            {results && results.length > 0 && (
-              <div className="setup-list">
-                {results.map((n) => (
-                  <div key={n.phoneNumber} className="setup-num">
-                    <div>
-                      <div className="setup-num-text">{pretty(n.phoneNumber)}</div>
-                      <div className="setup-num-meta">{n.locality || n.region || 'US'}</div>
-                    </div>
-                    <button
-                      className="btn"
-                      onClick={() => buy(n.phoneNumber)}
-                      disabled={buying !== null}
-                    >
-                      {buying === n.phoneNumber ? 'Buying…' : 'Buy'}
-                    </button>
+          {results && results.length > 0 && (
+            <div className="setup-list">
+              {results.map((n) => (
+                <div key={n.phoneNumber} className="setup-num">
+                  <div>
+                    <div className="setup-num-text">{pretty(n.phoneNumber)}</div>
+                    <div className="setup-num-meta">{n.locality || n.region || 'US'}</div>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
-        )}
+                  <button
+                    className="btn"
+                    onClick={() => buy(n.phoneNumber)}
+                    disabled={buying !== null}
+                  >
+                    {buying === n.phoneNumber ? 'Starting checkout…' : 'Buy'}
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </>
   );

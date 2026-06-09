@@ -202,6 +202,14 @@ export function releaseNumber(id: number): void {
   ).run(Date.now(), id);
 }
 
+/** The number purchased under a given Stripe subscription, if any. Used by
+ *  the Stripe webhook for idempotent fulfillment and for cancel → release. */
+export function numberForStripeSub(stripeSubId: string): AccountNumber | null {
+  return (db.prepare(
+    `SELECT * FROM account_numbers WHERE stripe_sub_id = ? LIMIT 1`
+  ).get(stripeSubId) as AccountNumber | undefined) || null;
+}
+
 /** Update a number's cached toll-free verification status. */
 export function setTfvStatus(phone: string, status: string | null): void {
   db.prepare(`UPDATE account_numbers SET tfv_status = ? WHERE phone = ?`).run(status, phone.trim());

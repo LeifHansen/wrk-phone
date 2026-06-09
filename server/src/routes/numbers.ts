@@ -1,27 +1,16 @@
 import { Router } from 'express';
 import { twilioClient, twilioConfig } from '../lib/twilio.js';
-import { getAppSettings, setActiveNumber, hasActiveSubscription } from '../lib/db.js';
+import { getAppSettings, setActiveNumber, clearActiveNumber } from '../lib/db.js';
 import { getUserId, OWNER_ID, requireSuperadmin } from '../lib/auth.js';
-import { importToPool, poolStats, isTollFree, pickSharedTollfree, addPurchasedNumber } from '../lib/numbers-store.js';
+import {
+  importToPool, poolStats, isTollFree, pickSharedTollfree, addPurchasedNumber,
+  releaseNumber, numberForStripeSub,
+} from '../lib/numbers-store.js';
+import { createPlanCheckout } from './billing.js';
 import { refreshTfvStatuses } from '../lib/tollfree.js';
 import { log } from '../lib/log.js';
 
 export const numbersRouter = Router();
-
-// Searching/buying your own local 10DLC number is a paid feature. EITHER
-// the Sole Proprietor tier OR the full Business Line A2P tier unlocks it
-// (both are registered senders by Twilio's standards; sole-prop has lower
-// throughput but still qualifies). Free accounts use the shared toll-free
-// pool and don't need to register anything.
-function hasBusinessLine(req: any): boolean {
-  const uid = getUserId(req);
-  return hasActiveSubscription(uid, 'a2p') || hasActiveSubscription(uid, 'sole_prop');
-}
-const businessLineRequired = (_req: any, res: any) =>
-  res.status(402).json({
-    error: 'Searching and buying your own number requires a registered line — either Sole Proprietor ($5/mo) or Business Line A2P ($10/mo).',
-    upgrade: 'sole_prop',
-  });
 
 // The Messaging Service tied to the approved A2P 10DLC campaign — purchased
 // local numbers join it so they send 10DLC traffic under that campaign. Falls
@@ -111,9 +100,8 @@ async function configureWebhooks(numberSid: string): Promise<{ urls: any; warnin
   return { urls: { voiceUrl, smsUrl, statusCb, outboundUrl }, warnings };
 }
 
-// GET /api/numbers/search
+// GET /api/numbers/search — open to every account; buying is the paid step.
 numbersRouter.get('/numbers/search', async (req, res) => {
-  if (!hasBusinessLine(req)) return businessLineRequired(req, res);
   const country = String(req.query.country || 'US').toUpperCase();
   const areaCode = req.query.areaCode ? Number(req.query.areaCode) : undefined;
   const contains = req.query.contains ? String(req.query.contains) : undefined;
@@ -131,47 +119,113 @@ numbersRouter.get('/numbers/search', async (req, res) => {
   }
 });
 
-// POST /api/numbers/buy { phoneNumber }
-// Buys a local 10DLC number for the account, joins it to the approved A2P
-// campaign's Messaging Service, and makes it the account's sending line.
-numbersRouter.post('/numbers/buy', async (req, res) => {
-  if (!hasBusinessLine(req)) return businessLineRequired(req, res);
-  const userId = getUserId(req);
-  const phoneNumber = String(req.body.phoneNumber || '').trim();
-  if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
+/**
+ * Buy a number on Twilio, join it to the marketing/campaign Messaging Service
+ * (so it sends under the registered A2P campaign), wire every webhook, and
+ * record ownership. Shared by the buy endpoints (no-Stripe dev path) and the
+ * Stripe webhook (paid path — runs after checkout completes).
+ *
+ * If the exact number was snapped up while checkout was open, falls back to
+ * the next available number in the same area code so a paid subscription
+ * always yields a working line.
+ */
+export async function purchaseAndProvision(userId: string, phoneNumber: string, opts: {
+  makeDefault: boolean;
+  stripeSubId?: string | null;
+}): Promise<{ phoneNumber: string; sid: string; attachedToService: boolean; warnings: string[]; urls: any }> {
+  let purchased;
   try {
-    const purchased = await twilioClient.incomingPhoneNumbers.create({
+    purchased = await twilioClient.incomingPhoneNumbers.create({
       phoneNumber, friendlyName: 'WrkPhn',
     });
-
-    // Join the approved A2P campaign's Messaging Service so 10DLC traffic
-    // sends under that campaign.
-    const msSid = campaignMessagingServiceSid();
-    let attachedToService = false;
-    if (msSid) {
-      try {
-        await twilioClient.messaging.v1.services(msSid)
-          .phoneNumbers.create({ phoneNumberSid: purchased.sid });
-        attachedToService = true;
-      } catch (e: any) {
-        log.warn('numbers/buy', `messaging-service attach failed for ${purchased.phoneNumber}`, e);
-      }
-    }
-
-    // Auto-configure every webhook so inbound works immediately.
-    const { urls, warnings } = await configureWebhooks(purchased.sid);
-
-    // Record exclusive ownership (resolveInboundOwner routes inbound to this
-    // account) and make it the buyer's sending line.
-    addPurchasedNumber(userId, {
-      phone: purchased.phoneNumber, twilioSid: purchased.sid, type: 'local',
-      monthlyCostCents: 200, activationPaid: true, makeDefault: true,
+  } catch (e: any) {
+    const area = phoneNumber.match(/^\+1(\d{3})/)?.[1];
+    if (!area) throw e;
+    const alt = await twilioClient.availablePhoneNumbers('US').local.list({
+      areaCode: Number(area), smsEnabled: true, voiceEnabled: true, limit: 1,
     });
-    setActiveNumber(userId, purchased.phoneNumber, purchased.sid);
+    if (!alt[0]) throw e;
+    purchased = await twilioClient.incomingPhoneNumbers.create({
+      phoneNumber: alt[0].phoneNumber, friendlyName: 'WrkPhn',
+    });
+    log.warn('numbers/provision', `${phoneNumber} was taken — purchased ${purchased.phoneNumber} from the same area code instead`);
+  }
+
+  // Join the marketing Messaging Service so traffic sends under the
+  // registered A2P campaign.
+  const msSid = campaignMessagingServiceSid();
+  let attachedToService = false;
+  if (msSid) {
+    try {
+      await twilioClient.messaging.v1.services(msSid)
+        .phoneNumbers.create({ phoneNumberSid: purchased.sid });
+      attachedToService = true;
+    } catch (e: any) {
+      log.warn('numbers/provision', `messaging-service attach failed for ${purchased.phoneNumber}`, e);
+    }
+  }
+
+  // Auto-configure every webhook so inbound works immediately.
+  const { urls, warnings } = await configureWebhooks(purchased.sid);
+
+  // Record exclusive ownership (resolveInboundOwner routes inbound to this
+  // account) and optionally make it the buyer's sending line.
+  addPurchasedNumber(userId, {
+    phone: purchased.phoneNumber, twilioSid: purchased.sid, type: 'local',
+    monthlyCostCents: 200, activationPaid: true, makeDefault: opts.makeDefault,
+    stripeSubId: opts.stripeSubId ?? null,
+  });
+  if (opts.makeDefault) setActiveNumber(userId, purchased.phoneNumber, purchased.sid);
+  return { phoneNumber: purchased.phoneNumber, sid: purchased.sid, attachedToService, warnings, urls };
+}
+
+/**
+ * Cancel → release (Stripe webhook). Releases the number bought under a
+ * canceled subscription: removes it from Twilio (stops the $/mo passthrough),
+ * marks it released in the DB, and drops the owner back to the shared
+ * default line if it was their active sender.
+ */
+export async function releaseNumberForStripeSub(stripeSubId: string): Promise<void> {
+  const row = numberForStripeSub(stripeSubId);
+  if (!row || row.status === 'released') return;
+  try {
+    if (row.twilio_sid) await twilioClient.incomingPhoneNumbers(row.twilio_sid).remove();
+  } catch (e: any) {
+    log.warn('numbers/release', `Twilio release failed for ${row.phone} — releasing in DB anyway`, e);
+  }
+  releaseNumber(row.id);
+  if (row.user_id) {
+    const s = getAppSettings(row.user_id);
+    if (s.active_number === row.phone) clearActiveNumber(row.user_id);
+  }
+  log.info('numbers/release', `released ${row.phone} after subscription cancel`);
+}
+
+// POST /api/numbers/buy { phoneNumber }
+// Starts a dedicated-number purchase ($2 activation + $2/mo). With Stripe
+// configured this returns a checkout URL — the number is bought, joined to
+// the marketing campaign's Messaging Service, and made the account's sending
+// line by the webhook once payment completes. Without Stripe (dev) it
+// provisions immediately.
+numbersRouter.post('/numbers/buy', async (req, res) => {
+  const userId = getUserId(req);
+  const phoneNumber = String(req.body.phoneNumber || '').trim();
+  if (!/^\+1\d{10}$/.test(phoneNumber)) return res.status(400).json({ error: 'phoneNumber required (E.164 US, e.g. +12065551234)' });
+  try {
+    const checkout = await createPlanCheckout({
+      userId, planId: 'number', ref: phoneNumber,
+      successPath: '/numbers?purchase=success', cancelPath: '/numbers?purchase=canceled',
+      metadata: { makeDefault: '1' },
+    });
+    if (!checkout.stub) return res.json({ ok: true, url: checkout.url });
+
+    // Dev / no-Stripe path: no checkout to wait on — provision right away.
+    const r = await purchaseAndProvision(userId, phoneNumber, { makeDefault: true });
     res.json({
-      ok: true, number: purchased.phoneNumber, sid: purchased.sid,
-      attachedToService, messagingServiceSid: msSid || null,
-      webhooks: urls, warnings,
+      ok: true, number: r.phoneNumber, sid: r.sid,
+      attachedToService: r.attachedToService,
+      messagingServiceSid: campaignMessagingServiceSid() || null,
+      webhooks: r.urls, warnings: r.warnings, note: checkout.note,
     });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
@@ -396,28 +450,21 @@ numbersRouter.post('/numbers/set-active', async (req: any, res) => {
 // Same provisioning as the primary, but does NOT change the active line.
 // $2/mo recurring (billing wired later — see Stripe note in README).
 numbersRouter.post('/numbers/buy-additional', async (req, res) => {
-  if (!hasBusinessLine(req)) return businessLineRequired(req, res);
+  const userId = getUserId(req);
   const phoneNumber = String(req.body.phoneNumber || '').trim();
-  if (!phoneNumber) return res.status(400).json({ error: 'phoneNumber required' });
+  if (!/^\+1\d{10}$/.test(phoneNumber)) return res.status(400).json({ error: 'phoneNumber required (E.164 US, e.g. +12065551234)' });
   try {
-    const userId = getUserId(req);
-    const purchased = await twilioClient.incomingPhoneNumbers.create({ phoneNumber, friendlyName: 'WrkPhn' });
-    const msSid = campaignMessagingServiceSid();
-    if (msSid) {
-      try {
-        await twilioClient.messaging.v1.services(msSid)
-          .phoneNumbers.create({ phoneNumberSid: purchased.sid });
-      } catch (e: any) {
-        log.warn('numbers/buy-additional', `messaging-service attach failed for ${purchased.phoneNumber}`, e);
-      }
-    }
-    const { warnings } = await configureWebhooks(purchased.sid);
-    // Recorded as an owned number, but does NOT become the active line.
-    addPurchasedNumber(userId, {
-      phone: purchased.phoneNumber, twilioSid: purchased.sid, type: 'local',
-      monthlyCostCents: 200, activationPaid: true, makeDefault: false,
+    const checkout = await createPlanCheckout({
+      userId, planId: 'number', ref: phoneNumber,
+      successPath: '/numbers?purchase=success', cancelPath: '/numbers?purchase=canceled',
+      metadata: { makeDefault: '0' },
     });
-    res.json({ ok: true, number: purchased.phoneNumber, sid: purchased.sid, monthly: 2.0, warnings });
+    if (!checkout.stub) return res.json({ ok: true, url: checkout.url });
+
+    // Dev / no-Stripe path. Recorded as an owned number, but does NOT become
+    // the active line.
+    const r = await purchaseAndProvision(userId, phoneNumber, { makeDefault: false });
+    res.json({ ok: true, number: r.phoneNumber, sid: r.sid, monthly: 2.0, warnings: r.warnings, note: checkout.note });
   } catch (e: any) {
     res.status(500).json({ error: e.message, code: e.code });
   }

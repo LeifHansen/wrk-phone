@@ -72,10 +72,11 @@ export const PLANS: Record<string, {
     throughput: 'Up to ~200,000 msgs/day',
   },
   number: {
-    label: 'Additional phone number',
+    label: 'Dedicated phone number',
     monthly: 2,
+    setupFee: 2,
     tier: 'addon',
-    blurb: 'Add a dedicated local number on top of your shared pool number.',
+    blurb: 'Your own local number. Joins our registered marketing campaign automatically — full carrier deliverability, no registration steps.',
     throughput: '',
   },
 };
@@ -84,83 +85,113 @@ billingRouter.get('/billing/subscriptions', (_req, res) => {
   res.json({ stripeEnabled: !!stripe, plans: PLANS, subscriptions: listSubscriptions(USER) });
 });
 
-// POST /api/billing/subscribe  { plan: 'a2p'|'number', ref?, returnUrl? }
-billingRouter.post('/billing/subscribe', async (req, res) => {
-  const planId = String(req.body?.plan || '');
-  const plan = PLANS[planId];
-  if (!plan) return res.status(400).json({ error: 'unknown plan' });
-  const ref = req.body?.ref ? String(req.body.ref) : null;
+/**
+ * Create a Stripe subscription checkout for a plan. Shared by the generic
+ * subscribe endpoint and the number-purchase flow (numbers.ts), which needs
+ * its own success URL + metadata so the webhook can fulfill the purchase.
+ *
+ * Without a usable Stripe key this records a 'dev' subscription and returns
+ * { stub: true } so callers can fulfill immediately — the whole flow stays
+ * testable end-to-end with no keys.
+ */
+export async function createPlanCheckout(opts: {
+  userId: string;
+  planId: string;
+  ref?: string | null;
+  returnBase?: string;                   // origin override (e.g. from the client)
+  successPath?: string;                  // appended to base; default /admin?sub=1
+  cancelPath?: string;
+  metadata?: Record<string, string>;     // extra session/subscription metadata
+}): Promise<{ url: string | null; stub?: boolean; note?: string }> {
+  const plan = PLANS[opts.planId];
+  if (!plan) throw new Error('unknown plan');
+  const ref = opts.ref ?? null;
 
   // Dev / no-Stripe fallback so the flow is fully testable without keys.
   if (!stripe) {
-    recordSubscription(USER, planId, ref, 'dev');
-    return res.json({ url: null, stub: true, status: 'dev',
-      note: 'STRIPE_SECRET_KEY not set — subscription recorded without charge.' });
+    recordSubscription(opts.userId, opts.planId, ref, 'dev');
+    return { url: null, stub: true,
+      note: 'STRIPE_SECRET_KEY not set — subscription recorded without charge.' };
   }
 
-  recordSubscription(USER, planId, ref, 'pending');
-  const base = String(req.body?.returnUrl || process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
-  try {
-    // line_items in subscription mode MUST all be recurring — Stripe rejects
-    // any one-time price_data here with "You cannot combine one-time payments
-    // and subscriptions in the same Checkout Session." Setup fees go via
-    // subscription_data.invoice_items below (the supported pattern).
-    const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{
-      quantity: 1,
-      price_data: {
-        currency: 'usd',
-        recurring: { interval: 'month' },
-        unit_amount: plan.monthly * 100,
-        product_data: { name: `WrkPhn — ${plan.label}` },
-      },
-    }];
+  recordSubscription(opts.userId, opts.planId, ref, 'pending');
+  const base = String(opts.returnBase || process.env.PUBLIC_BASE_URL || '').trim().replace(/\/$/, '');
+  const metadata = { userId: opts.userId, plan: opts.planId, ref: ref || '', ...(opts.metadata || {}) };
 
-    const sessionParams: Stripe.Checkout.SessionCreateParams = {
-      mode: 'subscription',
-      line_items: lineItems,
-      success_url: `${base}/admin?sub=1`,
-      cancel_url: `${base}/admin?sub=canceled`,
-      metadata: { userId: USER, plan: planId, ref: ref || '' },
-      subscription_data: { metadata: { userId: USER, plan: planId, ref: ref || '' } },
-    };
+  // line_items in subscription mode MUST all be recurring — Stripe rejects
+  // any one-time price_data here with "You cannot combine one-time payments
+  // and subscriptions in the same Checkout Session." Setup fees go via
+  // subscription_data.invoice_items below (the supported pattern).
+  const lineItems: Stripe.Checkout.SessionCreateParams.LineItem[] = [{
+    quantity: 1,
+    price_data: {
+      currency: 'usd',
+      recurring: { interval: 'month' },
+      unit_amount: plan.monthly * 100,
+      product_data: { name: `WrkPhn — ${plan.label}` },
+    },
+  }];
 
-    // One-time setup fee: ride along on the first invoice via Stripe's
-    // invoice-items mechanism. Requires a real Price (Stripe doesn't accept
-    // ad-hoc price_data on invoice items the way it does on line_items),
-    // so we create or reuse a Price scoped to a Product with a stable
-    // lookup_key. This keeps the setup-fee SKUs idempotent across calls.
-    if (plan.setupFee) {
-      try {
-        const lookupKey = `wrkphn_setup_${planId}_${plan.setupFee}usd`;
-        const existing = await stripe.prices.list({ lookup_keys: [lookupKey], limit: 1 });
-        let priceId: string;
-        if (existing.data[0]) {
-          priceId = existing.data[0].id;
-        } else {
-          const product = await stripe.products.create({
-            name: `WrkPhn — ${plan.label} (one-time setup)`,
-          });
-          const price = await stripe.prices.create({
-            product: product.id,
-            currency: 'usd',
-            unit_amount: plan.setupFee * 100,
-            lookup_key: lookupKey,
-          });
-          priceId = price.id;
-        }
-        (sessionParams.subscription_data as any).invoice_items = [
-          { price: priceId, quantity: 1 },
-        ];
-      } catch (e: any) {
-        // Setup fee plumbing failed — log it but DON'T block the checkout.
-        // The user still gets billed monthly; we'll catch up on the setup
-        // fee later or eat it. Better than a hard 500 with no recourse.
-        log.warn('billing/subscribe', `setup-fee invoice-item attach failed: ${e.message}`);
+  const sessionParams: Stripe.Checkout.SessionCreateParams = {
+    mode: 'subscription',
+    line_items: lineItems,
+    success_url: `${base}${opts.successPath || '/admin?sub=1'}`,
+    cancel_url: `${base}${opts.cancelPath || '/admin?sub=canceled'}`,
+    metadata,
+    subscription_data: { metadata },
+  };
+
+  // One-time setup fee: ride along on the first invoice via Stripe's
+  // invoice-items mechanism. Requires a real Price (Stripe doesn't accept
+  // ad-hoc price_data on invoice items the way it does on line_items),
+  // so we create or reuse a Price scoped to a Product with a stable
+  // lookup_key. This keeps the setup-fee SKUs idempotent across calls.
+  if (plan.setupFee) {
+    try {
+      const lookupKey = `wrkphn_setup_${opts.planId}_${plan.setupFee}usd`;
+      const existing = await stripe.prices.list({ lookup_keys: [lookupKey], limit: 1 });
+      let priceId: string;
+      if (existing.data[0]) {
+        priceId = existing.data[0].id;
+      } else {
+        const product = await stripe.products.create({
+          name: `WrkPhn — ${plan.label} (one-time setup)`,
+        });
+        const price = await stripe.prices.create({
+          product: product.id,
+          currency: 'usd',
+          unit_amount: plan.setupFee * 100,
+          lookup_key: lookupKey,
+        });
+        priceId = price.id;
       }
+      (sessionParams.subscription_data as any).invoice_items = [
+        { price: priceId, quantity: 1 },
+      ];
+    } catch (e: any) {
+      // Setup fee plumbing failed — log it but DON'T block the checkout.
+      // The user still gets billed monthly; we'll catch up on the setup
+      // fee later or eat it. Better than a hard 500 with no recourse.
+      log.warn('billing/checkout', `setup-fee invoice-item attach failed: ${e.message}`);
     }
+  }
 
-    const session = await stripe.checkout.sessions.create(sessionParams);
-    res.json({ url: session.url });
+  const session = await stripe.checkout.sessions.create(sessionParams);
+  return { url: session.url };
+}
+
+// POST /api/billing/subscribe  { plan: 'a2p'|'number', ref?, returnUrl? }
+billingRouter.post('/billing/subscribe', async (req, res) => {
+  const planId = String(req.body?.plan || '');
+  if (!PLANS[planId]) return res.status(400).json({ error: 'unknown plan' });
+  const ref = req.body?.ref ? String(req.body.ref) : null;
+  try {
+    const r = await createPlanCheckout({
+      userId: USER, planId, ref,
+      returnBase: req.body?.returnUrl ? String(req.body.returnUrl) : undefined,
+    });
+    if (r.stub) return res.json({ url: null, stub: true, status: 'dev', note: r.note });
+    res.json({ url: r.url });
   } catch (e: any) {
     log.error('billing/subscribe', 'checkout create failed', e);
     res.status(500).json({ error: e.message });
