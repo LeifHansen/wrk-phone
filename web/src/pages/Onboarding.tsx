@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 import { Logo } from '../components/Logo';
@@ -12,18 +12,27 @@ function pretty(e164: string) {
 export function Onboarding() {
   const nav = useNavigate();
   const [step, setStep] = useState(0);
-  const [pool, setPool] = useState<any>(null);
-  const [chosen, setChosen] = useState<string | null>(null);
+  const [areaCode, setAreaCode] = useState('');
+  const [provisioning, setProvisioning] = useState(false);
+  const [number, setNumber] = useState<string | null>(null);
 
-  useEffect(() => { api.listNumbers().then(setPool).catch(() => {}); }, []);
-
-  const choose = async (sid: string, phone: string) => {
-    try { await api.setActiveNumber(sid); setChosen(phone); toast('Number selected ✓'); setStep(2); }
-    catch (e: any) { toast(e.message, 'err'); }
+  const provision = async () => {
+    const ac = areaCode.trim();
+    if (!/^[2-9]\d{2}$/.test(ac)) { toast('Enter a 3-digit area code (e.g. 415).', 'err'); return; }
+    setProvisioning(true);
+    try {
+      const r = await api.provisionNumber(ac);
+      setNumber(r.number);
+      toast(r.alreadyHad ? 'You already have a number ✓' : `${pretty(r.number)} is yours ✓`);
+      setStep(2);
+    } catch (e: any) {
+      // Most common: no inventory in that area code — let them try another.
+      toast(e.message || 'Could not get a number — try another area code.', 'err');
+    } finally { setProvisioning(false); }
   };
 
   const Dots = () => (
-    <div className="ob-dots">{[0,1,2,3].map(i => <span key={i} className={'ob-dot' + (i === step ? ' on' : '')} />)}</div>
+    <div className="ob-dots">{[0,1,2].map(i => <span key={i} className={'ob-dot' + (i === step ? ' on' : '')} />)}</div>
   );
 
   return (
@@ -35,52 +44,50 @@ export function Onboarding() {
         {step === 0 && (
           <>
             <h2 className="ob-h">Welcome aboard.</h2>
-            <p className="ob-p">WrkPhn is your team's shared work line — calls, texts, and AI agents. Quick 60-second setup.</p>
+            <p className="ob-p">WrkPhn is your work line — calls, texts, and AI agents. Quick 60-second setup.</p>
             <button className="btn lg" style={{ width: '100%' }} onClick={() => setStep(1)}>Get started</button>
           </>
         )}
 
         {step === 1 && (
           <>
-            <h2 className="ob-h">Pick your line</h2>
-            <p className="ob-p">Choose a number from the shared pool. Outbound calls & texts show this number. You can swap anytime.</p>
-            <div className="setup-list" style={{ maxHeight: 280, overflow: 'auto' }}>
-              {!pool && <div className="spinner" style={{ margin: '20px auto', display: 'block' }} />}
-              {pool?.numbers?.map((n: any) => (
-                <div key={n.sid} className="setup-num">
-                  <div><div className="setup-num-text">{pretty(n.phoneNumber)}</div>
-                    <div className="setup-num-meta">{n.isActive ? '★ current' : 'shared pool'}</div></div>
-                  <button className="btn lime" onClick={() => choose(n.sid, n.phoneNumber)}>Use this</button>
-                </div>
-              ))}
-              {pool && (!pool.numbers || pool.numbers.length === 0) && (
-                <p className="ob-p">No numbers in the pool yet — an admin can add one. You can do this later.</p>
-              )}
+            <h2 className="ob-h">Pick your area code</h2>
+            <p className="ob-p">
+              We'll get you a local number in the area code you want. It's
+              pre-registered on our approved carrier campaign (A2P 10DLC), so
+              you can call and text from it right away — no paperwork.
+            </p>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <input
+                className="input"
+                placeholder="Area code (e.g. 415)"
+                inputMode="numeric"
+                maxLength={3}
+                value={areaCode}
+                autoFocus
+                onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, ''))}
+                onKeyDown={(e) => { if (e.key === 'Enter' && !provisioning) provision(); }}
+                style={{ flex: 1 }}
+              />
+              <button className="btn lime" onClick={provision} disabled={provisioning}>
+                {provisioning ? 'Getting your number…' : 'Get my number'}
+              </button>
             </div>
-            <button className="btn ghost" style={{ width: '100%', marginTop: 10 }} onClick={() => setStep(2)}>Skip for now</button>
+            <button className="btn ghost" style={{ width: '100%', marginTop: 10 }} onClick={() => setStep(2)} disabled={provisioning}>
+              Skip for now — use the shared line
+            </button>
           </>
         )}
 
         {step === 2 && (
           <>
-            <h2 className="ob-h">Want your own number?</h2>
-            <p className="ob-p">
-              {chosen ? <>You're set to send from <b>{pretty(chosen)}</b>. </> : ''}
-              Prefer a dedicated local number? Buy one anytime on the <b>Work line</b> page
-              for $2/mo — it's pre-registered on our approved carrier campaign
-              (A2P 10DLC), so there are no registration steps and no carrier filtering.
-            </p>
-            <div className="cond-card" style={{ color: 'var(--muted)', fontSize: 13 }}>
-              ✅ No 10DLC paperwork — every number includes campaign registration.
-            </div>
-            <button className="btn lg" style={{ width: '100%', marginTop: 12 }} onClick={() => setStep(3)}>Continue</button>
-          </>
-        )}
-
-        {step === 3 && (
-          <>
             <h2 className="ob-h">You're ready 🎉</h2>
-            <p className="ob-p">Set up an AI agent to text on your behalf, or jump straight in.</p>
+            <p className="ob-p">
+              {number
+                ? <><b>{pretty(number)}</b> is your work line — calls and texts you send show this number, and replies land in your inbox. </>
+                : <>You're on the shared line for now — you can grab your own local number anytime from the <b>Work line</b> page. </>}
+              Set up an AI agent to text on your behalf, or jump straight in.
+            </p>
             <button className="btn lg" style={{ width: '100%' }} onClick={() => nav('/agents/new', { replace: true })}>Create an AI agent</button>
             <button className="btn ghost" style={{ width: '100%', marginTop: 8 }} onClick={() => nav('/', { replace: true })}>Go to the app</button>
           </>

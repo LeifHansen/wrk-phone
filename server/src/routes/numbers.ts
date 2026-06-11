@@ -4,7 +4,7 @@ import { getAppSettings, setActiveNumber, clearActiveNumber } from '../lib/db.js
 import { getUserId, OWNER_ID, requireSuperadmin } from '../lib/auth.js';
 import {
   importToPool, poolStats, isTollFree, pickSharedTollfree, addPurchasedNumber,
-  releaseNumber, numberForStripeSub,
+  releaseNumber, numberForStripeSub, getDefaultNumber,
 } from '../lib/numbers-store.js';
 import { createPlanCheckout } from './billing.js';
 import { refreshTfvStatuses } from '../lib/tollfree.js';
@@ -132,6 +132,9 @@ numbersRouter.get('/numbers/search', async (req, res) => {
 export async function purchaseAndProvision(userId: string, phoneNumber: string, opts: {
   makeDefault: boolean;
   stripeSubId?: string | null;
+  /** 0 for the account's included onboarding number; 200 (default) for paid
+   *  $2/mo add-ons bought through Stripe. */
+  monthlyCostCents?: number;
 }): Promise<{ phoneNumber: string; sid: string; attachedToService: boolean; warnings: string[]; urls: any }> {
   let purchased;
   try {
@@ -172,7 +175,8 @@ export async function purchaseAndProvision(userId: string, phoneNumber: string, 
   // account) and optionally make it the buyer's sending line.
   addPurchasedNumber(userId, {
     phone: purchased.phoneNumber, twilioSid: purchased.sid, type: 'local',
-    monthlyCostCents: 200, activationPaid: true, makeDefault: opts.makeDefault,
+    monthlyCostCents: opts.monthlyCostCents ?? 200, activationPaid: true,
+    makeDefault: opts.makeDefault,
     stripeSubId: opts.stripeSubId ?? null,
   });
   if (opts.makeDefault) setActiveNumber(userId, purchased.phoneNumber, purchased.sid);
@@ -200,6 +204,41 @@ export async function releaseNumberForStripeSub(stripeSubId: string): Promise<vo
   }
   log.info('numbers/release', `released ${row.phone} after subscription cancel`);
 }
+
+// POST /api/numbers/provision-onboarding { areaCode }
+// Onboarding auto-provision: buy the first available local number in the
+// chosen area code, join it to the platform's approved A2P campaign, wire
+// webhooks, and make it the account's sending line — included with the
+// account, no checkout. Idempotent: an account that already owns an active
+// LOCAL number keeps it (a pool toll-free default doesn't block this —
+// the user explicitly asked for a local line, which becomes the default).
+numbersRouter.post('/numbers/provision-onboarding', async (req, res) => {
+  const userId = getUserId(req);
+  const areaCode = String(req.body?.areaCode || '').trim();
+  if (!/^[2-9]\d{2}$/.test(areaCode)) {
+    return res.status(400).json({ error: 'Enter a 3-digit US area code (e.g. 415).' });
+  }
+  try {
+    const existing = getDefaultNumber(userId);
+    if (existing && existing.type === 'local') {
+      return res.json({ ok: true, number: existing.phone, sid: existing.twilio_sid, alreadyHad: true });
+    }
+    const avail = await twilioClient.availablePhoneNumbers('US').local.list({
+      areaCode: Number(areaCode), smsEnabled: true, voiceEnabled: true, limit: 1,
+    });
+    if (!avail[0]) {
+      return res.status(404).json({ error: `No numbers available in ${areaCode} right now — try a nearby area code.` });
+    }
+    const r = await purchaseAndProvision(userId, avail[0].phoneNumber, {
+      makeDefault: true,
+      monthlyCostCents: 0,   // included with the account — not a paid add-on
+    });
+    log.info('numbers/onboarding', `provisioned ${r.phoneNumber} (area ${areaCode}) for ${userId}`);
+    res.json({ ok: true, number: r.phoneNumber, sid: r.sid, attachedToService: r.attachedToService, warnings: r.warnings });
+  } catch (e: any) {
+    res.status(500).json({ error: e.message, code: e.code });
+  }
+});
 
 // POST /api/numbers/buy { phoneNumber }
 // Starts a dedicated-number purchase ($2 activation + $2/mo). With Stripe
@@ -401,7 +440,7 @@ numbersRouter.get('/numbers/active', (req, res) => {
 
 // GET /api/numbers/list — ONLY the caller's own line. The shared pool is
 // never exposed to users; they get one auto-assigned number until they
-// purchase their own (purchasing unlocks after 10DLC).
+// provision their own (onboarding area-code pick or a paid $2/mo add-on).
 numbersRouter.get('/numbers/list', async (req, res) => {
   try {
     const userId = getUserId(req);

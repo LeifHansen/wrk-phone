@@ -326,6 +326,11 @@ export const api = {
   setActiveNumber: (sid: string) => req('/api/numbers/set-active', { method: 'POST', body: JSON.stringify({ sid }) }),
   claimNumber: () => req<{ ok: boolean; number: string; sid: string; alreadyHad: boolean }>(
     '/api/numbers/claim', { method: 'POST' }),
+  // Onboarding: auto-buy a local number in the chosen area code, join it to
+  // the platform campaign, and make it the account's line. No checkout.
+  provisionNumber: (areaCode: string) =>
+    req<{ ok: boolean; number: string; sid: string; alreadyHad?: boolean; warnings?: string[] }>(
+      '/api/numbers/provision-onboarding', { method: 'POST', body: JSON.stringify({ areaCode }) }),
   buyAdditional: (phoneNumber: string) =>
     req<{ ok: boolean; url?: string | null; number?: string; monthly?: number; warnings?: string[]; note?: string }>(
       '/api/numbers/buy-additional', { method: 'POST', body: JSON.stringify({ phoneNumber }) }),
