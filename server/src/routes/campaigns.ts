@@ -9,7 +9,7 @@ import { firstNameFrom } from '../lib/phone.js';
 import { log } from '../lib/log.js';
 
 export const campaignsRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // Recover campaigns left in 'sending' from a previous process (Fly deploy /
 // OOM / crash mid-loop). Without this, the in-memory send loop is gone but
@@ -44,7 +44,8 @@ export function recoverInterruptedCampaigns(): void {
 }
 
 // GET /api/campaigns
-campaignsRouter.get('/campaigns', (_req, res) => {
+campaignsRouter.get('/campaigns', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT * FROM campaigns WHERE user_id = ? ORDER BY created_at DESC`
   ).all(USER);
@@ -56,6 +57,7 @@ campaignsRouter.get('/campaigns', (_req, res) => {
 // Recipients can be supplied directly, OR resolved from a contact segment,
 // OR the entire contact list (allContacts=true).
 campaignsRouter.post('/campaigns', (req, res) => {
+  const USER = getUserId(req);
   const name = String(req.body.name || '').trim();
   const template = String(req.body.template || '').trim();
   const channel = (['sms', 'rcs', 'mms'] as const).includes(req.body.channel) ? req.body.channel : 'sms';
@@ -93,6 +95,7 @@ campaignsRouter.post('/campaigns', (req, res) => {
 
 // POST /api/campaigns/:id/send
 campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ? AND user_id = ?').get(id, USER) as any;
   if (!campaign) return res.status(404).json({ error: 'not found' });
@@ -204,6 +207,7 @@ campaignsRouter.post('/campaigns/:id/send', async (req, res) => {
 });
 
 campaignsRouter.get('/campaigns/:id', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const campaign = db.prepare('SELECT * FROM campaigns WHERE id = ? AND user_id = ?').get(id, USER);
   if (!campaign) return res.status(404).json({ error: 'not found' });

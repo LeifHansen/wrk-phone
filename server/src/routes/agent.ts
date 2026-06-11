@@ -9,21 +9,21 @@ import { openai, OPENAI_MODEL } from '../lib/openai.js';
 import { emit } from '../lib/events.js';
 
 export const agentRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 const AGENT_COLORS = ['lime', 'pink', 'orange', 'neon', 'red', 'black'] as const;
 
 // Random color, biased toward unused ones so a fresh account gets variety
 // instead of three lime agents in a row. The user has no UI to pick a color
 // (intentional — keeps the create flow simple); rotation happens here.
-function nextColor(): typeof AGENT_COLORS[number] {
-  const used = new Set((db.prepare(`SELECT color FROM agents WHERE user_id = ?`).all(USER) as any[]).map((r) => r.color));
+function nextColor(userId: string): typeof AGENT_COLORS[number] {
+  const used = new Set((db.prepare(`SELECT color FROM agents WHERE user_id = ?`).all(userId) as any[]).map((r) => r.color));
   const unused = AGENT_COLORS.filter((c) => !used.has(c));
   const pool = unused.length > 0 ? unused : (AGENT_COLORS as readonly string[]);
   return pool[Math.floor(Math.random() * pool.length)] as typeof AGENT_COLORS[number];
 }
 
-function fetchAgent(id: number): AgentRow | null {
-  return (db.prepare(`SELECT * FROM agents WHERE id = ? AND user_id = ?`).get(id, USER) as AgentRow | undefined) || null;
+function fetchAgent(id: number, userId: string): AgentRow | null {
+  return (db.prepare(`SELECT * FROM agents WHERE id = ? AND user_id = ?`).get(id, userId) as AgentRow | undefined) || null;
 }
 
 // ---- Presets (for the wizard) ----
@@ -37,7 +37,8 @@ agentRouter.get('/agent-presets', (_req, res) => {
 // queries total — counts keyed by agent_id, with NULL bucketed onto the
 // default agent so the "(agent_id = ?) OR (agent_id IS NULL AND is_default)"
 // fallback behavior is preserved.
-agentRouter.get('/agents', (_req, res) => {
+agentRouter.get('/agents', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT * FROM agents WHERE user_id = ? ORDER BY is_default DESC, created_at DESC`
   ).all(USER) as AgentRow[];
@@ -70,7 +71,8 @@ agentRouter.get('/agents', (_req, res) => {
 
 // ---- Get one ----
 agentRouter.get('/agents/:id', (req, res) => {
-  const a = fetchAgent(Number(req.params.id));
+  const USER = getUserId(req);
+  const a = fetchAgent(Number(req.params.id), USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   res.json(hydrateAgent(a));
 });
@@ -78,6 +80,7 @@ agentRouter.get('/agents/:id', (req, res) => {
 // ---- Create from preset (the easy path) ----
 // body: { presetSlug, vibeSlug?, name? }
 agentRouter.post('/agents/from-preset', (req, res) => {
+  const USER = getUserId(req);
   const preset = getPreset(String(req.body.presetSlug || ''));
   if (!preset) return res.status(400).json({ error: 'unknown preset' });
   if (preset.slug === 'custom') return res.status(400).json({ error: 'use /agents/from-brief for custom' });
@@ -101,7 +104,7 @@ agentRouter.post('/agents/from-preset', (req, res) => {
     USER,
     name,
     preset.emoji,
-    nextColor(),       // randomize — no UI color picker by design
+    nextColor(USER),   // randomize — no UI color picker by design
     preset.slug,
     persona,
     instructions,
@@ -110,20 +113,21 @@ agentRouter.post('/agents/from-preset', (req, res) => {
     now,
     now,
   );
-  const created = fetchAgent(Number(result.lastInsertRowid));
+  const created = fetchAgent(Number(result.lastInsertRowid), USER);
   res.json(hydrateAgent(created!));
 });
 
 // ---- Create from one-line brief (AI drafts everything) ----
 // body: { brief, name? }
 agentRouter.post('/agents/from-brief', async (req, res) => {
+  const USER = getUserId(req);
   const brief = String(req.body.brief || '').trim();
   if (!brief) return res.status(400).json({ error: 'brief required' });
   try {
     const drafted = await draftAgentFromBrief(brief);
     const now = Date.now();
     // Always random — no UI picker; drafted.color is ignored intentionally.
-    const color = nextColor();
+    const color = nextColor(USER);
     const r = db.prepare(
       `INSERT INTO agents (user_id, name, emoji, color, role, persona, instructions, examples_json, rules_json, mode, voice_mode, is_default, created_at, updated_at)
        VALUES (?, ?, ?, ?, 'custom', ?, ?, ?, ?, 'suggest', 'off', 0, ?, ?)`
@@ -138,7 +142,7 @@ agentRouter.post('/agents/from-brief', async (req, res) => {
       JSON.stringify(drafted.rules),
       now, now,
     );
-    res.json(hydrateAgent(fetchAgent(Number(r.lastInsertRowid))!));
+    res.json(hydrateAgent(fetchAgent(Number(r.lastInsertRowid), USER)!));
   } catch (e: any) {
     res.status(500).json({ error: e.message });
   }
@@ -146,8 +150,9 @@ agentRouter.post('/agents/from-brief', async (req, res) => {
 
 // ---- Patch (any field) ----
 agentRouter.patch('/agents/:id', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
-  const a = fetchAgent(id);
+  const a = fetchAgent(id, USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   const next = {
     name: req.body.name !== undefined ? String(req.body.name).slice(0, 32) : a.name,
@@ -167,13 +172,14 @@ agentRouter.patch('/agents/:id', (req, res) => {
   db.prepare(
     `UPDATE agents SET name=?, emoji=?, color=?, persona=?, instructions=?, examples_json=?, rules_json=?, mode=?, voice_mode=?, voice_id=?, voice_name=?, tts_voice=?, send_number=?, updated_at=? WHERE id=?`
   ).run(next.name, next.emoji, next.color, next.persona, next.instructions, next.examples_json, next.rules_json, next.mode, next.voice_mode, next.voice_id, next.voice_name, next.tts_voice, next.send_number, Date.now(), id);
-  res.json(hydrateAgent(fetchAgent(id)!));
+  res.json(hydrateAgent(fetchAgent(id, USER)!));
 });
 
 // ---- Set default ----
 agentRouter.post('/agents/:id/make-default', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
-  const a = fetchAgent(id);
+  const a = fetchAgent(id, USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   db.prepare(`UPDATE agents SET is_default = 0 WHERE user_id = ?`).run(USER);
   db.prepare(`UPDATE agents SET is_default = 1 WHERE id = ?`).run(id);
@@ -182,8 +188,9 @@ agentRouter.post('/agents/:id/make-default', (req, res) => {
 
 // ---- Delete ----
 agentRouter.delete('/agents/:id', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
-  const a = fetchAgent(id);
+  const a = fetchAgent(id, USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   if (a.is_default) return res.status(400).json({ error: 'cannot delete default — set another default first' });
   // Unassign from any conversation first.
@@ -194,7 +201,8 @@ agentRouter.delete('/agents/:id', (req, res) => {
 
 // ---- Generate training prompts ----
 agentRouter.post('/agents/:id/training-prompts', async (req, res) => {
-  const a = fetchAgent(Number(req.params.id));
+  const USER = getUserId(req);
+  const a = fetchAgent(Number(req.params.id), USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   try {
     const prompts = await generateTrainingPrompts(a);
@@ -206,7 +214,8 @@ agentRouter.post('/agents/:id/training-prompts', async (req, res) => {
 
 // ---- Optimize: returns AI-suggested patches ----
 agentRouter.post('/agents/:id/optimize', async (req, res) => {
-  const a = fetchAgent(Number(req.params.id));
+  const USER = getUserId(req);
+  const a = fetchAgent(Number(req.params.id), USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   try {
     const optimizations = await optimizeAgent(a);
@@ -219,8 +228,9 @@ agentRouter.post('/agents/:id/optimize', async (req, res) => {
 // ---- Apply an optimization patch ----
 // body: { patch: { persona?, instructions?, rules?, addExample?, mode? } }
 agentRouter.post('/agents/:id/apply-patch', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
-  const a = fetchAgent(id);
+  const a = fetchAgent(id, USER);
   if (!a) return res.status(404).json({ error: 'not found' });
   const patch = req.body?.patch || {};
   const ah = hydrateAgent(a);
@@ -248,7 +258,7 @@ agentRouter.post('/agents/:id/apply-patch', (req, res) => {
   db.prepare(
     `UPDATE agents SET persona=?, instructions=?, rules_json=?, examples_json=?, mode=?, updated_at=? WHERE id=?`
   ).run(next.persona, next.instructions, JSON.stringify(next.rules), JSON.stringify(next.examples), next.mode, Date.now(), id);
-  res.json(hydrateAgent(fetchAgent(id)!));
+  res.json(hydrateAgent(fetchAgent(id, USER)!));
 });
 
 // ---- Initiate a text thread WITH this agent ----
@@ -258,8 +268,9 @@ agentRouter.post('/agents/:id/apply-patch', (req, res) => {
 // handles replies without further user action.
 // body: { to (e164), brief, name? }
 agentRouter.post('/agents/:id/initiate-text', async (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
-  const agent = fetchAgent(id);
+  const agent = fetchAgent(id, USER);
   if (!agent) return res.status(404).json({ error: 'agent not found' });
 
   // (Helpers used here are now imported at the top of the file — first
@@ -364,10 +375,11 @@ agentRouter.post('/agents/:id/initiate-text', async (req, res) => {
 // ---- Conversation assignment ----
 // PATCH /api/conversations/:id/agent  body: { agent_id | null }
 agentRouter.patch('/conversations/:id/agent', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const aid = req.body.agent_id === null ? null : Number(req.body.agent_id);
   if (aid !== null) {
-    const a = fetchAgent(aid);
+    const a = fetchAgent(aid, USER);
     if (!a) return res.status(404).json({ error: 'agent not found' });
   }
   db.prepare(`UPDATE conversations SET agent_id = ? WHERE id = ? AND user_id = ?`).run(aid, id, USER);

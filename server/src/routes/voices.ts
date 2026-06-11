@@ -7,7 +7,7 @@ import { log } from '../lib/log.js';
 import { rateLimit } from '../lib/ratelimit.js';
 
 export const voicesRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // Voice samples live on the data volume so they survive deploys, served as
 // `${PUBLIC_BASE_URL}/voice-samples/<file>` (mounted in index.ts).
@@ -101,7 +101,8 @@ async function tryCloneViaElevenLabs(
 // GET /api/voices — presets + the user's saved custom voices.
 // We store the bare filename in `voices.sample_url` (legacy column name) and
 // expand to a full URL on read so the API contract stays the same.
-voicesRouter.get('/voices', (_req, res) => {
+voicesRouter.get('/voices', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT id, name, provider, tts_voice, style, sample_url, cloned
        FROM voices WHERE user_id = ? ORDER BY created_at DESC`
@@ -126,6 +127,7 @@ voicesRouter.get('/voices', (_req, res) => {
 
 // POST /api/voices  body: { name, style }  — "create a voice" (style-only)
 voicesRouter.post('/voices', async (req, res) => {
+  const USER = getUserId(req);
   const name = String(req.body?.name || '').trim().slice(0, 40);
   const style = String(req.body?.style || '').trim().slice(0, 200);
   if (!name) return res.status(400).json({ error: 'name required' });
@@ -171,6 +173,7 @@ voicesRouter.post(
   // error to the user.
   raw({ type: ['audio/*', 'video/*', 'application/octet-stream'], limit: MAX_SAMPLE_BYTES }),
   async (req, res) => {
+    const USER = getUserId(req);
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'audio/video body required' });
     }
@@ -242,6 +245,7 @@ voicesRouter.post(
 );
 
 voicesRouter.delete('/voices/:id', async (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   // Best-effort cleanup of the sample file. The DB row is the source of truth.
   const row = db.prepare(`SELECT sample_url FROM voices WHERE id = ? AND user_id = ?`)

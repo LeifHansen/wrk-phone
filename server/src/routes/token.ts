@@ -1,12 +1,16 @@
 import { Router } from 'express';
 import { buildVoiceAccessToken } from '../lib/twilio.js';
+import { getUserId } from '../lib/auth.js';
 import { log } from '../lib/log.js';
 
 export const tokenRouter = Router();
 
-// POST /api/token  body: { identity, platform }
+// POST /api/token  body: { platform }
+// Identity is ALWAYS the server-resolved account — never client input. A
+// body-supplied identity would let any user mint a voice token for someone
+// else's line once auth is on (they'd receive that account's calls).
 tokenRouter.post('/token', (req, res) => {
-  const identity = (req.body?.identity as string) || process.env.DEMO_USER_ID || 'demo';
+  const identity = getUserId(req);
   const platform = (req.body?.platform as 'ios' | 'android' | 'web') || 'web';
   try {
     const jwt = buildVoiceAccessToken(identity, platform);

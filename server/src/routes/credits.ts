@@ -6,7 +6,7 @@ import { purchaseAndProvision, releaseNumberForStripeSub } from './numbers.js';
 import { log } from '../lib/log.js';
 
 export const creditsRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { OWNER_ID, getUserId } from '../lib/auth.js';
 
 // Free for now. Future: $0.99/mo covers the phone line; credits are à la carte.
 export const PACKAGES = [
@@ -25,7 +25,8 @@ const stripe = process.env.STRIPE_SECRET_KEY
   ? new Stripe(process.env.STRIPE_SECRET_KEY)
   : null;
 
-creditsRouter.get('/credits', (_req, res) => {
+creditsRouter.get('/credits', (req, res) => {
+  const USER = getUserId(req);
   res.json({
     balance: getCredits(USER),
     packages: PACKAGES,
@@ -40,12 +41,14 @@ creditsRouter.get('/credits', (_req, res) => {
 // Default 200 rows; pass ?limit= to override (capped at 1000 to keep
 // the response tame on heavy accounts).
 creditsRouter.get('/credits/ledger', (req, res) => {
+  const USER = getUserId(req);
   const limit = Math.min(1000, Math.max(1, Number(req.query.limit) || 200));
   res.json({ entries: getLedger(USER, limit) });
 });
 
 // Free package (or no Stripe configured) → grant immediately. Clearly a stub.
 creditsRouter.post('/credits/purchase', (req, res) => {
+  const USER = getUserId(req);
   const pkg = PACKAGES.find((p) => p.id === String(req.body?.packageId));
   if (!pkg) return res.status(400).json({ error: 'unknown package' });
   if (pkg.price > 0 && stripe) {
@@ -57,6 +60,7 @@ creditsRouter.post('/credits/purchase', (req, res) => {
 
 // Real Stripe Checkout. body: { packageId, returnUrl }
 creditsRouter.post('/credits/checkout', async (req, res) => {
+  const USER = getUserId(req);
   const pkg = PACKAGES.find((p) => p.id === String(req.body?.packageId));
   if (!pkg) return res.status(400).json({ error: 'unknown package' });
   if (pkg.price === 0) {
@@ -123,7 +127,7 @@ export async function stripeWebhookHandler(req: Request, res: Response) {
   }
   if (event.type === 'checkout.session.completed') {
     const s = event.data.object as Stripe.Checkout.Session;
-    const uid = s.metadata?.userId || USER;
+    const uid = s.metadata?.userId || OWNER_ID;
     const credits = Number(s.metadata?.credits || 0);
     if (credits > 0) addCredits(uid, credits, 'topup', { stripeSession: s.id, packageId: s.metadata?.packageId });
     // Subscription checkout (numbers $2/mo, A2P line $10/mo) also lands here.

@@ -5,7 +5,7 @@ import { db } from '../lib/db.js';
 import { normalizePhone } from '../lib/phone.js';
 
 export const contactsRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // SSRF guard for user-supplied import URLs: https only, and the resolved IP
 // must be publicly routable (blocks cloud metadata, localhost, LAN, etc.).
@@ -63,7 +63,7 @@ async function safeFetchText(start: string, maxHops = 5): Promise<Response> {
 //  contacts.ts and conversations.ts can't drift on what counts as "the same"
 //  phone, which is what caused the original duplicate-contact bug.)
 
-function withSegments(rows: any[]): any[] {
+function withSegments(userId: string, rows: any[]): any[] {
   if (rows.length === 0) return rows;
   // Scope the segment-link scan to the contacts we're actually returning
   // (rows is capped at 500–1000). The previous version pulled EVERY
@@ -76,7 +76,7 @@ function withSegments(rows: any[]): any[] {
     `SELECT cs.contact_id, s.id, s.name
        FROM contact_segments cs JOIN segments s ON s.id = cs.segment_id
        WHERE s.user_id = ? AND cs.contact_id IN (${placeholders})`
-  ).all(USER, ...ids) as any[];
+  ).all(userId, ...ids) as any[];
   for (const l of links) {
     if (!segByContact.has(l.contact_id)) segByContact.set(l.contact_id, []);
     segByContact.get(l.contact_id)!.push({ id: l.id, name: l.name });
@@ -86,6 +86,7 @@ function withSegments(rows: any[]): any[] {
 
 // ---- list / search ----
 contactsRouter.get('/contacts', (req, res) => {
+  const USER = getUserId(req);
   const q = String(req.query.q || '').trim();
   const segmentId = req.query.segmentId ? Number(req.query.segmentId) : null;
   let rows: any[];
@@ -104,16 +105,18 @@ contactsRouter.get('/contacts', (req, res) => {
       `SELECT id, phone, name FROM contacts WHERE user_id = ? ORDER BY name, phone LIMIT 1000`
     ).all(USER) as any[];
   }
-  res.json(withSegments(rows));
+  res.json(withSegments(USER, rows));
 });
 
-contactsRouter.get('/contacts/meta', (_req, res) => {
+contactsRouter.get('/contacts/meta', (req, res) => {
+  const USER = getUserId(req);
   const total = (db.prepare(`SELECT COUNT(*) AS n FROM contacts WHERE user_id = ?`).get(USER) as any).n;
   res.json({ total });
 });
 
 // ---- manual add: phone is the ONLY required field ----
 contactsRouter.post('/contacts', (req, res) => {
+  const USER = getUserId(req);
   const phone = normalizePhone(String(req.body?.phone || ''));
   if (!phone) return res.status(400).json({ error: 'A valid phone number is required.' });
   const name = String(req.body?.name || '').trim().slice(0, 120);
@@ -126,12 +129,14 @@ contactsRouter.post('/contacts', (req, res) => {
 });
 
 contactsRouter.delete('/contacts/:id', (req, res) => {
+  const USER = getUserId(req);
   db.prepare(`DELETE FROM contacts WHERE id = ? AND user_id = ?`).run(Number(req.params.id), USER);
   res.json({ ok: true });
 });
 
 // ---- bulk sync (device) ----
 contactsRouter.post('/contacts/sync', (req, res) => {
+  const USER = getUserId(req);
   const incoming: { name?: string; phone?: string }[] = Array.isArray(req.body?.contacts) ? req.body.contacts : [];
   let synced = 0, skipped = 0;
   const upsert = db.prepare(
@@ -152,7 +157,8 @@ contactsRouter.post('/contacts/sync', (req, res) => {
 });
 
 // ---- segments ----
-contactsRouter.get('/segments', (_req, res) => {
+contactsRouter.get('/segments', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT s.id, s.name,
        (SELECT COUNT(*) FROM contact_segments cs WHERE cs.segment_id = s.id) AS count
@@ -162,6 +168,7 @@ contactsRouter.get('/segments', (_req, res) => {
 });
 
 contactsRouter.post('/segments', (req, res) => {
+  const USER = getUserId(req);
   const name = String(req.body?.name || '').trim().slice(0, 60);
   if (!name) return res.status(400).json({ error: 'name required' });
   try {
@@ -174,12 +181,14 @@ contactsRouter.post('/segments', (req, res) => {
 });
 
 contactsRouter.delete('/segments/:id', (req, res) => {
+  const USER = getUserId(req);
   db.prepare(`DELETE FROM segments WHERE id = ? AND user_id = ?`).run(Number(req.params.id), USER);
   res.json({ ok: true });
 });
 
 // add / remove a contact to/from a segment
 contactsRouter.post('/segments/:id/members', (req, res) => {
+  const USER = getUserId(req);
   const segId = Number(req.params.id);
   const contactId = Number(req.body?.contactId);
   const seg = db.prepare(`SELECT id FROM segments WHERE id = ? AND user_id = ?`).get(segId, USER);
@@ -214,7 +223,7 @@ function parseCsv(text: string): { name: string; phone: string }[] {
   return out;
 }
 
-function bulkUpsert(rows: { name: string; phone: string }[], segmentId?: number | null) {
+function bulkUpsert(userId: string, rows: { name: string; phone: string }[], segmentId?: number | null) {
   let synced = 0, skipped = 0;
   const up = db.prepare(
     `INSERT INTO contacts (user_id, phone, name) VALUES (?, ?, ?)
@@ -223,16 +232,16 @@ function bulkUpsert(rows: { name: string; phone: string }[], segmentId?: number 
   const getId = db.prepare(`SELECT id FROM contacts WHERE user_id = ? AND phone = ?`);
   const link = db.prepare(`INSERT OR IGNORE INTO contact_segments (contact_id, segment_id) VALUES (?, ?)`);
   const validSeg = segmentId
-    ? db.prepare(`SELECT id FROM segments WHERE id = ? AND user_id = ?`).get(segmentId, USER)
+    ? db.prepare(`SELECT id FROM segments WHERE id = ? AND user_id = ?`).get(segmentId, userId)
     : null;
   const tx = db.transaction((list: typeof rows) => {
     for (const r of list) {
       const phone = normalizePhone(r.phone);
       if (!phone) { skipped++; continue; }
-      up.run(USER, phone, (r.name || '').slice(0, 120));
+      up.run(userId, phone, (r.name || '').slice(0, 120));
       synced++;
       if (validSeg) {
-        const c = getId.get(USER, phone) as { id: number } | undefined;
+        const c = getId.get(userId, phone) as { id: number } | undefined;
         if (c) link.run(c.id, segmentId);
       }
     }
@@ -242,7 +251,8 @@ function bulkUpsert(rows: { name: string; phone: string }[], segmentId?: number 
 }
 
 // Export every contact as CSV (opens in Excel / Google Sheets directly).
-contactsRouter.get('/contacts/export.csv', (_req, res) => {
+contactsRouter.get('/contacts/export.csv', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(`SELECT name, phone FROM contacts WHERE user_id = ? ORDER BY name`).all(USER) as any[];
   const csv = 'name,phone\n' + rows.map((r) => `"${(r.name || '').replace(/"/g, '""')}","${r.phone}"`).join('\n');
   res.setHeader('Content-Type', 'text/csv');
@@ -252,16 +262,18 @@ contactsRouter.get('/contacts/export.csv', (_req, res) => {
 
 // Import from pasted CSV (Excel "Save as CSV").  body: { csv }
 contactsRouter.post('/contacts/import-csv', (req, res) => {
+  const USER = getUserId(req);
   const rows = parseCsv(String(req.body?.csv || ''));
   if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed' });
   const segmentId = req.body?.segmentId ? Number(req.body.segmentId) : null;
-  const r = bulkUpsert(rows, segmentId);
+  const r = bulkUpsert(USER, rows, segmentId);
   res.json({ ...r, total: (db.prepare(`SELECT COUNT(*) n FROM contacts WHERE user_id=?`).get(USER) as any).n });
 });
 
 // Import from a Google Sheets / Excel-Online URL.  body: { url }
 // Accepts a normal Sheets link and rewrites it to the CSV export endpoint.
 contactsRouter.post('/contacts/import-url', async (req, res) => {
+  const USER = getUserId(req);
   let url = String(req.body?.url || '').trim();
   if (!url) return res.status(400).json({ error: 'url required' });
   const gs = url.match(/docs\.google\.com\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
@@ -279,7 +291,7 @@ contactsRouter.post('/contacts/import-url', async (req, res) => {
     if (!r.ok) return res.status(400).json({ error: `fetch failed (${r.status}). For Google Sheets: Share → Anyone with the link → Viewer.` });
     const rows = parseCsv(await r.text());
     if (rows.length === 0) return res.status(400).json({ error: 'no rows parsed — is the sheet shared publicly?' });
-    const out = bulkUpsert(rows, req.body?.segmentId ? Number(req.body.segmentId) : null);
+    const out = bulkUpsert(USER, rows, req.body?.segmentId ? Number(req.body.segmentId) : null);
     res.json({ ...out, total: (db.prepare(`SELECT COUNT(*) n FROM contacts WHERE user_id=?`).get(USER) as any).n });
   } catch (e: any) {
     res.status(500).json({ error: e.message });

@@ -2,10 +2,11 @@ import { Router } from 'express';
 import { db } from '../lib/db.js';
 
 export const pushRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // POST /api/push/register  body: { platform, token }
 pushRouter.post('/push/register', (req, res) => {
+  const USER = getUserId(req);
   const platform = req.body.platform;
   const token = String(req.body.token || '');
   if (!['ios', 'android'].includes(platform) || !token) {

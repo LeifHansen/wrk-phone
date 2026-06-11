@@ -1,7 +1,7 @@
 import { Router, raw } from 'express';
 import { db } from '../lib/db.js';
 import { openai } from '../lib/openai.js';
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 import { saveBytes, deleteByUrl, storageBackend, MEDIA_DIR } from '../lib/storage.js';
 
 export const mediaRouter = Router();
@@ -24,10 +24,10 @@ const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 // (so Twilio can fetch it for the immediate send) but no library row is
 // created, so it won't appear on the Media Library page.
 
-function recordInLibrary(url: string, kind: 'generated' | 'upload' | 'video', prompt?: string): number {
+function recordInLibrary(userId: string, url: string, kind: 'generated' | 'upload' | 'video', prompt?: string): number {
   const r = db.prepare(
     `INSERT INTO media (user_id, url, prompt, kind, created_at) VALUES (?, ?, ?, ?, ?)`
-  ).run(USER, url, prompt ?? null, kind, Date.now());
+  ).run(userId, url, prompt ?? null, kind, Date.now());
   return Number(r.lastInsertRowid);
 }
 
@@ -35,6 +35,7 @@ function recordInLibrary(url: string, kind: 'generated' | 'upload' | 'video', pr
 // AI image generation. Defaults saveToLibrary=true — toggle off when the
 // user just wants a one-shot MMS image without polluting their library.
 mediaRouter.post('/media/generate', async (req, res) => {
+  const USER = getUserId(req);
   const prompt = String(req.body?.prompt || '').trim();
   if (!prompt) return res.status(400).json({ error: 'prompt required' });
   const size = ['1024x1024', '1024x1536', '1536x1024'].includes(req.body?.size) ? req.body.size : '1024x1024';
@@ -56,7 +57,7 @@ mediaRouter.post('/media/generate', async (req, res) => {
     } else {
       return res.status(502).json({ error: 'no image returned' });
     }
-    const id = saveToLibrary ? recordInLibrary(saved.url, 'generated', prompt) : null;
+    const id = saveToLibrary ? recordInLibrary(USER, saved.url, 'generated', prompt) : null;
     res.json({ id, url: saved.url, prompt, savedToLibrary: !!id });
   } catch (e: any) {
     res.status(500).json({ error: e.message });
@@ -98,6 +99,7 @@ function isOwnedMediaUrl(url: string): boolean {
 }
 
 mediaRouter.post('/media/avatar', async (req, res) => {
+  const USER = getUserId(req);
   const kind = req.body?.kind === 'agent' ? 'agent' : 'account';
   const providedUrl = req.body?.url ? String(req.body.url) : '';
   try {
@@ -136,7 +138,8 @@ mediaRouter.post('/media/avatar', async (req, res) => {
   }
 });
 
-mediaRouter.get('/account', (_req, res) => {
+mediaRouter.get('/account', (req, res) => {
+  const USER = getUserId(req);
   const row = db.prepare(`SELECT avatar_url FROM app_settings WHERE user_id=?`).get(USER) as any;
   res.json({ avatarUrl: row?.avatar_url || null });
 });
@@ -146,6 +149,7 @@ mediaRouter.get('/account', (_req, res) => {
 // Keeps backward compatibility with the existing UI. For larger files OR
 // videos, callers should use /api/media/upload-raw which streams bytes.
 mediaRouter.post('/media/upload', async (req, res) => {
+  const USER = getUserId(req);
   const dataUrl = String(req.body?.dataUrl || '');
   const m = dataUrl.match(/^data:image\/(png|jpe?g|webp|gif);base64,(.+)$/);
   if (!m) return res.status(400).json({ error: 'expected an image data URL' });
@@ -154,7 +158,7 @@ mediaRouter.post('/media/upload', async (req, res) => {
   if (buf.length > MAX_IMAGE_BYTES) return res.status(413).json({ error: 'image too large (max 10MB)' });
   const saveToLibrary = req.body?.saveToLibrary !== false;
   const saved = await saveBytes(buf, ext, `image/${ext === 'jpg' ? 'jpeg' : ext}`);
-  const id = saveToLibrary ? recordInLibrary(saved.url, 'upload') : null;
+  const id = saveToLibrary ? recordInLibrary(USER, saved.url, 'upload') : null;
   res.json({ id, url: saved.url, savedToLibrary: !!id });
 });
 
@@ -181,6 +185,7 @@ mediaRouter.post(
   '/media/upload-raw',
   raw({ type: ['image/*', 'video/*'], limit: MAX_VIDEO_BYTES }),
   async (req, res) => {
+    const USER = getUserId(req);
     if (!Buffer.isBuffer(req.body) || req.body.length === 0) {
       return res.status(400).json({ error: 'image or video body required' });
     }
@@ -200,12 +205,13 @@ mediaRouter.post(
     }
     const saved = await saveBytes(req.body as Buffer, meta.ext, mime);
     const saveToLibrary = req.header('x-save-to-library') !== '0';
-    const id = saveToLibrary ? recordInLibrary(saved.url, meta.kind) : null;
+    const id = saveToLibrary ? recordInLibrary(USER, saved.url, meta.kind) : null;
     res.json({ id, url: saved.url, savedToLibrary: !!id, kind: meta.kind });
   },
 );
 
 mediaRouter.get('/media', (req, res) => {
+  const USER = getUserId(req);
   const kind = req.query.kind ? String(req.query.kind) : null;
   const sql = kind
     ? `SELECT id, url, prompt, kind, created_at FROM media WHERE user_id = ? AND kind = ? ORDER BY created_at DESC LIMIT 500`
@@ -217,6 +223,7 @@ mediaRouter.get('/media', (req, res) => {
 });
 
 mediaRouter.delete('/media/:id', async (req, res) => {
+  const USER = getUserId(req);
   const row = db.prepare(`SELECT url FROM media WHERE id = ? AND user_id = ?`)
     .get(Number(req.params.id), USER) as any;
   if (row?.url) await deleteByUrl(row.url);

@@ -3,13 +3,14 @@ import { db } from '../lib/db.js';
 import { twilioClient } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 import { cached } from '../lib/cache.js';
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 export const analyticsRouter = Router();
 
 // GET /api/analytics — message/delivery stats from Twilio (bounded to last 30d,
 // sampled) + campaign + call stats from our DB.
-analyticsRouter.get('/analytics', async (_req, res) => {
+analyticsRouter.get('/analytics', async (req, res) => {
+  const USER = getUserId(req);
   const since = new Date(Date.now() - 30 * 86400000);
   const stats = {
     window: '30d',

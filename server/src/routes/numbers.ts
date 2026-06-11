@@ -240,9 +240,9 @@ numbersRouter.post('/numbers/buy', async (req, res) => {
 // gets a fresh SID) and the only failure mode of trusting it is the whole
 // repair endpoint blowing up with a Twilio 400, which is exactly what this
 // function exists to PREVENT.
-numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
+numbersRouter.post('/numbers/repair-webhooks', async (req, res) => {
   try {
-    const s = getAppSettings(OWNER_ID);
+    const s = getAppSettings(getUserId(req));
     const num = s.active_number || twilioConfig.defaultFrom;
     if (!num) return res.status(400).json({ error: 'No active number found to repair. Buy/select a number first.' });
     const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
@@ -250,7 +250,7 @@ numbersRouter.post('/numbers/repair-webhooks', async (_req, res) => {
       return res.status(404).json({ error: `Twilio doesn't have ${num} on this account — buy it first or pick a different active number.` });
     }
     const sid = found[0].sid;
-    if (sid !== s.active_number_sid) setActiveNumber(OWNER_ID, num, sid);
+    if (sid !== s.active_number_sid) setActiveNumber(getUserId(req), num, sid);
     const { urls, warnings } = await configureWebhooks(sid);
     res.json({ ok: true, number: num, sid, webhooks: urls, warnings });
   } catch (e: any) {
@@ -282,9 +282,9 @@ numbersRouter.post('/numbers/repair-all-webhooks', async (_req, res) => {
 });
 
 // GET /api/numbers/webhook-status — what Twilio currently has vs what we expect
-numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
+numbersRouter.get('/numbers/webhook-status', async (req, res) => {
   try {
-    const s = getAppSettings(OWNER_ID);
+    const s = getAppSettings(getUserId(req));
     const num = s.active_number || twilioConfig.defaultFrom;
     // Always re-resolve via Twilio so a stale DB SID doesn't 500 this status
     // probe (which is the one tool the operator uses to diagnose drift).
@@ -292,7 +292,7 @@ numbersRouter.get('/numbers/webhook-status', async (_req, res) => {
     if (num) {
       const found = await twilioClient.incomingPhoneNumbers.list({ phoneNumber: num, limit: 1 });
       sid = found[0]?.sid || null;
-      if (sid && sid !== s.active_number_sid) setActiveNumber(OWNER_ID, num, sid);
+      if (sid && sid !== s.active_number_sid) setActiveNumber(getUserId(req), num, sid);
     }
     const base = publicBase();
     const expected = { voiceUrl: `${base}/api/voice/inbound`, smsInbound: `${base}/api/sms/inbound` };

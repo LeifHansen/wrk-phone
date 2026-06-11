@@ -11,7 +11,6 @@ import { normalizePhone } from '../lib/phone.js';
 
 export const smsRouter = Router();
 const MessagingResponse = twilio.twiml.MessagingResponse;
-import { OWNER_ID as USER } from '../lib/auth.js';
 import { resolveInboundOwner } from '../lib/numbers-store.js';
 
 // Twilio posts per-message delivery receipts (queued → sent → delivered, or
@@ -161,6 +160,7 @@ smsRouter.post('/sms/inbound', async (req, res) => {
 // Outbound: client posts a message to send
 // POST /api/sms/send  body: { to, body, conversationId? }
 smsRouter.post('/sms/send', async (req, res) => {
+  const USER = getUserId(req);
   // Normalize before send so the conversation lookup hits the canonical
   // (E.164) row, not creating a fresh thread for "2068173472" alongside
   // an existing "+12068173472" thread.

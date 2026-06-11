@@ -3,10 +3,11 @@ import { db } from '../lib/db.js';
 import { firstNameFrom } from '../lib/phone.js';
 
 export const templatesRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // ---------- list ----------
-templatesRouter.get('/templates', (_req, res) => {
+templatesRouter.get('/templates', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT id, name, body, media_url, created_at, updated_at
        FROM templates WHERE user_id = ? ORDER BY updated_at DESC`
@@ -16,6 +17,7 @@ templatesRouter.get('/templates', (_req, res) => {
 
 // ---------- get one ----------
 templatesRouter.get('/templates/:id', (req, res) => {
+  const USER = getUserId(req);
   const row = db.prepare(
     `SELECT id, name, body, media_url, created_at, updated_at
        FROM templates WHERE id = ? AND user_id = ?`
@@ -26,6 +28,7 @@ templatesRouter.get('/templates/:id', (req, res) => {
 
 // ---------- create ----------
 templatesRouter.post('/templates', (req, res) => {
+  const USER = getUserId(req);
   const name = String(req.body?.name || '').trim().slice(0, 80);
   const body = String(req.body?.body || '');
   const media_url = req.body?.media_url ? String(req.body.media_url) : null;
@@ -42,6 +45,7 @@ templatesRouter.post('/templates', (req, res) => {
 
 // ---------- update ----------
 templatesRouter.patch('/templates/:id', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const row = db.prepare(`SELECT * FROM templates WHERE id = ? AND user_id = ?`).get(id, USER) as any;
   if (!row) return res.status(404).json({ error: 'not found' });
@@ -58,6 +62,7 @@ templatesRouter.patch('/templates/:id', (req, res) => {
 
 // ---------- delete ----------
 templatesRouter.delete('/templates/:id', (req, res) => {
+  const USER = getUserId(req);
   db.prepare(`DELETE FROM templates WHERE id = ? AND user_id = ?`).run(Number(req.params.id), USER);
   res.json({ ok: true });
 });
@@ -84,6 +89,7 @@ export function renderTemplate(body: string, ctx: { firstName: string; phone: st
 // Returns the rendered body for the given recipient. The composer uses this
 // to show a preview before sending.
 templatesRouter.post('/templates/:id/render', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const t = db.prepare(`SELECT * FROM templates WHERE id = ? AND user_id = ?`).get(id, USER) as any;
   if (!t) return res.status(404).json({ error: 'not found' });

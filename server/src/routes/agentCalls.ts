@@ -11,13 +11,14 @@ import { twilioClient } from '../lib/twilio.js';
 import { log } from '../lib/log.js';
 
 export const agentCallsRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // ---------- live ----------
 // Currently-active calls across ALL of this user's campaigns, with the
 // last ~50 transcript chunks per call. Polled every ~2s by the Live
 // Calls panel so the user can watch the conversation in real time.
-agentCallsRouter.get('/agent-calls/live', (_req, res) => {
+agentCallsRouter.get('/agent-calls/live', (req, res) => {
+  const USER = getUserId(req);
   const calls = db.prepare(
     `SELECT acr.id AS recipient_id, acr.phone, acr.name,
             acr.status, acr.twilio_sid, acr.answered_by, acr.duration_sec,
@@ -47,6 +48,7 @@ agentCallsRouter.get('/agent-calls/live', (_req, res) => {
 // every chunk in order — used when the user clicks a row to see the
 // full conversation so far.
 agentCallsRouter.get('/agent-calls/live/:sid', (req, res) => {
+  const USER = getUserId(req);
   const sid = String(req.params.sid);
   const events = db.prepare(
     `SELECT sequence, source, text, is_final, created_at
@@ -58,7 +60,8 @@ agentCallsRouter.get('/agent-calls/live/:sid', (req, res) => {
 });
 
 // ---------- list ----------
-agentCallsRouter.get('/agent-calls', (_req, res) => {
+agentCallsRouter.get('/agent-calls', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT ac.*, a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color
        FROM agent_calls ac
@@ -70,6 +73,7 @@ agentCallsRouter.get('/agent-calls', (_req, res) => {
 
 // ---------- detail (campaign + per-recipient rows) ----------
 agentCallsRouter.get('/agent-calls/:id', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const campaign = db.prepare(
     `SELECT ac.*, a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color, a.tts_voice AS agent_voice
@@ -87,6 +91,7 @@ agentCallsRouter.get('/agent-calls/:id', (req, res) => {
 // ---------- create draft ----------
 // body: { name, agentId, script, fromNumber?, voicemailOnly?, recipients? | segmentId | allContacts }
 agentCallsRouter.post('/agent-calls', (req, res) => {
+  const USER = getUserId(req);
   const name = String(req.body.name || '').trim();
   const script = String(req.body.script || '').trim();
   const agentId = Number(req.body.agentId);
@@ -138,6 +143,7 @@ agentCallsRouter.post('/agent-calls', (req, res) => {
 
 // ---------- send ----------
 agentCallsRouter.post('/agent-calls/:id/send', async (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const campaign = db.prepare(
     `SELECT * FROM agent_calls WHERE id = ? AND user_id = ?`

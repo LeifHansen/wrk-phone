@@ -1,9 +1,9 @@
 import { Router } from 'express';
 import { db, getAgentForConversation, hydrateAgent } from '../lib/db.js';
 import { normalizePhone } from '../lib/phone.js';
-import { OWNER_ID } from '../lib/auth.js';
-// Shared-line model: the inbox/conversations belong to the shared account
-// (OWNER), not the logged-in user. Per-user telephony is a future build.
+import { getUserId } from '../lib/auth.js';
+// Per-request tenancy: every query scopes to getUserId(req). While
+// AUTH_REQUIRED is off this resolves to the owner account (dark launch).
 
 export const conversationsRouter = Router();
 
@@ -14,7 +14,7 @@ export const conversationsRouter = Router();
 // last direction, contact name) — N+3 queries on a growing inbox. This now
 // uses two preaggregated joins (latest message + contact name), one pass each.
 conversationsRouter.get('/conversations', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   // EXCLUDE drafts from the inbox preview. A draft is an unsent message
   // pinned to a conversation — it should appear ONLY in the Drafts subtab,
   // not as "You: …" in the inbox or push last_body / last_direction.
@@ -45,7 +45,7 @@ conversationsRouter.get('/conversations', (req, res) => {
 // GET /api/conversations/:id/messages  (and currently-assigned agent)
 // Hide drafts from the thread view — they belong on the Drafts subtab.
 conversationsRouter.get('/conversations/:id/messages', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   const id = Number(req.params.id);
   const messages = db.prepare(
     `SELECT id, direction, body, status, created_at, is_ai, is_suggestion, agent_id
@@ -57,7 +57,8 @@ conversationsRouter.get('/conversations/:id/messages', (req, res) => {
 });
 
 conversationsRouter.post('/conversations/:id/read', (req, res) => {
-  db.prepare('UPDATE conversations SET unread_count = 0 WHERE id = ?').run(Number(req.params.id));
+  db.prepare('UPDATE conversations SET unread_count = 0 WHERE id = ? AND user_id = ?')
+    .run(Number(req.params.id), getUserId(req));
   res.json({ ok: true });
 });
 
@@ -68,12 +69,13 @@ conversationsRouter.patch('/conversations/:id/autopilot', (req, res) => {
   const id = Number(req.params.id);
   const on = req.body?.on ? 1 : 0;
   const agentId = req.body?.agentId != null ? Number(req.body.agentId) : null;
+  const USER = getUserId(req);
   if (agentId != null) {
-    const a = db.prepare('SELECT id FROM agents WHERE id = ? AND user_id = ?').get(agentId, OWNER_ID);
+    const a = db.prepare('SELECT id FROM agents WHERE id = ? AND user_id = ?').get(agentId, USER);
     if (!a) return res.status(404).json({ error: 'agent not found' });
-    db.prepare('UPDATE conversations SET agent_id = ? WHERE id = ?').run(agentId, id);
+    db.prepare('UPDATE conversations SET agent_id = ? WHERE id = ? AND user_id = ?').run(agentId, id, USER);
   }
-  db.prepare('UPDATE conversations SET autopilot = ? WHERE id = ? AND user_id = ?').run(on, id, OWNER_ID);
+  db.prepare('UPDATE conversations SET autopilot = ? WHERE id = ? AND user_id = ?').run(on, id, USER);
   res.json({ ok: true, autopilot: !!on });
 });
 
@@ -84,16 +86,17 @@ conversationsRouter.patch('/conversations/:id/autopilot', (req, res) => {
 // you could wipe any conversation's messages by guessing its id.
 conversationsRouter.delete('/conversations/:id', (req, res) => {
   const id = Number(req.params.id);
+  const USER = getUserId(req);
   db.prepare(
     `DELETE FROM messages
        WHERE conversation_id IN (SELECT id FROM conversations WHERE id = ? AND user_id = ?)`
-  ).run(id, OWNER_ID);
-  const r = db.prepare('DELETE FROM conversations WHERE id = ? AND user_id = ?').run(id, OWNER_ID);
+  ).run(id, USER);
+  const r = db.prepare('DELETE FROM conversations WHERE id = ? AND user_id = ?').run(id, USER);
   res.json({ ok: true, deleted: r.changes });
 });
 
 conversationsRouter.post('/conversations', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   // ALWAYS normalize peer phone before lookup/insert — otherwise we end up
   // with separate threads for "2068173472" and "+12068173472" even though
   // they're the same person. See dedupePhoneRows() in lib/db.ts for the
@@ -127,7 +130,7 @@ conversationsRouter.post('/conversations', (req, res) => {
 // living on a conversation (the conversation row is created on first save
 // so the recipient context survives). The drafts subtab queries this set.
 conversationsRouter.get('/drafts', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   const rows = db.prepare(`
     SELECT m.id AS draft_id, m.body AS draft_body, m.created_at AS draft_at,
            c.id AS conversation_id, c.peer_phone, c.our_number,
@@ -145,7 +148,7 @@ conversationsRouter.get('/drafts', (req, res) => {
 // conversation. Returns the conversation id + draft id so the UI can either
 // stay on the draft form or navigate into the thread.
 conversationsRouter.post('/drafts', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   const peer = normalizePhone(String(req.body.peer_phone || ''));
   const body = String(req.body.body || '');
   const media_url = req.body.media_url ? String(req.body.media_url) : null;
@@ -174,7 +177,7 @@ conversationsRouter.post('/drafts', (req, res) => {
 
 // DELETE /api/drafts/:id — discard a draft
 conversationsRouter.delete('/drafts/:id', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   // Scope through the conversation so a forged id can't wipe someone else's row.
   db.prepare(
     `DELETE FROM messages WHERE id = ? AND status = 'draft'
@@ -184,7 +187,7 @@ conversationsRouter.delete('/drafts/:id', (req, res) => {
 });
 
 conversationsRouter.get('/calls', (req, res) => {
-  const USER = OWNER_ID;
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT c.*, ct.name FROM calls c
      LEFT JOIN contacts ct ON ct.user_id = c.user_id AND ct.phone = c.peer_phone

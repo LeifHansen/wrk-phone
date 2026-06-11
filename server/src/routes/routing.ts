@@ -3,7 +3,7 @@ import { db } from '../lib/db.js';
 import { hydrateRule, RuleRow, dryRun, describeCondition, Condition } from '../lib/routing.js';
 
 export const routingRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 const VALID_TYPES = new Set(['keyword', 'sender', 'sender_phone', 'area_code', 'time', 'intent']);
 
@@ -41,11 +41,12 @@ function validateConditions(input: any): Condition[] {
   return out;
 }
 
-function fetch(id: number) {
-  return db.prepare(`SELECT * FROM routing_rules WHERE id = ? AND user_id = ?`).get(id, USER) as RuleRow | undefined;
+function fetch(id: number, userId: string) {
+  return db.prepare(`SELECT * FROM routing_rules WHERE id = ? AND user_id = ?`).get(id, userId) as RuleRow | undefined;
 }
 
-routingRouter.get('/routing-rules', (_req, res) => {
+routingRouter.get('/routing-rules', (req, res) => {
+  const USER = getUserId(req);
   const rows = db.prepare(
     `SELECT r.*, a.name AS agent_name, a.emoji AS agent_emoji, a.color AS agent_color
      FROM routing_rules r
@@ -56,6 +57,7 @@ routingRouter.get('/routing-rules', (_req, res) => {
 });
 
 routingRouter.post('/routing-rules', (req, res) => {
+  const USER = getUserId(req);
   try {
     const name = String(req.body.name || '').trim();
     const agent_id = Number(req.body.agent_id);
@@ -77,9 +79,10 @@ routingRouter.post('/routing-rules', (req, res) => {
 });
 
 routingRouter.patch('/routing-rules/:id', (req, res) => {
+  const USER = getUserId(req);
   try {
     const id = Number(req.params.id);
-    const r = fetch(id);
+    const r = fetch(id, USER);
     if (!r) return res.status(404).json({ error: 'not found' });
     const next = {
       name: req.body.name !== undefined ? String(req.body.name).trim() : r.name,
@@ -101,8 +104,9 @@ routingRouter.patch('/routing-rules/:id', (req, res) => {
 });
 
 routingRouter.delete('/routing-rules/:id', (req, res) => {
+  const USER = getUserId(req);
   const id = Number(req.params.id);
-  const r = fetch(id);
+  const r = fetch(id, USER);
   if (!r) return res.status(404).json({ error: 'not found' });
   db.prepare(`DELETE FROM routing_rules WHERE id = ?`).run(id);
   res.json({ ok: true });
@@ -110,6 +114,7 @@ routingRouter.delete('/routing-rules/:id', (req, res) => {
 
 // Reorder: body { ids: [orderedIds] }
 routingRouter.post('/routing-rules/reorder', (req, res) => {
+  const USER = getUserId(req);
   const ids: number[] = Array.isArray(req.body.ids) ? req.body.ids.map(Number) : [];
   const tx = db.transaction(() => {
     ids.forEach((id, idx) => {
@@ -123,6 +128,7 @@ routingRouter.post('/routing-rules/reorder', (req, res) => {
 // Dry-run: test arbitrary conditions against an inbound (without saving).
 // body: { from, body, conditions }
 routingRouter.post('/routing-rules/test', async (req, res) => {
+  const USER = getUserId(req);
   try {
     const conditions = validateConditions(req.body.conditions);
     const from = String(req.body.from || '');
