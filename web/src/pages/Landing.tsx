@@ -75,9 +75,9 @@ const FEATURES = [
   },
   {
     icon: '✅',
-    title: 'A2P 10DLC built in',
+    title: 'Carrier registration built in',
     body:
-      'Two-tier 10DLC registration — sole-proprietor or full business brand — runs as a wizard inside the app. Carrier vetting with manual-console fallback so you\'re never stuck.',
+      'Every dedicated number you buy is pre-registered on our approved A2P 10DLC campaign. Full carrier deliverability from day one — no brand filings, no vetting forms, no waiting.',
   },
   {
     icon: '📊',
@@ -116,7 +116,7 @@ const FAQ = [
   },
   {
     q: 'Is AI SMS marketing compliant?',
-    a: 'WrkPhn handles STOP, START, and HELP keywords automatically, enforces opt-outs before every send, and supports 10DLC registration — compliant SMS marketing without the busywork.',
+    a: 'WrkPhn handles STOP, START, and HELP keywords automatically, enforces opt-outs before every send, and every number comes pre-registered on an approved 10DLC campaign — compliant SMS marketing without the busywork.',
   },
   {
     q: 'Is it really cheap and contract-free?',

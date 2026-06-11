@@ -27,7 +27,7 @@ export function TextMarketingApp() {
         { icon: '🤖', title: 'AI replies to inbound', body: 'Replies don\'t pile up — your AI text agent answers in your voice or queues a one-tap suggestion for you to approve.' },
         { icon: '📇', title: 'Native contact + segment manager', body: 'No external CRM required. Tag contacts, build segments, and target campaigns without leaving the app.' },
         { icon: '🖼️', title: 'MMS + AI image generation', body: 'Attach an image or describe one — AI generates a campaign visual that matches your brand.' },
-        { icon: '🛡️', title: 'Carrier compliant', body: 'Automatic STOP / HELP, opt-out enforcement, 10DLC and toll-free verification walkthroughs.' },
+        { icon: '🛡️', title: 'Carrier compliant', body: 'Automatic STOP / HELP, opt-out enforcement, and numbers pre-registered on an approved 10DLC campaign.' },
         { icon: '📲', title: 'Web + iOS + Android', body: 'Send from your laptop, your iPhone, or your Android — same number, same threads, same agents.' },
       ]}
       how={[

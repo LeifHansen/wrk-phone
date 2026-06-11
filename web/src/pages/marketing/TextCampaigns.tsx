@@ -8,7 +8,7 @@ const FAQ = [
   { q: 'What\'s a text campaign?', a: 'A text campaign is a personalized text message sent to a list of contacts at once — typically for promotions, announcements, reminders, or booking nudges. WrkPhn adds an AI text agent that answers replies automatically.' },
   { q: 'How many people can I text in one campaign?', a: 'There\'s no hard cap. WrkPhn paces sends to stay under Twilio\'s throughput limits (~10 messages/sec by default, higher with 10DLC). Thousands per campaign works fine.' },
   { q: 'Can I send text campaigns to my whole contact list?', a: 'Yes. Send to your full contact book, a saved segment, or a one-off pasted list of phone numbers — same flow.' },
-  { q: 'Will my text campaigns be compliant?', a: 'Yes — STOP/HELP keywords are handled automatically, opt-outs are enforced across all future campaigns, and 10DLC + toll-free verification flows are walkthroughed in-app.' },
+  { q: 'Will my text campaigns be compliant?', a: 'Yes — STOP/HELP keywords are handled automatically, opt-outs are enforced across all future campaigns, and every dedicated number is pre-registered on an approved 10DLC campaign — nothing to file.' },
   { q: 'How are text campaigns priced?', a: '1 credit per 160-character text segment, 3 credits per MMS recipient. $5 = 500 segments, no subscription.' },
 ];
 

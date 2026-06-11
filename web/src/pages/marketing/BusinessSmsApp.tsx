@@ -40,7 +40,7 @@ export function BusinessSmsApp() {
           'Most small businesses run their texting through someone\'s personal phone — owner, manager, whoever picked up. That doesn\'t scale: nobody else can see the threads, the conversations leave when the person leaves, there\'s zero compliance, and you can\'t do marketing without flooding your friends. WrkPhn is built for that exact problem: a dedicated business SMS app with a real business number, a shared inbox, AI agents that answer when nobody can, and marketing campaigns that don\'t step on your personal threads.',
         ]},
         { h2: 'Built for teams that don\'t want a phone system', body: [
-          'You don\'t want a PBX. You don\'t want to call a sales rep to find out the price. You don\'t want a 90-day rollout. WrkPhn is a self-serve business SMS app: sign up, get a number, start texting in five minutes. The whole thing runs in a browser tab (or an app on your phone). When you outgrow the basics — 10DLC for higher throughput, multiple agents, voice answering — those are toggles in the same app, not a different product.',
+          'You don\'t want a PBX. You don\'t want to call a sales rep to find out the price. You don\'t want a 90-day rollout. WrkPhn is a self-serve business SMS app: sign up, get a number, start texting in five minutes. The whole thing runs in a browser tab (or an app on your phone). When you outgrow the basics — a dedicated registered number, multiple agents, voice answering — those are toggles in the same app, not a different product.',
         ]},
       ]}
       related={[

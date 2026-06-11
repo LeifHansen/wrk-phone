@@ -7,7 +7,7 @@ const DESC =
 const FAQ = [
   { q: 'How do SMS campaigns work in WrkPhn?', a: 'Create a draft (name, message template with {{name}} merge fields, optional MMS image), pick recipients (whole list, segment, or pasted CSV), and send. WrkPhn paces delivery, tracks status per recipient, and routes inbound replies to your AI text agent.' },
   { q: 'Can I segment recipients?', a: 'Yes — tag contacts, build named segments, and target campaigns by segment. You can also send to your whole contact book or paste a one-off list.' },
-  { q: 'Are SMS campaigns compliant?', a: 'STOP, START and HELP are intercepted on every inbound automatically. Opted-out contacts are skipped on future campaigns without manual list cleanup. WrkPhn supports 10DLC registration and toll-free verification for high-volume senders.' },
+  { q: 'Are SMS campaigns compliant?', a: 'STOP, START and HELP are intercepted on every inbound automatically. Opted-out contacts are skipped on future campaigns without manual list cleanup. Dedicated WrkPhn numbers come pre-registered on an approved 10DLC campaign — no filing required, even for high-volume senders.' },
   { q: 'What about MMS (image) campaigns?', a: 'Yes — attach an image (or have AI generate one from a prompt) for any campaign. Charged at the standard 3 credits per MMS recipient.' },
   { q: 'How much does an SMS campaign cost?', a: '1 credit per 160-character SMS segment. $5 buys 500 segments. Credits roll over forever, no subscription.' },
 ];

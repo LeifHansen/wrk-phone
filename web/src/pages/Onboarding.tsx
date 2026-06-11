@@ -63,14 +63,15 @@ export function Onboarding() {
 
         {step === 2 && (
           <>
-            <h2 className="ob-h">Business registration</h2>
+            <h2 className="ob-h">Want your own number?</h2>
             <p className="ob-p">
               {chosen ? <>You're set to send from <b>{pretty(chosen)}</b>. </> : ''}
-              To send marketing & high-volume texts without carrier filtering you'll register
-              for <b>10DLC</b>. That flow is coming soon — for now the shared pool works for normal use.
+              Prefer a dedicated local number? Buy one anytime on the <b>Work line</b> page
+              for $2/mo — it's pre-registered on our approved carrier campaign
+              (A2P 10DLC), so there are no registration steps and no carrier filtering.
             </p>
             <div className="cond-card" style={{ color: 'var(--muted)', fontSize: 13 }}>
-              🔒 10DLC registration & buying your own number unlock in a future update.
+              ✅ No 10DLC paperwork — every number includes campaign registration.
             </div>
             <button className="btn lg" style={{ width: '100%', marginTop: 12 }} onClick={() => setStep(3)}>Continue</button>
           </>

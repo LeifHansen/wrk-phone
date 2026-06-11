@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { NavLink, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
+import { NavLink, Navigate, Route, Routes, useNavigate, useLocation } from 'react-router-dom';
 import { api, auth } from './lib/api';
 import { Logo } from './components/Logo';
 import { Toaster } from './components/Toast';
@@ -24,7 +24,6 @@ const Login = page(() => import('./pages/Login'), 'Login');
 const Onboarding = page(() => import('./pages/Onboarding'), 'Onboarding');
 const Credits = page(() => import('./pages/Credits'), 'Credits');
 const Numbers = page(() => import('./pages/Numbers'), 'Numbers');
-const A2P = page(() => import('./pages/A2P'), 'A2P');
 const Analytics = page(() => import('./pages/Analytics'), 'Analytics');
 const Inbox = page(() => import('./pages/Inbox'), 'Inbox');
 const Conversation = page(() => import('./pages/Conversation'), 'Conversation');
@@ -208,7 +207,8 @@ export function App() {
           <Route path="/agents/calls" element={<AgentCalls />} />
           <Route path="/credits" element={<Credits />} />
           <Route path="/numbers" element={<Numbers />} />
-          <Route path="/a2p" element={<A2P />} />
+          {/* /a2p retired — numbers join the platform's approved campaign at purchase */}
+          <Route path="/a2p" element={<Navigate to="/numbers" replace />} />
           <Route path="/analytics" element={<Analytics />} />
           <Route path="/admin" element={<Settings />} />
           <Route path="/settings" element={<Settings />} />

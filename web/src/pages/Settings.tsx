@@ -132,28 +132,18 @@ export function Settings() {
         </div>
 
         <div className="set-section">
-          <h3>BUSINESS LINE</h3>
-          <div className="set-card">
-            <Row label="Your number"><span>{line?.activeNumber || '—'}</span></Row>
-            <p style={{ color: 'var(--muted)', fontSize: 13, padding: '10px 0' }}>
-              Register your business to send marketing & high-volume texts without
-              carrier filtering (A2P 10DLC). We automate the whole filing.
-            </p>
-            <Link to="/a2p" className="btn lg" style={{ display: 'inline-block', textDecoration: 'none', margin: '8px 0' }}>
-              Register business line
-            </Link>
-            <div style={{ color: 'var(--muted)', fontSize: 11 }}>$10/mo carrier fee (added later — free during beta)</div>
-          </div>
-        </div>
-
-        <div className="set-section">
           <h3>NUMBERS</h3>
           <div className="set-card">
             <Row label="Active"><span>{line?.activeNumber || '—'}</span></Row>
+            <p style={{ color: 'var(--muted)', fontSize: 13, padding: '10px 0' }}>
+              Every number you buy is pre-registered on our approved carrier
+              campaign (A2P 10DLC) — full deliverability, no filing or
+              registration steps.
+            </p>
             <Link to="/numbers" className="btn" style={{ display: 'inline-block', textDecoration: 'none', margin: '8px 0' }}>
               Manage / add numbers
             </Link>
-            <div style={{ color: 'var(--muted)', fontSize: 11 }}>Extra numbers $2/mo each</div>
+            <div style={{ color: 'var(--muted)', fontSize: 11 }}>Dedicated numbers $2/mo + $2 setup</div>
           </div>
         </div>
 
@@ -163,8 +153,8 @@ export function Settings() {
             {subs.length === 0 && <Row label="Active plans"><span>None</span></Row>}
             {subs.map((s, i) => (
               <Row key={i} label={
-                s.plan === 'a2p'       ? 'Business line · $10/mo' :
-                s.plan === 'sole_prop' ? 'Sole Proprietor · $5/mo' :
+                s.plan === 'a2p'       ? 'Business line (legacy) · $10/mo' :
+                s.plan === 'sole_prop' ? 'Sole Proprietor (legacy) · $5/mo' :
                                          `Number ${s.ref || ''} · $2/mo`
               }>
                 <span>{String(s.status).toUpperCase()}</span>

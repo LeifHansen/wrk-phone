@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../lib/api';
 
 function pretty(e164: string) {
@@ -62,8 +62,8 @@ export function Setup() {
         )}
 
         <div className="cond-card" style={{ color: 'var(--muted)', fontSize: 13, marginTop: 16 }}>
-          🔒 Bringing or buying your own dedicated number unlocks after 10DLC
-          registration. For now you share a pooled line — replies land in your inbox.
+          Want a dedicated local number? Buy one on the <Link to="/numbers">Work line</Link> page
+          for $2/mo — pre-registered on our approved carrier campaign, no 10DLC paperwork.
         </div>
       </div>
     </>

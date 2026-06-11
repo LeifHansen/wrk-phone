@@ -329,18 +329,8 @@ export const api = {
   buyAdditional: (phoneNumber: string) =>
     req<{ ok: boolean; url?: string | null; number?: string; monthly?: number; warnings?: string[]; note?: string }>(
       '/api/numbers/buy-additional', { method: 'POST', body: JSON.stringify({ phoneNumber }) }),
-  // A2P 10DLC
-  a2pDraft: (businessDescription: string) =>
-    req<any>('/api/a2p/draft', { method: 'POST', body: JSON.stringify({ businessDescription }) }),
-  a2pSubmit: (profile: any, pkg: any) =>
-    req<{ id: number; status: string; note: string; customerProfileSid?: string; endUserSid?: string }>(
-      '/api/a2p/submit', { method: 'POST', body: JSON.stringify({ profile, package: pkg }) }),
-  // After a2pSubmit returns status='otp_pending', the user receives an
-  // SMS code on the phone they registered. Submit it here to verify.
-  a2pVerifyOtp: (code: string) =>
-    req<{ ok: boolean; status: string; note?: string; profileStatus?: string }>(
-      '/api/a2p/verify-otp', { method: 'POST', body: JSON.stringify({ code }) }),
-  a2pStatus: () => req<any>('/api/a2p/status'),
+  // (A2P 10DLC self-registration retired — numbers join the platform's
+  // approved campaign automatically at purchase.)
   // avatars
   genAvatar: (kind: 'account' | 'agent', agentId?: number, prompt?: string) =>
     req<{ url: string }>('/api/media/avatar', { method: 'POST', body: JSON.stringify({ kind, agentId, prompt }) }),
@@ -362,11 +352,8 @@ export const api = {
     req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-csv', { method: 'POST', body: JSON.stringify({ csv, segmentId }) }),
   importContactsUrl: (url: string, segmentId?: number) =>
     req<{ synced: number; skipped: number; total: number }>('/api/contacts/import-url', { method: 'POST', body: JSON.stringify({ url, segmentId }) }),
-  // recurring billing
-  subscribe: (plan: 'a2p' | 'sole_prop' | 'number', ref?: string) =>
-    req<{ url: string | null; stub?: boolean; note?: string }>(
-      '/api/billing/subscribe',
-      { method: 'POST', body: JSON.stringify({ plan, ref, returnUrl: location.origin }) }),
+  // recurring billing (number purchases go through api.buyNumber, which
+  // returns its own checkout URL — no generic subscribe call needed anymore)
   billingSubs: () => req<{ stripeEnabled: boolean; plans: any; subscriptions: any[] }>('/api/billing/subscriptions'),
   // analytics
   analytics: () => req<any>('/api/analytics'),

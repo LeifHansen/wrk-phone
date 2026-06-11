@@ -5,7 +5,7 @@ const TITLE = 'SMS Marketing App for Small Business | WrkPhn';
 const DESC =
   'The AI-powered SMS marketing app for small business. Send compliant SMS campaigns, segment contacts, and let AI follow up automatically — no contract, live in minutes.';
 const FAQ = [
-  { q: 'What is an SMS marketing app?', a: 'An SMS marketing app lets you send promotional and transactional text messages to a list of contacts. WrkPhn adds AI follow-up so two-way replies are handled automatically, plus built-in opt-out and 10DLC compliance.' },
+  { q: 'What is an SMS marketing app?', a: 'An SMS marketing app lets you send promotional and transactional text messages to a list of contacts. WrkPhn adds AI follow-up so two-way replies are handled automatically, plus built-in opt-out handling and numbers pre-registered for 10DLC compliance.' },
   { q: 'Is WrkPhn good for small business SMS marketing?', a: 'Yes — WrkPhn is purpose-built for solopreneurs and small teams who want enterprise-grade SMS marketing without the price tag or learning curve. Pay-as-you-go, no contract, no minimum spend.' },
   { q: 'Do you handle STOP / HELP keywords automatically?', a: 'WrkPhn intercepts STOP, START and HELP on every inbound, records the opt-out, and refuses to send to opted-out contacts on future campaigns — no manual list scrubbing.' },
   { q: 'How is this different from Mailchimp or Klaviyo SMS?', a: 'WrkPhn is SMS-first, not an email tool that bolted on texting. You get an AI text agent that can REPLY to inbound texts — the campaign is just the start of the conversation.' },
@@ -25,7 +25,7 @@ export function SmsMarketingApp() {
       benefits={[
         { icon: '📣', title: 'Bulk SMS campaigns', body: 'Send personalized text-marketing blasts to any list — your full contact book, a saved segment, or a pasted CSV. {{name}} merge fields baked in.' },
         { icon: '🤖', title: 'AI follow-up agent', body: 'When a recipient replies, your AI text agent picks up the conversation in your brand voice — suggest mode for approval or full autopilot.' },
-        { icon: '✅', title: 'Compliant by default', body: 'STOP / START / HELP handled automatically. 10DLC and toll-free verification supported. Opt-outs enforced before every send.' },
+        { icon: '✅', title: 'Compliant by default', body: 'STOP / START / HELP handled automatically. Numbers come pre-registered on an approved 10DLC campaign. Opt-outs enforced before every send.' },
         { icon: '🖼️', title: 'MMS with AI image gen', body: 'Add an image to any campaign — upload your own or describe it and let AI generate an on-brand visual for you.' },
         { icon: '💸', title: 'Pay as you go', body: 'No minimum spend, no contract, no “contact sales.” $5 buys 500 message segments and they roll over forever.' },
         { icon: '📈', title: 'Real send + delivery tracking', body: 'Per-recipient status (queued / sent / delivered / failed) from Twilio status callbacks — see exactly what landed.' },
@@ -42,7 +42,7 @@ export function SmsMarketingApp() {
         ]},
         { h2: 'Compliance, built in', body: [
           'SMS marketing in the US is regulated — 10DLC registration for local numbers, toll-free verification for shared lines, mandatory STOP/HELP handling, opt-in records. WrkPhn does the boring stuff so you don\'t accidentally end up on a carrier blocklist. STOP keywords are intercepted before they reach your inbox, the contact is flagged opted-out, and the next campaign automatically skips them. HELP returns a configurable response. START resubscribes.',
-          'For higher throughput, we walk you through the 10DLC sole-proprietor onboarding wizard in-app — it\'s the difference between 1 message per second and 30+.',
+          'For higher throughput, buy a dedicated local number — it joins our approved 10DLC campaign automatically, which is the difference between 1 message per second and 30+.',
         ]},
       ]}
       related={[

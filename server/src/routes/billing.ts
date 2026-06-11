@@ -4,7 +4,7 @@ import { recordSubscription, listSubscriptions } from '../lib/db.js';
 import { log } from '../lib/log.js';
 
 export const billingRouter = Router();
-import { OWNER_ID as USER } from '../lib/auth.js';
+import { getUserId } from '../lib/auth.js';
 
 // A "real" Stripe key passes the prefix check AND doesn't look like an
 // example/stub value (any 6+ consecutive x's, "your_key", "placeholder",
@@ -29,22 +29,16 @@ if (process.env.STRIPE_SECRET_KEY && !stripe) {
 
 // Recurring plans. Prices are created inline (price_data) so there's no
 // pre-setup in the Stripe dashboard required. `setupFee` is a one-time
-// charge added to the first invoice (covers Twilio's brand/campaign vetting).
+// charge added to the first invoice.
 //
-// Tiering — cheap → premium:
-//   1. (no plan)   = free / pay-as-you-go on a shared toll-free pool number.
-//                    Standard credits buy SMS; works for low volume + ad-hoc
-//                    use without any registration.
-//   2. sole_prop  = cheaper sole-prop tier. Lower monthly + smaller setup,
-//                    but Twilio's sole-prop verification flow currently
-//                    requires a manual identity-verification step in the
-//                    Twilio Console (the automated TrustHub path is not
-//                    available on all accounts). Lower throughput than A2P.
-//   3. a2p        = the premium standard 10DLC Business Line. Full automated
-//                    brand + campaign registration; highest throughput; best
-//                    deliverability with US carriers.
-//   number        = paid add-on for an extra dedicated number on top of any
-//                    of the above (or the shared pool).
+// Current model (2026-06):
+//   (no plan) = free / pay-as-you-go on the shared toll-free pool number.
+//   number    = a dedicated local number, $2/mo + $2 setup. It joins the
+//               platform's approved A2P campaign automatically, so there is
+//               NO per-user 10DLC registration step anywhere.
+//   sole_prop / a2p = RETIRED business-line tiers from the era when number
+//               buying required per-user 10DLC registration. Kept only so
+//               legacy subscription rows still render a label.
 export const PLANS: Record<string, {
   label: string;
   monthly: number;
@@ -53,12 +47,17 @@ export const PLANS: Record<string, {
   blurb: string;
   throughput: string;
   manualVerification?: boolean;
+  /** RETIRED plans render legacy subscription labels but can't be purchased.
+   *  a2p/sole_prop existed to gate number-buying behind per-user 10DLC
+   *  registration; numbers now ride the platform's approved campaign. */
+  retired?: boolean;
 }> = {
   sole_prop: {
     label: 'Sole Proprietor line',
     monthly: 5,
     setupFee: 5,
     tier: 'sole_prop',
+    retired: true,
     blurb: 'Cheaper monthly. Best for solos + small side-hustles. Requires a one-time identity step in the Twilio console (~5 min).',
     throughput: 'Up to ~3,000 msgs/day',
     manualVerification: true,
@@ -68,6 +67,7 @@ export const PLANS: Record<string, {
     monthly: 10,
     setupFee: 15,
     tier: 'standard',
+    retired: true,
     blurb: 'Fully automated brand + campaign registration. Highest throughput. Best US carrier deliverability.',
     throughput: 'Up to ~200,000 msgs/day',
   },
@@ -81,7 +81,8 @@ export const PLANS: Record<string, {
   },
 };
 
-billingRouter.get('/billing/subscriptions', (_req, res) => {
+billingRouter.get('/billing/subscriptions', (req, res) => {
+  const USER = getUserId(req);
   res.json({ stripeEnabled: !!stripe, plans: PLANS, subscriptions: listSubscriptions(USER) });
 });
 
@@ -105,6 +106,7 @@ export async function createPlanCheckout(opts: {
 }): Promise<{ url: string | null; stub?: boolean; note?: string }> {
   const plan = PLANS[opts.planId];
   if (!plan) throw new Error('unknown plan');
+  if (plan.retired) throw new Error(`The ${plan.label} plan is retired — numbers now include campaign registration, no business line needed.`);
   const ref = opts.ref ?? null;
 
   // Dev / no-Stripe fallback so the flow is fully testable without keys.
@@ -182,8 +184,12 @@ export async function createPlanCheckout(opts: {
 
 // POST /api/billing/subscribe  { plan: 'a2p'|'number', ref?, returnUrl? }
 billingRouter.post('/billing/subscribe', async (req, res) => {
+  const USER = getUserId(req);
   const planId = String(req.body?.plan || '');
   if (!PLANS[planId]) return res.status(400).json({ error: 'unknown plan' });
+  if (PLANS[planId].retired) {
+    return res.status(410).json({ error: 'This plan is retired — numbers now include carrier/campaign registration automatically. Just buy a number.', retired: true });
+  }
   const ref = req.body?.ref ? String(req.body.ref) : null;
   try {
     const r = await createPlanCheckout({
